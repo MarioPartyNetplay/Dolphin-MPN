@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <QString>
+#include <QFormLayout>
 #include <QWidget>
 
 class ControlGroupBox;
@@ -50,6 +51,8 @@ signals:
 protected:
   int GetPort() const;
 
+  void RefreshSettingsEnabled();
+
   QGroupBox* CreateGroupBox(ControllerEmu::ControlGroup* group);
   QGroupBox* CreateGroupBox(const QString& name, ControllerEmu::ControlGroup* group);
   QGroupBox* CreateControlsBox(const QString& name, ControllerEmu::ControlGroup* group,
@@ -61,5 +64,9 @@ protected:
   void ShowAdvancedControlGroupDialog(ControllerEmu::ControlGroup* group);
 
 private:
-  MappingWindow* m_parent;
+  MappingWindow* const m_parent;
+
+  std::vector<std::tuple<const ControllerEmu::NumericSettingBase*, QFormLayout::TakeRowResult,
+                         const ControllerEmu::ControlGroup*>>
+      m_edit_condition_numeric_settings;
 };
