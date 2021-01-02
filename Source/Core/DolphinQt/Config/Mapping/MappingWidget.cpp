@@ -287,13 +287,37 @@ QGroupBox* MappingWidget::CreateControlsBox(const QString& name, ControllerEmu::
   std::vector<QFormLayout*> form_layouts;
   for (int i = 0; i < columns; ++i)
   {
-    form_layouts.push_back(new QFormLayout());
-    hbox_layout->addLayout(form_layouts[i]);
-  }
-
-  for (size_t i = 0; i < group->controls.size(); ++i)
-  {
-    CreateControl(group->controls[i].get(), form_layouts[i % columns], true);
+    QLabel* group_enable_label = new QLabel(tr("Enable"));
+    QCheckBox* group_enable_checkbox = new QCheckBox();
+    group_enable_checkbox->setChecked(group->enabled);
+    form_layout->insertRow(0, group_enable_label, group_enable_checkbox);
+    auto enable_group_by_checkbox = [group, form_layout, group_enable_label,
+                                     group_enable_checkbox] {
+      group->enabled = group_enable_checkbox->isChecked();
+      for (int i = 0; i < form_layout->count(); ++i)
+      {
+        QWidget* widget = form_layout->itemAt(i)->widget();
+        if (widget != nullptr && widget != group_enable_label && widget != group_enable_checkbox)
+        {
+          widget->setEnabled(group->enabled);
+        }
+        // Layouts could be even more nested but they likely never will
+        else if (QLayout* nested_layout = form_layout->itemAt(i)->layout())
+        {
+          for (int k = 0; k < nested_layout->count(); ++k)
+          {
+            if (widget = nested_layout->itemAt(k)->widget())
+            {
+              widget->setEnabled(group->enabled);
+            }
+          }
+        }
+      }
+    };
+    enable_group_by_checkbox();
+    connect(group_enable_checkbox, &QCheckBox::toggled, this, enable_group_by_checkbox);
+    connect(this, &MappingWidget::ConfigChanged, this,
+            [group_enable_checkbox, group] { group_enable_checkbox->setChecked(group->enabled); });
   }
 
   return group_box;
