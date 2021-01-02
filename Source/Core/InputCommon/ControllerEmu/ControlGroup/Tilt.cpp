@@ -22,7 +22,7 @@ Tilt::Tilt(const std::string& name_) : ReshapableInput(name_, name_, GroupType::
   AddInput(Translatability::Translate, _trans("Left"));
   AddInput(Translatability::Translate, _trans("Right"));
 
-  AddInput(Translatability::Translate, _trans("Modifier"));
+  AddInput(Translate, _trans("Modifier"), 0.5);
 
   AddSetting(&m_max_angle_setting,
              {_trans("Angle"),

@@ -41,7 +41,10 @@ public:
   // Returns a human-readable error description when the given expression is invalid.
   std::optional<std::string> SetExpression(std::string expr);
 
-  ControlState range = 1;
+  // State value multiplier
+  ControlState range;
+  // Useful for resetting settings. Always 1 except for input modifies
+  ControlState default_range;
 
 protected:
   ControlReference();
