@@ -186,6 +186,8 @@ private:
   void ShowAchievementSettings();
 #endif  // USE_RETRO_ACHIEVEMENTS
 
+  void CheckForUpdatesAuto();
+  
   void NetPlayInit();
   bool NetPlayJoin();
   bool NetPlayHost(const UICommon::GameFile& game);
