@@ -36,7 +36,7 @@ AdvancedWidget::AdvancedWidget(GraphicsWindow* parent)
     OnEmulationStateChanged(state != Core::State::Uninitialized);
   });
   connect(m_manual_texture_sampling, &QCheckBox::toggled,
-          [this, parent] { emit parent->UseFastTextureSamplingChanged(); });
+          [parent] { emit parent->UseFastTextureSamplingChanged(); });
 
   OnBackendChanged();
   OnEmulationStateChanged(!Core::IsUninitialized(Core::System::GetInstance()));
