@@ -41,6 +41,7 @@
 #include "Common/Version.h"
 #include "Common/WindowSystemInfo.h"
 #include "Common/HttpRequest.h"
+#include "Common/scmrev.h"
 #include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
 
@@ -231,7 +232,7 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
                        const std::string& movie_path)
     : QMainWindow(nullptr), m_system(system)
 {
-  setWindowTitle(QString::fromStdString(Common::GetScmRevStr()));
+  setWindowTitle(QString::fromStdString(SCM_DESC_STR));
   setWindowIcon(Resources::GetAppIcon());
   setUnifiedTitleAndToolBarOnMac(true);
   setAcceptDrops(true);
