@@ -69,7 +69,3 @@ configure_source_file("Source/Core/Common/scmrev.h")
 if(APPLE)
   configure_source_file("Source/Core/VersionInfo.plist")
 endif()
-
-if(LINUX)
-  configure_source_file("Flatpak/org.DolphinEmu.dolphin-emu.metainfo.xml")
-endif()

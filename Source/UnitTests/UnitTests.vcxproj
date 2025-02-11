@@ -21,6 +21,7 @@
     <!--This project also compiles gtest-->
     <ClCompile>
       <AdditionalIncludeDirectories>$(ExternalsDir)gtest\googletest\include;$(ExternalsDir)gtest\googletest;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CURL_STATICLIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
