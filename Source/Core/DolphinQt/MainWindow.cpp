@@ -232,7 +232,7 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
                        const std::string& movie_path)
     : QMainWindow(nullptr), m_system(system)
 {
-  setWindowTitle(QString::fromStdString(SCM_DESC_STR));
+  setWindowTitle(QString::fromStdString(Common::GetScmRevStr()));
   setWindowIcon(Resources::GetAppIcon());
   setUnifiedTitleAndToolBarOnMac(true);
   setAcceptDrops(true);
@@ -1349,7 +1349,7 @@ void MainWindow::ShowUpdateDialog()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
         QJsonObject jsonObject = jsonDoc.object();
       
-        QString currentVersion = QString::fromStdString(Common::GetScmRevStr());
+        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
         QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
 
         if (currentVersion != latestVersion)
