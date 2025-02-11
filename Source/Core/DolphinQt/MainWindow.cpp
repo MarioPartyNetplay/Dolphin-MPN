@@ -1386,7 +1386,7 @@ void MainWindow::CheckForUpdatesAuto()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
         QJsonObject jsonObject = jsonDoc.object();
       
-        QString currentVersion = QString::fromStdString(Common::GetScmRevStr());
+        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
         QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
 
         if (currentVersion != latestVersion)
