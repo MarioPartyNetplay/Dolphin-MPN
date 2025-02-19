@@ -50,6 +50,7 @@ jobs:
         mv build/Binaries/Dolphin-MPN.app build/OUT/
         cd build/OUT
         zip -r DolphinMPN-macOS-x86_64.zip Dolphin-MPN.app
+        rm -rf Dolphin-MPN.app
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
