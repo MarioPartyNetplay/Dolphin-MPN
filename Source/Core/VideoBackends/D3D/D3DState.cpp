@@ -5,9 +5,9 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 
 #include "Common/Assert.h"
-#include "Common/BitSet.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
@@ -28,12 +28,12 @@ StateManager::~StateManager() = default;
 
 void StateManager::Apply()
 {
-  if (!m_dirtyFlags)
+  if (m_dirtyFlags.none())
     return;
 
   // Framebuffer changes must occur before texture changes, otherwise the D3D runtime messes with
   // our bindings and sets them to null to prevent hazards.
-  if (m_dirtyFlags & DirtyFlag_Framebuffer)
+  if (m_dirtyFlags.test(DirtyFlag_Framebuffer))
   {
     if (g_ActiveConfig.backend_info.bSupportsBBox)
     {
@@ -41,7 +41,8 @@ void StateManager::Apply()
           m_pending.framebuffer->GetNumRTVs(),
           m_pending.use_integer_rtv ? m_pending.framebuffer->GetIntegerRTVArray() :
                                       m_pending.framebuffer->GetRTVArray(),
-          m_pending.framebuffer->GetDSV(), 2, 1, &m_pending.uav, nullptr);
+          m_pending.framebuffer->GetDSV(), m_pending.framebuffer->GetNumRTVs() + 1, 1,
+          &m_pending.uav, nullptr);
     }
     else
     {
@@ -56,21 +57,30 @@ void StateManager::Apply()
     m_current.use_integer_rtv = m_pending.use_integer_rtv;
   }
 
-  u32 dirtyConstants = m_dirtyFlags & (DirtyFlag_PixelConstants | DirtyFlag_VertexConstants |
-                                       DirtyFlag_GeometryConstants);
-  u32 dirtyShaders =
-      m_dirtyFlags & (DirtyFlag_PixelShader | DirtyFlag_VertexShader | DirtyFlag_GeometryShader);
-  u32 dirtyBuffers = m_dirtyFlags & (DirtyFlag_VertexBuffer | DirtyFlag_IndexBuffer);
+  const bool dirtyConstants = m_dirtyFlags.test(DirtyFlag_PixelConstants) ||
+                              m_dirtyFlags.test(DirtyFlag_VertexConstants) ||
+                              m_dirtyFlags.test(DirtyFlag_GeometryConstants);
+  const bool dirtyShaders = m_dirtyFlags.test(DirtyFlag_PixelShader) ||
+                            m_dirtyFlags.test(DirtyFlag_VertexShader) ||
+                            m_dirtyFlags.test(DirtyFlag_GeometryShader);
+  const bool dirtyBuffers =
+      m_dirtyFlags.test(DirtyFlag_VertexBuffer) || m_dirtyFlags.test(DirtyFlag_IndexBuffer);
 
   if (dirtyConstants)
   {
     if (m_current.pixelConstants[0] != m_pending.pixelConstants[0] ||
-        m_current.pixelConstants[1] != m_pending.pixelConstants[1])
+        m_current.pixelConstants[1] != m_pending.pixelConstants[1] ||
+        m_current.pixelConstants[2] != m_pending.pixelConstants[2])
     {
-      D3D::context->PSSetConstantBuffers(0, m_pending.pixelConstants[1] ? 2 : 1,
-                                         m_pending.pixelConstants.data());
+      u32 count = 1;
+      if (m_pending.pixelConstants[1])
+        count++;
+      if (m_pending.pixelConstants[2])
+        count++;
+      D3D::context->PSSetConstantBuffers(0, count, m_pending.pixelConstants.data());
       m_current.pixelConstants[0] = m_pending.pixelConstants[0];
       m_current.pixelConstants[1] = m_pending.pixelConstants[1];
+      m_current.pixelConstants[2] = m_pending.pixelConstants[2];
     }
 
     if (m_current.vertexConstants != m_pending.vertexConstants)
@@ -87,7 +97,7 @@ void StateManager::Apply()
     }
   }
 
-  if (dirtyBuffers || (m_dirtyFlags & DirtyFlag_InputAssembler))
+  if (dirtyBuffers || (m_dirtyFlags.test(DirtyFlag_InputAssembler)))
   {
     if (m_current.vertexBuffer != m_pending.vertexBuffer ||
         m_current.vertexBufferStride != m_pending.vertexBufferStride ||
@@ -140,17 +150,17 @@ void StateManager::Apply()
     }
   }
 
-  if (m_dirtyFlags & DirtyFlag_BlendState)
+  if (m_dirtyFlags.test(DirtyFlag_BlendState))
   {
     D3D::context->OMSetBlendState(m_pending.blendState, nullptr, 0xFFFFFFFF);
     m_current.blendState = m_pending.blendState;
   }
-  if (m_dirtyFlags & DirtyFlag_DepthState)
+  if (m_dirtyFlags.test(DirtyFlag_DepthState))
   {
     D3D::context->OMSetDepthStencilState(m_pending.depthState, 0);
     m_current.depthState = m_pending.depthState;
   }
-  if (m_dirtyFlags & DirtyFlag_RasterizerState)
+  if (m_dirtyFlags.test(DirtyFlag_RasterizerState))
   {
     D3D::context->RSSetState(m_pending.rasterizerState);
     m_current.rasterizerState = m_pending.rasterizerState;
@@ -163,41 +173,32 @@ void StateManager::Apply()
 
 void StateManager::ApplyTextures()
 {
-  const int textureMaskShift = Common::LeastSignificantSetBit((u32)DirtyFlag_Texture0);
-  const int samplerMaskShift = Common::LeastSignificantSetBit((u32)DirtyFlag_Sampler0);
-
-  u32 dirtyTextures =
-      (m_dirtyFlags &
-       (DirtyFlag_Texture0 | DirtyFlag_Texture1 | DirtyFlag_Texture2 | DirtyFlag_Texture3 |
-        DirtyFlag_Texture4 | DirtyFlag_Texture5 | DirtyFlag_Texture6 | DirtyFlag_Texture7)) >>
-      textureMaskShift;
-  u32 dirtySamplers =
-      (m_dirtyFlags &
-       (DirtyFlag_Sampler0 | DirtyFlag_Sampler1 | DirtyFlag_Sampler2 | DirtyFlag_Sampler3 |
-        DirtyFlag_Sampler4 | DirtyFlag_Sampler5 | DirtyFlag_Sampler6 | DirtyFlag_Sampler7)) >>
-      samplerMaskShift;
-  while (dirtyTextures)
+  for (u32 i = 0; i < VideoCommon::MAX_PIXEL_SHADER_SAMPLERS; i++)
   {
-    const int index = Common::LeastSignificantSetBit(dirtyTextures);
-    if (m_current.textures[index] != m_pending.textures[index])
+    const u32 flag = i;
+    if (m_dirtyFlags.test(flag))
     {
-      D3D::context->PSSetShaderResources(index, 1, &m_pending.textures[index]);
-      m_current.textures[index] = m_pending.textures[index];
+      if (m_current.textures[i] != m_pending.textures[i])
+      {
+        D3D::context->PSSetShaderResources(i, 1, &m_pending.textures[i]);
+        m_current.textures[i] = m_pending.textures[i];
+      }
+      m_dirtyFlags.reset(flag);
     }
-
-    dirtyTextures &= ~(1 << index);
   }
 
-  while (dirtySamplers)
+  for (u32 i = 0; i < VideoCommon::MAX_PIXEL_SHADER_SAMPLERS; i++)
   {
-    const int index = Common::LeastSignificantSetBit(dirtySamplers);
-    if (m_current.samplers[index] != m_pending.samplers[index])
+    const u32 flag = i + VideoCommon::MAX_PIXEL_SHADER_SAMPLERS;
+    if (m_dirtyFlags.test(flag))
     {
-      D3D::context->PSSetSamplers(index, 1, &m_pending.samplers[index]);
-      m_current.samplers[index] = m_pending.samplers[index];
+      if (m_current.samplers[i] != m_pending.samplers[i])
+      {
+        D3D::context->PSSetSamplers(i, 1, &m_pending.samplers[i]);
+        m_current.samplers[i] = m_pending.samplers[i];
+      }
+      m_dirtyFlags.reset(flag);
     }
-
-    dirtySamplers &= ~(1 << index);
   }
 }
 
@@ -205,7 +206,7 @@ u32 StateManager::UnsetTexture(ID3D11ShaderResourceView* srv)
 {
   u32 mask = 0;
 
-  for (u32 index = 0; index < 8; ++index)
+  for (u32 index = 0; index < VideoCommon::MAX_PIXEL_SHADER_SAMPLERS; ++index)
   {
     if (m_current.textures[index] == srv)
     {
@@ -221,19 +222,20 @@ void StateManager::SetTextureByMask(u32 textureSlotMask, ID3D11ShaderResourceVie
 {
   while (textureSlotMask)
   {
-    const int index = Common::LeastSignificantSetBit(textureSlotMask);
+    const int index = std::countr_zero(textureSlotMask);
     SetTexture(index, srv);
     textureSlotMask &= ~(1 << index);
   }
 }
 
-void StateManager::SetComputeUAV(ID3D11UnorderedAccessView* uav)
+void StateManager::SetComputeUAV(u32 index, ID3D11UnorderedAccessView* uav)
 {
-  if (m_compute_image == uav)
+  if (m_compute_images[index] == uav)
     return;
 
-  m_compute_image = uav;
-  D3D::context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+  m_compute_images[index] = uav;
+  D3D::context->CSSetUnorderedAccessViews(0, static_cast<u32>(m_compute_images.size()),
+                                          m_compute_images.data(), nullptr);
 }
 
 void StateManager::SetComputeShader(ID3D11ComputeShader* shader)

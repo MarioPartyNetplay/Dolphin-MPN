@@ -8,6 +8,12 @@
 #include "Common/Matrix.h"
 #include "InputCommon/ControllerInterface/CoreDevice.h"
 
+#ifdef __OBJC__
+@class DolWindowPositionObserver;
+#else
+class DolWindowPositionObserver;
+#endif
+
 namespace ciface::Quartz
 {
 std::string KeycodeToName(const CGKeyCode keycode);
@@ -56,16 +62,20 @@ private:
   };
 
 public:
-  void UpdateInput() override;
+  Core::DeviceRemoval UpdateInput() override;
 
   explicit KeyboardAndMouse(void* view);
+  ~KeyboardAndMouse() override;
 
   std::string GetName() const override;
   std::string GetSource() const override;
+  int GetSortPriority() const override;
 
 private:
+  void MainThreadInitialization(void* view);
+
   Common::Vec2 m_cursor;
 
-  uint32_t m_windowid;
+  DolWindowPositionObserver* m_window_pos_observer;
 };
 }  // namespace ciface::Quartz

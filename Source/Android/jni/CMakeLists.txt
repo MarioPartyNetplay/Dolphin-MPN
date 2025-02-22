@@ -1,18 +1,38 @@
 add_library(main SHARED
+  ActivityTracker.cpp
   Cheats/ARCheat.cpp
   Cheats/Cheats.h
   Cheats/GeckoCheat.cpp
   Cheats/GraphicsMod.cpp
   Cheats/GraphicsModGroup.cpp
   Cheats/PatchCheat.cpp
+  Config/ConfigChangedCallback.cpp
   Config/NativeConfig.cpp
   Config/PostProcessing.cpp
   GameList/GameFile.cpp
   GameList/GameFile.h
   GameList/GameFileCache.cpp
-  IniFile.cpp
+  GpuDriver.cpp
+  Host.cpp
+  Host.h
+  InfinityConfig.cpp
+  Input/Control.cpp
+  Input/Control.h
+  Input/ControlGroup.cpp
+  Input/ControlGroup.h
+  Input/ControlReference.cpp
+  Input/ControlReference.h
+  Input/CoreDevice.cpp
+  Input/CoreDevice.h
+  Input/EmulatedController.cpp
+  Input/EmulatedController.h
+  Input/InputOverrider.cpp
+  Input/MappingCommon.cpp
+  Input/NumericSetting.cpp
+  Input/NumericSetting.h
   MainAndroid.cpp
   RiivolutionPatches.cpp
+  SkylanderConfig.cpp
   WiiUtils.cpp
 )
 
@@ -21,6 +41,7 @@ PRIVATE
   androidcommon
   common
   core
+  inputcommon
   uicommon
 )
 
@@ -31,6 +52,12 @@ PRIVATE
   "-Wl,--no-warn-mismatch"
   "-Wl,--whole-archive"
   "-Wl,--no-whole-archive"
+)
+
+target_include_directories(main
+PRIVATE
+    ${CMAKE_SOURCE_DIR}/Externals/libadrenotools/include
+    ${CMAKE_SOURCE_DIR}/Externals/VulkanMemoryAllocator/include
 )
 
 file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/Android/app/src/main/assets/)

@@ -7,6 +7,7 @@
 #include <functional>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -78,8 +79,6 @@ public:
   {
     return memcmp(GetUidData(), obj.GetUidData(), GetUidDataSize()) == 0;
   }
-
-  bool operator!=(const ShaderUid& obj) const { return !operator==(obj); }
 
   // determines the storage order inside STL containers
   bool operator<(const ShaderUid& obj) const
@@ -177,6 +176,9 @@ union ShaderHostConfig
   BitField<24, 1, bool, u32> manual_texture_sampling;
   BitField<25, 1, bool, u32> manual_texture_sampling_custom_texture_sizes;
   BitField<26, 1, bool, u32> backend_sampler_lod_bias;
+  BitField<27, 1, bool, u32> backend_dynamic_vertex_loader;
+  BitField<28, 1, bool, u32> backend_vs_point_line_expand;
+  BitField<29, 1, bool, u32> backend_gl_layer_in_fs;
 
   static ShaderHostConfig GetCurrent();
 };
@@ -195,6 +197,13 @@ void GenerateVSOutputMembers(ShaderCode& object, APIType api_type, u32 texgens,
 
 void AssignVSOutputMembers(ShaderCode& object, std::string_view a, std::string_view b, u32 texgens,
                            const ShaderHostConfig& host_config);
+
+void GenerateLineOffset(ShaderCode& object, std::string_view indent0, std::string_view indent1,
+                        std::string_view pos_a, std::string_view pos_b, std::string_view sign);
+
+void GenerateVSLineExpansion(ShaderCode& object, std::string_view indent, u32 texgens);
+
+void GenerateVSPointExpansion(ShaderCode& object, std::string_view indent, u32 texgens);
 
 // We use the flag "centroid" to fix some MSAA rendering bugs. With MSAA, the
 // pixel shader will be executed for each pixel which has at least one passed sample.
@@ -217,14 +226,11 @@ std::string BitfieldExtract(std::string_view source)
                      static_cast<u32>(BitFieldT::NumBits()));
 }
 
-template <auto last_member, typename = decltype(last_member)>
+template <auto last_member>
 void WriteSwitch(ShaderCode& out, APIType ApiType, std::string_view variable,
                  const Common::EnumMap<std::string_view, last_member>& values, int indent,
                  bool break_)
 {
-  // The second template argument is needed to avoid compile errors from ambiguity with multiple
-  // enums with the same number of members in GCC prior to 8.  See https://godbolt.org/z/xcKaW1seW
-  // and https://godbolt.org/z/hz7Yqq1P5
   using enum_type = decltype(last_member);
 
   // Generate a tree of if statements recursively
@@ -277,6 +283,7 @@ void WriteSwitch(ShaderCode& out, APIType ApiType, std::string_view variable,
 #define I_POSTTRANSFORMMATRICES "cpostmtx"
 #define I_PIXELCENTERCORRECTION "cpixelcenter"
 #define I_VIEWPORT_SIZE "cviewport"
+#define I_CACHED_NORMAL "cnormal"
 #define I_CACHED_TANGENT "ctangent"
 #define I_CACHED_BINORMAL "cbinormal"
 
@@ -300,9 +307,43 @@ static const char s_shader_uniforms[] = "\tuint    components;\n"
                                         "\tfloat4 " I_PIXELCENTERCORRECTION ";\n"
                                         "\tfloat2 " I_VIEWPORT_SIZE ";\n"
                                         "\tuint4   xfmem_pack1[8];\n"
+                                        "\tfloat4 " I_CACHED_NORMAL ";\n"
                                         "\tfloat4 " I_CACHED_TANGENT ";\n"
                                         "\tfloat4 " I_CACHED_BINORMAL ";\n"
+                                        "\tuint vertex_stride;\n"
+                                        "\tuint vertex_offset_rawnormal;\n"
+                                        "\tuint vertex_offset_rawtangent;\n"
+                                        "\tuint vertex_offset_rawbinormal;\n"
+                                        "\tuint vertex_offset_rawpos;\n"
+                                        "\tuint vertex_offset_posmtx;\n"
+                                        "\tuint vertex_offset_rawcolor0;\n"
+                                        "\tuint vertex_offset_rawcolor1;\n"
+                                        "\tuint4 vertex_offset_rawtex[2];\n"  // std140 is pain
                                         "\t#define xfmem_texMtxInfo(i) (xfmem_pack1[(i)].x)\n"
                                         "\t#define xfmem_postMtxInfo(i) (xfmem_pack1[(i)].y)\n"
                                         "\t#define xfmem_color(i) (xfmem_pack1[(i)].z)\n"
                                         "\t#define xfmem_alpha(i) (xfmem_pack1[(i)].w)\n";
+
+static const char s_geometry_shader_uniforms[] = "\tfloat4 " I_STEREOPARAMS ";\n"
+                                                 "\tfloat4 " I_LINEPTPARAMS ";\n"
+                                                 "\tint4 " I_TEXOFFSET ";\n"
+                                                 "\tuint vs_expand;\n";
+
+constexpr std::string_view CUSTOM_PIXELSHADER_COLOR_FUNC = "customShaderColor";
+
+struct CustomPixelShader
+{
+  std::string custom_shader;
+  std::string material_uniform_block;
+
+  bool operator==(const CustomPixelShader& other) const = default;
+};
+
+struct CustomPixelShaderContents
+{
+  std::vector<CustomPixelShader> shaders;
+
+  bool operator==(const CustomPixelShaderContents& other) const = default;
+};
+
+void WriteCustomShaderStructDef(ShaderCode* out, u32 numtexgens);

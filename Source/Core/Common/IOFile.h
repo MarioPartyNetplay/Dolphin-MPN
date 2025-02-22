@@ -20,6 +20,12 @@ enum class SeekOrigin
   End,
 };
 
+enum class SharedAccess
+{
+  Default,
+  Read,
+};
+
 // simple wrapper for cstdlib file functions to
 // hopefully will make error checking easier
 // and make forgetting an fclose() harder
@@ -28,7 +34,8 @@ class IOFile
 public:
   IOFile();
   IOFile(std::FILE* file);
-  IOFile(const std::string& filename, const char openmode[]);
+  IOFile(const std::string& filename, const char openmode[],
+         SharedAccess sh = SharedAccess::Default);
 
   ~IOFile();
 
@@ -40,8 +47,11 @@ public:
 
   void Swap(IOFile& other) noexcept;
 
-  bool Open(const std::string& filename, const char openmode[]);
+  bool Open(const std::string& filename, const char openmode[],
+            SharedAccess sh = SharedAccess::Default);
   bool Close();
+
+  IOFile Duplicate(const char openmode[]) const;
 
   template <typename T>
   bool ReadArray(T* elements, size_t count, size_t* num_read = nullptr)
@@ -106,7 +116,8 @@ public:
   void ClearError()
   {
     m_good = true;
-    std::clearerr(m_file);
+    if (IsOpen())
+      std::clearerr(m_file);
   }
 
 private:

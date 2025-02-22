@@ -51,13 +51,13 @@ void WiiNetConfig::ResetConfig(FS::FileSystem* fs)
   WriteConfig(fs);
 }
 
-void WiiNetConfig::WriteToMem(const u32 address) const
+void WiiNetConfig::WriteToMem(Memory::MemoryManager& memory, const u32 address) const
 {
-  Memory::CopyToEmu(address, &m_data, sizeof(m_data));
+  memory.CopyToEmu(address, &m_data, sizeof(m_data));
 }
 
-void WiiNetConfig::ReadFromMem(const u32 address)
+void WiiNetConfig::ReadFromMem(const Memory::MemoryManager& memory, const u32 address)
 {
-  Memory::CopyFromEmu(&m_data, address, sizeof(m_data));
+  memory.CopyFromEmu(&m_data, address, sizeof(m_data));
 }
 }  // namespace IOS::HLE::Net

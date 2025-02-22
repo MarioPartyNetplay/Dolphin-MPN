@@ -3,10 +3,13 @@
 
 #include "Core/PowerPC/JitArm64/Jit.h"
 
+#include <optional>
+
 #include "Common/Arm64Emitter.h"
 #include "Common/CPUDetect.h"
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
+#include "Common/SmallVector.h"
 #include "Common/StringUtil.h"
 
 #include "Core/Config/SessionSettings.h"
@@ -45,24 +48,18 @@ void JitArm64::SetFPRFIfNeeded(bool single, ARM64Reg reg)
 // Emulate the odd truncation/rounding that the PowerPC does on the RHS operand before
 // a single precision multiply. To be precise, it drops the low 28 bits of the mantissa,
 // rounding to nearest as it does.
-void JitArm64::Force25BitPrecision(ARM64Reg output, ARM64Reg input, ARM64Reg temp)
+void JitArm64::Force25BitPrecision(ARM64Reg output, ARM64Reg input)
 {
-  ASSERT(output != input && output != temp && input != temp);
-
-  // temp   = 0x0000'0000'0800'0000ULL
-  // output = 0xFFFF'FFFF'F800'0000ULL
-  m_float_emit.MOVI(32, temp, 0x08, 24);
-  m_float_emit.MOVI(64, output, 0xFFFF'FFFF'0000'0000ULL);
-  m_float_emit.BIC(temp, temp, output);
-  m_float_emit.ORR(32, output, 0xF8, 24);
-
-  // output = (input & ~0xFFFFFFF) + ((input & (1ULL << 27)) << 1)
-  m_float_emit.AND(temp, input, temp);
-  m_float_emit.AND(output, input, output);
   if (IsQuad(input))
-    m_float_emit.ADD(64, output, output, temp);
+  {
+    m_float_emit.URSHR(64, output, input, 28);
+    m_float_emit.SHL(64, output, output, 28);
+  }
   else
-    m_float_emit.ADD(output, output, temp);
+  {
+    m_float_emit.URSHR(output, input, 28);
+    m_float_emit.SHL(output, output, 28);
+  }
 }
 
 void JitArm64::fp_arith(UGeckoInstruction inst)
@@ -72,123 +69,83 @@ void JitArm64::fp_arith(UGeckoInstruction inst)
   FALLBACK_IF(inst.Rc);
   FALLBACK_IF(jo.fp_exceptions || (jo.div_by_zero_exceptions && inst.SUBOP5 == 18));
 
-  u32 a = inst.FA, b = inst.FB, c = inst.FC, d = inst.FD;
-  u32 op5 = inst.SUBOP5;
-
-  bool single = inst.OPCD == 59;
-  bool packed = inst.OPCD == 4;
+  const u32 a = inst.FA;
+  const u32 b = inst.FB;
+  const u32 c = inst.FC;
+  const u32 d = inst.FD;
+  const u32 op5 = inst.SUBOP5;
 
   const bool use_c = op5 >= 25;  // fmul and all kind of fmaddXX
   const bool use_b = op5 != 25;  // fmul uses no B
+  const bool fma = use_b && use_c;
+  const bool negate_result = (op5 & ~0x1) == 30;
 
-  const bool outputs_are_singles = single || packed;
-  const bool round_c = use_c && outputs_are_singles && !js.op->fprIsSingle[inst.FC];
+  const bool output_is_single = inst.OPCD == 59;
+  const bool inaccurate_fma = op5 > 25 && !Config::Get(Config::SESSION_USE_FMA);
+  const bool round_c = use_c && output_is_single && !js.op->fprIsSingle[inst.FC];
 
   const auto inputs_are_singles_func = [&] {
-    return fpr.IsSingle(a, !packed) && (!use_b || fpr.IsSingle(b, !packed)) &&
-           (!use_c || fpr.IsSingle(c, !packed));
+    return fpr.IsSingle(a, true) && (!use_b || fpr.IsSingle(b, true)) &&
+           (!use_c || fpr.IsSingle(c, true));
   };
   const bool inputs_are_singles = inputs_are_singles_func();
 
-  ARM64Reg VA{}, VB{}, VC{}, VD{};
+  const bool single = inputs_are_singles && output_is_single;
+  const RegType type = single ? RegType::LowerPairSingle : RegType::LowerPair;
+  const RegType type_out =
+      output_is_single ? (inputs_are_singles ? RegType::DuplicatedSingle : RegType::Duplicated) :
+                         RegType::LowerPair;
+  const auto reg_encoder = single ? EncodeRegToSingle : EncodeRegToDouble;
 
-  ARM64Reg V0Q = ARM64Reg::INVALID_REG;
-  ARM64Reg V1Q = ARM64Reg::INVALID_REG;
+  const ARM64Reg VA = reg_encoder(fpr.R(a, type));
+  const ARM64Reg VB = use_b ? reg_encoder(fpr.R(b, type)) : ARM64Reg::INVALID_REG;
+  const ARM64Reg VC = use_c ? reg_encoder(fpr.R(c, type)) : ARM64Reg::INVALID_REG;
+  const ARM64Reg VD = reg_encoder(fpr.RW(d, type_out));
 
-  if (packed)
   {
-    const RegType type = inputs_are_singles ? RegType::Single : RegType::Register;
-    const u8 size = inputs_are_singles ? 32 : 64;
-    const auto reg_encoder = inputs_are_singles ? EncodeRegToDouble : EncodeRegToQuad;
+    Arm64FPRCache::ScopedARM64Reg V0Q = ARM64Reg::INVALID_REG;
+    Arm64FPRCache::ScopedARM64Reg V1Q = ARM64Reg::INVALID_REG;
 
-    VA = reg_encoder(fpr.R(a, type));
-    if (use_b)
-      VB = reg_encoder(fpr.R(b, type));
-    if (use_c)
-      VC = reg_encoder(fpr.R(c, type));
-    VD = reg_encoder(fpr.RW(d, type));
-
+    ARM64Reg rounded_c_reg = VC;
     if (round_c)
     {
       ASSERT_MSG(DYNA_REC, !inputs_are_singles, "Tried to apply 25-bit precision to single");
 
-      V0Q = fpr.GetReg();
-      V1Q = fpr.GetReg();
-
-      Force25BitPrecision(reg_encoder(V0Q), VC, reg_encoder(V1Q));
-      VC = reg_encoder(V0Q);
+      V0Q = fpr.GetScopedReg();
+      rounded_c_reg = reg_encoder(V0Q);
+      Force25BitPrecision(rounded_c_reg, VC);
     }
 
-    switch (op5)
-    {
-    case 18:
-      m_float_emit.FDIV(size, VD, VA, VB);
-      break;
-    case 20:
-      m_float_emit.FSUB(size, VD, VA, VB);
-      break;
-    case 21:
-      m_float_emit.FADD(size, VD, VA, VB);
-      break;
-    case 25:
-      m_float_emit.FMUL(size, VD, VA, VC);
-      break;
-    default:
-      ASSERT_MSG(DYNA_REC, 0, "fp_arith");
-      break;
-    }
-  }
-  else
-  {
-    const RegType type =
-        (inputs_are_singles && single) ? RegType::LowerPairSingle : RegType::LowerPair;
-    const RegType type_out =
-        single ? (inputs_are_singles ? RegType::DuplicatedSingle : RegType::Duplicated) :
-                 RegType::LowerPair;
-    const auto reg_encoder = (inputs_are_singles && single) ? EncodeRegToSingle : EncodeRegToDouble;
-
-    VA = reg_encoder(fpr.R(a, type));
-    if (use_b)
-      VB = reg_encoder(fpr.R(b, type));
-    if (use_c)
-      VC = reg_encoder(fpr.R(c, type));
-    VD = reg_encoder(fpr.RW(d, type_out));
-
-    const bool inaccurate_fma = op5 > 25 && !Config::Get(Config::SESSION_USE_FMA);
-
-    if (round_c)
-    {
-      ASSERT_MSG(DYNA_REC, !inputs_are_singles, "Tried to apply 25-bit precision to single");
-
-      V0Q = fpr.GetReg();
-      V1Q = fpr.GetReg();
-
-      Force25BitPrecision(reg_encoder(V1Q), VC, reg_encoder(V0Q));
-      VC = reg_encoder(V1Q);
-    }
-
-    ARM64Reg inaccurate_fma_temp_reg = VD;
-    if (inaccurate_fma && d == b)
+    ARM64Reg inaccurate_fma_reg = VD;
+    if (fma && inaccurate_fma && VD == VB)
     {
       if (V0Q == ARM64Reg::INVALID_REG)
-        V0Q = fpr.GetReg();
+        V0Q = fpr.GetScopedReg();
+      inaccurate_fma_reg = reg_encoder(V0Q);
+    }
 
-      inaccurate_fma_temp_reg = reg_encoder(V0Q);
+    ARM64Reg result_reg = VD;
+    const bool preserve_d =
+        m_accurate_nans && (VD == VA || (use_b && VD == VB) || (use_c && VD == VC));
+    if (preserve_d)
+    {
+      V1Q = fpr.GetScopedReg();
+      result_reg = reg_encoder(V1Q);
     }
 
     switch (op5)
     {
     case 18:
-      m_float_emit.FDIV(VD, VA, VB);
+      m_float_emit.FDIV(result_reg, VA, VB);
       break;
     case 20:
-      m_float_emit.FSUB(VD, VA, VB);
+      m_float_emit.FSUB(result_reg, VA, VB);
       break;
     case 21:
-      m_float_emit.FADD(VD, VA, VB);
+      m_float_emit.FADD(result_reg, VA, VB);
       break;
     case 25:
-      m_float_emit.FMUL(VD, VA, VC);
+      m_float_emit.FMUL(result_reg, VA, rounded_c_reg);
       break;
     // While it may seem like PowerPC's nmadd/nmsub map to AArch64's nmadd/msub [sic],
     // the subtly different definitions affect how signed zeroes are handled.
@@ -198,42 +155,99 @@ void JitArm64::fp_arith(UGeckoInstruction inst)
     case 30:  // fnmsub: "D = -(A*C - B)" vs "Vd = -((-Va) + Vn*Vm)"
       if (inaccurate_fma)
       {
-        m_float_emit.FMUL(inaccurate_fma_temp_reg, VA, VC);
-        m_float_emit.FSUB(VD, inaccurate_fma_temp_reg, VB);
+        m_float_emit.FMUL(inaccurate_fma_reg, VA, rounded_c_reg);
+        m_float_emit.FSUB(result_reg, inaccurate_fma_reg, VB);
       }
       else
       {
-        m_float_emit.FNMSUB(VD, VA, VC, VB);
+        m_float_emit.FNMSUB(result_reg, VA, rounded_c_reg, VB);
       }
-      if (op5 == 30)
-        m_float_emit.FNEG(VD, VD);
       break;
     case 29:  // fmadd: "D = A*C + B" vs "Vd = Va + Vn*Vm"
     case 31:  // fnmadd: "D = -(A*C + B)" vs "Vd = -(Va + Vn*Vm)"
       if (inaccurate_fma)
       {
-        m_float_emit.FMUL(inaccurate_fma_temp_reg, VA, VC);
-        m_float_emit.FADD(VD, inaccurate_fma_temp_reg, VB);
+        m_float_emit.FMUL(inaccurate_fma_reg, VA, rounded_c_reg);
+        m_float_emit.FADD(result_reg, inaccurate_fma_reg, VB);
       }
       else
       {
-        m_float_emit.FMADD(VD, VA, VC, VB);
+        m_float_emit.FMADD(result_reg, VA, rounded_c_reg, VB);
       }
-      if (op5 == 31)
-        m_float_emit.FNEG(VD, VD);
       break;
     default:
       ASSERT_MSG(DYNA_REC, 0, "fp_arith");
       break;
     }
+
+    Common::SmallVector<FixupBranch, 4> nan_fixups;
+    if (m_accurate_nans)
+    {
+      // Check if we need to handle NaNs
+      m_float_emit.FCMP(result_reg);
+      FixupBranch no_nan = B(CCFlags::CC_VC);
+      FixupBranch nan = B();
+      SetJumpTarget(no_nan);
+
+      SwitchToFarCode();
+      SetJumpTarget(nan);
+
+      Common::SmallVector<ARM64Reg, 3> inputs;
+      inputs.push_back(VA);
+      if (use_b && VA != VB)
+        inputs.push_back(VB);
+      if (use_c && VA != VC && (!use_b || VB != VC))
+        inputs.push_back(VC);
+
+      // If any inputs are NaNs, pick the first NaN of them and set its quiet bit.
+      // However, we can skip checking the last input, because if exactly one input is NaN, AArch64
+      // arithmetic instructions automatically pick that NaN and make it quiet, just like we want.
+      for (size_t i = 0; i < inputs.size() - 1; ++i)
+      {
+        const ARM64Reg input = inputs[i];
+
+        m_float_emit.FCMP(input);
+        FixupBranch skip = B(CCFlags::CC_VC);
+
+        // Make the NaN quiet
+        m_float_emit.FADD(VD, input, input);
+
+        nan_fixups.push_back(B());
+
+        SetJumpTarget(skip);
+      }
+
+      std::optional<FixupBranch> nan_early_fixup;
+      if (negate_result)
+      {
+        // If we have a NaN, we must not execute FNEG.
+        if (result_reg != VD)
+          m_float_emit.MOV(EncodeRegToDouble(VD), EncodeRegToDouble(result_reg));
+        nan_fixups.push_back(B());
+      }
+      else
+      {
+        nan_early_fixup = B();
+      }
+
+      SwitchToNearCode();
+
+      if (nan_early_fixup)
+        SetJumpTarget(*nan_early_fixup);
+    }
+
+    // PowerPC's nmadd/nmsub perform rounding before the final negation, which is not the case
+    // for any of AArch64's FMA instructions, so we negate using a separate instruction.
+    if (negate_result)
+      m_float_emit.FNEG(VD, result_reg);
+    else if (result_reg != VD)
+      m_float_emit.MOV(EncodeRegToDouble(VD), EncodeRegToDouble(result_reg));
+
+    for (FixupBranch fixup : nan_fixups)
+      SetJumpTarget(fixup);
   }
 
-  if (V0Q != ARM64Reg::INVALID_REG)
-    fpr.Unlock(V0Q);
-  if (V1Q != ARM64Reg::INVALID_REG)
-    fpr.Unlock(V1Q);
-
-  if (outputs_are_singles)
+  if (output_is_single)
   {
     ASSERT_MSG(DYNA_REC, inputs_are_singles == inputs_are_singles_func(),
                "Register allocation turned singles into doubles in the middle of fp_arith");
@@ -241,7 +255,7 @@ void JitArm64::fp_arith(UGeckoInstruction inst)
     fpr.FixSinglePrecision(d);
   }
 
-  SetFPRFIfNeeded(outputs_are_singles, VD);
+  SetFPRFIfNeeded(output_is_single, VD);
 }
 
 void JitArm64::fp_logic(UGeckoInstruction inst)
@@ -432,42 +446,39 @@ void JitArm64::FloatCompare(UGeckoInstruction inst, bool upper)
   gpr.BindCRToRegister(crf, false);
   const ARM64Reg XA = gpr.CR(crf);
 
-  ARM64Reg fpscr_reg = ARM64Reg::INVALID_REG;
+  Arm64GPRCache::ScopedARM64Reg fpscr_reg = ARM64Reg::INVALID_REG;
   if (fprf)
   {
-    fpscr_reg = gpr.GetReg();
+    fpscr_reg = gpr.GetScopedReg();
     LDR(IndexType::Unsigned, fpscr_reg, PPC_REG, PPCSTATE_OFF(fpscr));
-    AND(fpscr_reg, fpscr_reg, LogicalImm(~FPCC_MASK, 32));
+    AND(fpscr_reg, fpscr_reg, LogicalImm(~FPCC_MASK, GPRSize::B32));
   }
 
-  ARM64Reg V0Q = ARM64Reg::INVALID_REG;
-  ARM64Reg V1Q = ARM64Reg::INVALID_REG;
-  if (upper_a)
   {
-    V0Q = fpr.GetReg();
-    m_float_emit.DUP(singles ? 32 : 64, paired_reg_encoder(V0Q), paired_reg_encoder(VA), 1);
-    VA = reg_encoder(V0Q);
-  }
-  if (upper_b)
-  {
-    if (a == b)
+    Arm64FPRCache::ScopedARM64Reg V0Q;
+    Arm64FPRCache::ScopedARM64Reg V1Q;
+    if (upper_a)
     {
-      VB = VA;
+      V0Q = fpr.GetScopedReg();
+      m_float_emit.DUP(singles ? 32 : 64, paired_reg_encoder(V0Q), paired_reg_encoder(VA), 1);
+      VA = reg_encoder(V0Q);
     }
-    else
+    if (upper_b)
     {
-      V1Q = fpr.GetReg();
-      m_float_emit.DUP(singles ? 32 : 64, paired_reg_encoder(V1Q), paired_reg_encoder(VB), 1);
-      VB = reg_encoder(V1Q);
+      if (a == b)
+      {
+        VB = VA;
+      }
+      else
+      {
+        V1Q = fpr.GetScopedReg();
+        m_float_emit.DUP(singles ? 32 : 64, paired_reg_encoder(V1Q), paired_reg_encoder(VB), 1);
+        VB = reg_encoder(V1Q);
+      }
     }
+
+    m_float_emit.FCMP(VA, VB);
   }
-
-  m_float_emit.FCMP(VA, VB);
-
-  if (V0Q != ARM64Reg::INVALID_REG)
-    fpr.Unlock(V0Q);
-  if (V1Q != ARM64Reg::INVALID_REG)
-    fpr.Unlock(V1Q);
 
   FixupBranch pNaN, pLesser, pGreater;
   FixupBranch continue1, continue2, continue3;
@@ -485,14 +496,14 @@ void JitArm64::FloatCompare(UGeckoInstruction inst, bool upper)
   // A == B
   MOVI2R(XA, 0);
   if (fprf)
-    ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_EQ << FPRF_SHIFT, 32));
+    ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_EQ << FPRF_SHIFT, GPRSize::B32));
 
   continue1 = B();
 
   SetJumpTarget(pNaN);
   MOVI2R(XA, ~(1ULL << PowerPC::CR_EMU_LT_BIT));
   if (fprf)
-    ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_SO << FPRF_SHIFT, 32));
+    ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_SO << FPRF_SHIFT, GPRSize::B32));
 
   if (a != b)
   {
@@ -501,14 +512,14 @@ void JitArm64::FloatCompare(UGeckoInstruction inst, bool upper)
     SetJumpTarget(pGreater);
     MOVI2R(XA, 1);
     if (fprf)
-      ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_GT << FPRF_SHIFT, 32));
+      ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_GT << FPRF_SHIFT, GPRSize::B32));
 
     continue3 = B();
 
     SetJumpTarget(pLesser);
     MOVI2R(XA, ~(1ULL << PowerPC::CR_EMU_SO_BIT));
     if (fprf)
-      ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_LT << FPRF_SHIFT, 32));
+      ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_LT << FPRF_SHIFT, GPRSize::B32));
 
     SetJumpTarget(continue2);
     SetJumpTarget(continue3);
@@ -521,7 +532,6 @@ void JitArm64::FloatCompare(UGeckoInstruction inst, bool upper)
   if (fprf)
   {
     STR(IndexType::Unsigned, fpscr_reg, PPC_REG, PPCSTATE_OFF(fpscr));
-    gpr.Unlock(fpscr_reg);
   }
 }
 
@@ -555,7 +565,7 @@ void JitArm64::fctiwx(UGeckoInstruction inst)
 
   if (single)
   {
-    const ARM64Reg V0 = fpr.GetReg();
+    const auto V0 = fpr.GetScopedReg();
 
     if (is_fctiwzx)
     {
@@ -572,12 +582,10 @@ void JitArm64::fctiwx(UGeckoInstruction inst)
     m_float_emit.BIC(16, EncodeRegToDouble(V0), 0x7);
 
     m_float_emit.ORR(EncodeRegToDouble(VD), EncodeRegToDouble(VD), EncodeRegToDouble(V0));
-
-    fpr.Unlock(V0);
   }
   else
   {
-    const ARM64Reg WA = gpr.GetReg();
+    const auto WA = gpr.GetScopedReg();
 
     if (is_fctiwzx)
     {
@@ -589,10 +597,8 @@ void JitArm64::fctiwx(UGeckoInstruction inst)
       m_float_emit.FCVTS(WA, EncodeRegToDouble(VD), RoundingMode::Z);
     }
 
-    ORR(EncodeRegTo64(WA), EncodeRegTo64(WA), LogicalImm(0xFFF8'0000'0000'0000ULL, 64));
+    ORR(EncodeRegTo64(WA), EncodeRegTo64(WA), LogicalImm(0xFFF8'0000'0000'0000ULL, GPRSize::B64));
     m_float_emit.FMOV(EncodeRegToDouble(VD), EncodeRegTo64(WA));
-
-    gpr.Unlock(WA);
   }
 
   ASSERT_MSG(DYNA_REC, b == d || single == fpr.IsSingle(b, true),
@@ -643,7 +649,7 @@ void JitArm64::frsqrtex(UGeckoInstruction inst)
   const ARM64Reg VB = fpr.R(b, RegType::LowerPair);
   const ARM64Reg VD = fpr.RW(d, RegType::LowerPair);
 
-  gpr.Lock(ARM64Reg::W0, ARM64Reg::W1, ARM64Reg::W2, ARM64Reg::W3, ARM64Reg::W4, ARM64Reg::W30);
+  gpr.Lock(ARM64Reg::W0, ARM64Reg::W1, ARM64Reg::W2, ARM64Reg::W3, ARM64Reg::W30);
 
   m_float_emit.FMOV(ARM64Reg::X1, EncodeRegToDouble(VB));
   m_float_emit.FRSQRTE(ARM64Reg::D0, EncodeRegToDouble(VB));
@@ -654,7 +660,7 @@ void JitArm64::frsqrtex(UGeckoInstruction inst)
 
   SetFPRFIfNeeded(false, ARM64Reg::X0);
 
-  gpr.Unlock(ARM64Reg::W0, ARM64Reg::W1, ARM64Reg::W2, ARM64Reg::W3, ARM64Reg::W4, ARM64Reg::W30);
+  gpr.Unlock(ARM64Reg::W0, ARM64Reg::W1, ARM64Reg::W2, ARM64Reg::W3, ARM64Reg::W30);
   fpr.Unlock(ARM64Reg::Q0);
 }
 
@@ -790,7 +796,7 @@ void JitArm64::ConvertSingleToDoublePair(size_t guest_reg, ARM64Reg dest_reg, AR
   {
     // Set each 32-bit element of scratch_reg to 0x0000'0000 or 0xFFFF'FFFF depending on whether
     // the absolute value of the corresponding element in src_reg compares greater than 0
-    m_float_emit.MOVI(8, EncodeRegToDouble(scratch_reg), 0);
+    m_float_emit.MOVI(64, EncodeRegToDouble(scratch_reg), 0);
     m_float_emit.FACGT(32, EncodeRegToDouble(scratch_reg), EncodeRegToDouble(src_reg),
                        EncodeRegToDouble(scratch_reg));
 

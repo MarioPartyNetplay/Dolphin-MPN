@@ -13,6 +13,11 @@
 #include "Common/Logging/Log.h"
 #include "Core/IOS/IOS.h"
 
+namespace Core
+{
+class System;
+}
+
 namespace IOS::HLE
 {
 enum ReturnCode : s32
@@ -24,6 +29,7 @@ enum ReturnCode : s32
   IPC_EMAX = -5,           // Too many file descriptors open
   IPC_ENOENT = -6,         // File not found
   IPC_EQUEUEFULL = -8,     // Queue full
+  IPC_UNKNOWN = -9,        // Unknown
   IPC_EIO = -12,           // ECC error
   IPC_ENOMEM = -22,        // Alloc failed during request
   FS_EINVAL = -101,        // Invalid path
@@ -77,7 +83,7 @@ struct Request
   u32 address = 0;
   IPCCommandType command = IPC_CMD_OPEN;
   u32 fd = 0;
-  explicit Request(u32 address);
+  Request(Core::System& system, u32 address);
   virtual ~Request() = default;
 };
 
@@ -97,14 +103,14 @@ struct OpenRequest final : Request
   // but they are set after they reach IOS and are dispatched to the appropriate module.
   u32 uid = 0;
   u16 gid = 0;
-  explicit OpenRequest(u32 address);
+  OpenRequest(Core::System& system, u32 address);
 };
 
 struct ReadWriteRequest final : Request
 {
   u32 buffer = 0;
   u32 size = 0;
-  explicit ReadWriteRequest(u32 address);
+  ReadWriteRequest(Core::System& system, u32 address);
 };
 
 enum SeekMode : s32
@@ -118,7 +124,7 @@ struct SeekRequest final : Request
 {
   u32 offset = 0;
   SeekMode mode = IOS_SEEK_SET;
-  explicit SeekRequest(u32 address);
+  SeekRequest(Core::System& system, u32 address);
 };
 
 struct IOCtlRequest final : Request
@@ -129,12 +135,13 @@ struct IOCtlRequest final : Request
   // Contrary to the name, the output buffer can also be used for input.
   u32 buffer_out = 0;
   u32 buffer_out_size = 0;
-  explicit IOCtlRequest(u32 address);
+  IOCtlRequest(Core::System& system, u32 address);
   void Log(std::string_view description, Common::Log::LogType type = Common::Log::LogType::IOS,
            Common::Log::LogLevel level = Common::Log::LogLevel::LINFO) const;
-  void Dump(const std::string& description, Common::Log::LogType type = Common::Log::LogType::IOS,
+  void Dump(Core::System& system, const std::string& description,
+            Common::Log::LogType type = Common::Log::LogType::IOS,
             Common::Log::LogLevel level = Common::Log::LogLevel::LINFO) const;
-  void DumpUnknown(const std::string& description,
+  void DumpUnknown(Core::System& system, const std::string& description,
                    Common::Log::LogType type = Common::Log::LogType::IOS,
                    Common::Log::LogLevel level = Common::Log::LogLevel::LERROR) const;
 };
@@ -159,11 +166,12 @@ struct IOCtlVRequest final : Request
   /// Returns the specified vector or nullptr if the index is out of bounds.
   const IOVector* GetVector(size_t index) const;
 
-  explicit IOCtlVRequest(u32 address);
+  IOCtlVRequest(Core::System& system, u32 address);
   bool HasNumberOfValidVectors(size_t in_count, size_t io_count) const;
-  void Dump(std::string_view description, Common::Log::LogType type = Common::Log::LogType::IOS,
+  void Dump(Core::System& system, std::string_view description,
+            Common::Log::LogType type = Common::Log::LogType::IOS,
             Common::Log::LogLevel level = Common::Log::LogLevel::LINFO) const;
-  void DumpUnknown(const std::string& description,
+  void DumpUnknown(Core::System& system, const std::string& description,
                    Common::Log::LogType type = Common::Log::LogType::IOS,
                    Common::Log::LogLevel level = Common::Log::LogLevel::LERROR) const;
 };
@@ -181,7 +189,6 @@ public:
 
   virtual ~Device() = default;
   virtual void DoState(PointerWrap& p);
-  void DoStateShared(PointerWrap& p);
 
   const std::string& GetDeviceName() const { return m_name; }
   // Replies to Open and Close requests are sent by the IPC request handler (HandleCommand),
@@ -214,5 +221,22 @@ protected:
 
 private:
   std::optional<IPCReply> Unsupported(const Request& request);
+};
+
+// Helper class for Devices that we know are only ever instantiated under an EmulationKernel.
+// Deriving a Device from this allows it to access EmulationKernel-only features without runtime
+// overhead, since it will know that the m_ios instance is an EmulationKernel.
+class EmulationDevice : public Device
+{
+public:
+  EmulationDevice(EmulationKernel& ios, const std::string& device_name,
+                  DeviceType type = DeviceType::Static)
+      : Device(ios, device_name, type)
+  {
+  }
+
+  EmulationKernel& GetEmulationKernel() const { return static_cast<EmulationKernel&>(m_ios); }
+
+  Core::System& GetSystem() const { return GetEmulationKernel().GetSystem(); }
 };
 }  // namespace IOS::HLE

@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/HW/EXI/BBA/TAP_Win32.h"
-#include "Core/HW/EXI/EXI_DeviceEthernet.h"
 
 #include "Common/Assert.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 #include "Common/StringUtil.h"
 #include "Core/HW/EXI/EXI_Device.h"
+#include "Core/HW/EXI/EXI_DeviceEthernet.h"
 
 namespace Win32TAPHelper
 {
@@ -24,7 +24,7 @@ bool IsTAPDevice(const TCHAR* guid)
   if (status != ERROR_SUCCESS)
     return false;
 
-  for (;;)
+  while (true)
   {
     TCHAR enum_name[256];
     TCHAR unit_string[256];

@@ -46,8 +46,10 @@ Make AA apply instantly during gameplay if possible
 
 #include "Core/Config/GraphicsSettings.h"
 
+#include "VideoBackends/OGL/OGLBoundingBox.h"
+#include "VideoBackends/OGL/OGLConfig.h"
+#include "VideoBackends/OGL/OGLGfx.h"
 #include "VideoBackends/OGL/OGLPerfQuery.h"
-#include "VideoBackends/OGL/OGLRender.h"
 #include "VideoBackends/OGL/OGLVertexManager.h"
 #include "VideoBackends/OGL/ProgramShaderCache.h"
 #include "VideoBackends/OGL/SamplerCache.h"
@@ -72,51 +74,16 @@ std::string VideoBackend::GetDisplayName() const
     return _trans("OpenGL");
 }
 
-void VideoBackend::InitBackendInfo()
+void VideoBackend::InitBackendInfo(const WindowSystemInfo& wsi)
 {
-  g_Config.backend_info.api_type = APIType::OpenGL;
-  g_Config.backend_info.MaxTextureSize = 16384;
-  g_Config.backend_info.bUsesLowerLeftOrigin = true;
-  g_Config.backend_info.bSupportsExclusiveFullscreen = false;
-  g_Config.backend_info.bSupportsGeometryShaders = true;
-  g_Config.backend_info.bSupportsComputeShaders = false;
-  g_Config.backend_info.bSupports3DVision = false;
-  g_Config.backend_info.bSupportsPostProcessing = true;
-  g_Config.backend_info.bSupportsSSAA = true;
-  g_Config.backend_info.bSupportsReversedDepthRange = true;
-  g_Config.backend_info.bSupportsLogicOp = true;
-  g_Config.backend_info.bSupportsMultithreading = false;
-  g_Config.backend_info.bSupportsCopyToVram = true;
-  g_Config.backend_info.bSupportsLargePoints = true;
-  g_Config.backend_info.bSupportsDepthReadback = true;
-  g_Config.backend_info.bSupportsPartialDepthCopies = true;
-  g_Config.backend_info.bSupportsShaderBinaries = false;
-  g_Config.backend_info.bSupportsPipelineCacheData = false;
-  g_Config.backend_info.bSupportsLodBiasInSampler = true;
-  g_Config.backend_info.bSupportsPartialMultisampleResolve = true;
+  std::unique_ptr<GLContext> temp_gl_context =
+      GLContext::Create(wsi, g_Config.stereo_mode == StereoMode::QuadBuffer, true, false,
+                        Config::Get(Config::GFX_PREFER_GLES));
 
-  // TODO: There is a bug here, if texel buffers or SSBOs/atomics are not supported the graphics
-  // options will show the option when it is not supported. The only way around this would be
-  // creating a context when calling this function to determine what is available.
-  g_Config.backend_info.bSupportsGPUTextureDecoding = true;
-  g_Config.backend_info.bSupportsBBox = true;
+  if (!temp_gl_context)
+    return;
 
-  // Overwritten in OGLRender.cpp later
-  g_Config.backend_info.bSupportsDualSourceBlend = true;
-  g_Config.backend_info.bSupportsPrimitiveRestart = true;
-  g_Config.backend_info.bSupportsPaletteConversion = true;
-  g_Config.backend_info.bSupportsClipControl = true;
-  g_Config.backend_info.bSupportsDepthClamp = true;
-  g_Config.backend_info.bSupportsST3CTextures = false;
-  g_Config.backend_info.bSupportsBPTCTextures = false;
-  g_Config.backend_info.bSupportsCoarseDerivatives = false;
-  g_Config.backend_info.bSupportsTextureQueryLevels = false;
-  g_Config.backend_info.bSupportsSettingObjectNames = false;
-
-  g_Config.backend_info.Adapters.clear();
-
-  // aamodes - 1 is to stay consistent with D3D (means no AA)
-  g_Config.backend_info.AAModes = {1, 2, 4, 8};
+  FillBackendInfo(temp_gl_context.get());
 }
 
 bool VideoBackend::InitializeGLExtensions(GLContext* context)
@@ -141,9 +108,58 @@ bool VideoBackend::InitializeGLExtensions(GLContext* context)
   return true;
 }
 
-bool VideoBackend::FillBackendInfo()
+bool VideoBackend::FillBackendInfo(GLContext* context)
 {
-  InitBackendInfo();
+  if (!InitializeGLExtensions(context))
+    return false;
+
+  g_Config.backend_info.api_type = APIType::OpenGL;
+  g_Config.backend_info.MaxTextureSize = 16384;
+  g_Config.backend_info.bUsesLowerLeftOrigin = true;
+  g_Config.backend_info.bSupportsExclusiveFullscreen = false;
+  g_Config.backend_info.bSupportsGeometryShaders = true;
+  g_Config.backend_info.bSupportsComputeShaders = false;
+  g_Config.backend_info.bSupports3DVision = false;
+  g_Config.backend_info.bSupportsPostProcessing = true;
+  g_Config.backend_info.bSupportsSSAA = true;
+  g_Config.backend_info.bSupportsReversedDepthRange = true;
+  g_Config.backend_info.bSupportsLogicOp = true;
+  g_Config.backend_info.bSupportsMultithreading = false;
+  g_Config.backend_info.bSupportsCopyToVram = true;
+  g_Config.backend_info.bSupportsLargePoints = true;
+  g_Config.backend_info.bSupportsDepthReadback = true;
+  g_Config.backend_info.bSupportsPartialDepthCopies = true;
+  g_Config.backend_info.bSupportsShaderBinaries = false;
+  g_Config.backend_info.bSupportsPipelineCacheData = false;
+  g_Config.backend_info.bSupportsLodBiasInSampler = true;
+  g_Config.backend_info.bSupportsPartialMultisampleResolve = true;
+  // Unneccessary since OGL doesn't use pipelines
+  g_Config.backend_info.bSupportsDynamicVertexLoader = false;
+
+  // TODO: There is a bug here, if texel buffers or SSBOs/atomics are not supported the graphics
+  // options will show the option when it is not supported. The only way around this would be
+  // creating a context when calling this function to determine what is available.
+  g_Config.backend_info.bSupportsGPUTextureDecoding = true;
+  g_Config.backend_info.bSupportsBBox = true;
+
+  // Overwritten in OGLConfig.cpp later
+  g_Config.backend_info.bSupportsDualSourceBlend = true;
+  g_Config.backend_info.bSupportsPrimitiveRestart = true;
+  g_Config.backend_info.bSupportsPaletteConversion = true;
+  g_Config.backend_info.bSupportsClipControl = true;
+  g_Config.backend_info.bSupportsDepthClamp = true;
+  g_Config.backend_info.bSupportsST3CTextures = false;
+  g_Config.backend_info.bSupportsBPTCTextures = false;
+  g_Config.backend_info.bSupportsCoarseDerivatives = false;
+  g_Config.backend_info.bSupportsTextureQueryLevels = false;
+  g_Config.backend_info.bSupportsSettingObjectNames = false;
+
+  g_Config.backend_info.bUsesExplictQuadBuffering = true;
+
+  g_Config.backend_info.Adapters.clear();
+
+  // aamodes - 1 is to stay consistent with D3D (means no AA)
+  g_Config.backend_info.AAModes = {1, 2, 4, 8};
 
   // check for the max vertex attributes
   GLint numvertexattribs = 0;
@@ -166,6 +182,13 @@ bool VideoBackend::FillBackendInfo()
     return false;
   }
 
+  if (!PopulateConfig(context))
+  {
+    // Not all needed extensions are supported, so we have to stop here.
+    // Else some of the next calls might crash.
+    return false;
+  }
+
   // TODO: Move the remaining fields from the Renderer constructor here.
   return true;
 }
@@ -178,44 +201,26 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
   if (!main_gl_context)
     return false;
 
-  if (!InitializeGLExtensions(main_gl_context.get()) || !FillBackendInfo())
+  if (!FillBackendInfo(main_gl_context.get()))
     return false;
 
-  InitializeShared();
-  g_renderer = std::make_unique<Renderer>(std::move(main_gl_context), wsi.render_surface_scale);
+  auto gfx = std::make_unique<OGLGfx>(std::move(main_gl_context), wsi.render_surface_scale);
   ProgramShaderCache::Init();
-  g_vertex_manager = std::make_unique<VertexManager>();
-  g_shader_cache = std::make_unique<VideoCommon::ShaderCache>();
-  g_framebuffer_manager = std::make_unique<FramebufferManager>();
-  g_perf_query = GetPerfQuery();
-  g_texture_cache = std::make_unique<TextureCacheBase>();
   g_sampler_cache = std::make_unique<SamplerCache>();
 
-  if (!g_vertex_manager->Initialize() || !g_shader_cache->Initialize() ||
-      !g_renderer->Initialize() || !g_framebuffer_manager->Initialize() ||
-      !g_texture_cache->Initialize())
-  {
-    PanicAlertFmtT("Failed to initialize renderer classes");
-    Shutdown();
-    return false;
-  }
+  auto vertex_manager = std::make_unique<VertexManager>();
+  auto perf_query = GetPerfQuery(gfx->IsGLES());
+  auto bounding_box = std::make_unique<OGLBoundingBox>();
 
-  g_shader_cache->InitializeShaderCache();
-  return true;
+  return InitializeShared(std::move(gfx), std::move(vertex_manager), std::move(perf_query),
+                          std::move(bounding_box));
 }
 
 void VideoBackend::Shutdown()
 {
-  g_shader_cache->Shutdown();
-  g_renderer->Shutdown();
-  g_sampler_cache.reset();
-  g_texture_cache.reset();
-  g_perf_query.reset();
-  g_vertex_manager.reset();
-  g_framebuffer_manager.reset();
-  g_shader_cache.reset();
-  ProgramShaderCache::Shutdown();
-  g_renderer.reset();
   ShutdownShared();
+
+  ProgramShaderCache::Shutdown();
+  g_sampler_cache.reset();
 }
 }  // namespace OGL

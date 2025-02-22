@@ -7,30 +7,40 @@
 #define DIR_SEP "/"
 #define DIR_SEP_CHR '/'
 
-// The user data dir
+// The current working directory
 #define ROOT_DIR "."
+
+// The normal user directory
 #ifdef _WIN32
-#define USERDATA_DIR "User"
-#define DOLPHIN_DATA_DIR "Dolphin"
-#elif defined __APPLE__
-// On OS X, USERDATA_DIR exists within the .app, but *always* reference
-// the copy in Application Support instead! (Copied on first run)
-// You can use the File::GetUserPath() util for this
-#define USERDATA_DIR "Contents/Resources/User"
-#define DOLPHIN_DATA_DIR "Library/Application Support/Dolphin"
-#elif defined ANDROID
-#define USERDATA_DIR "user"
-#define DOLPHIN_DATA_DIR "/sdcard/dolphin-emu"
-#define NOMEDIA_FILE ".nomedia"
+#define NORMAL_USER_DIR "Dolphin Emulator"
+#elif defined(__APPLE__)
+#define NORMAL_USER_DIR "Library/Application Support/Dolphin"
+#elif defined(ANDROID)
+#define NORMAL_USER_DIR "/sdcard/dolphin-emu"
 #else
-#define USERDATA_DIR "user"
-#define DOLPHIN_DATA_DIR "dolphin-emu"
+#define NORMAL_USER_DIR "dolphin-emu"
 #endif
 
+// The portable user directory
+#ifdef _WIN32
+#define PORTABLE_USER_DIR "User"
+#elif defined(__APPLE__)
+#define PORTABLE_USER_DIR "User"
+#define EMBEDDED_USER_DIR "Contents/Resources/User"
+#else
+#define PORTABLE_USER_DIR "user"
+#define EMBEDDED_USER_DIR PORTABLE_USER_DIR
+#endif
+
+// Flag file to prevent media scanning from indexing a directory
+#define NOMEDIA_FILE ".nomedia"
+
 // Dirs in both User and Sys
+// Legacy setups used /JAP/ while newer setups use /JPN/ by default.
 #define EUR_DIR "EUR"
 #define USA_DIR "USA"
 #define JAP_DIR "JAP"
+#define JPN_DIR "JPN"
 
 // Subdirs in the User dir returned by GetUserPath(D_USER_IDX)
 #define GC_USER_DIR "GC"
@@ -43,6 +53,7 @@
 #define COVERCACHE_DIR "GameCovers"
 #define REDUMPCACHE_DIR "Redump"
 #define SHADERCACHE_DIR "Shaders"
+#define RETROACHIEVEMENTSCACHE_DIR "RetroAchievements"
 #define STATESAVES_DIR "StateSaves"
 #define SCREENSHOTS_DIR "ScreenShots"
 #define LOAD_DIR "Load"
@@ -55,6 +66,9 @@
 #define DUMP_AUDIO_DIR "Audio"
 #define DUMP_DSP_DIR "DSP"
 #define DUMP_SSL_DIR "SSL"
+#define DUMP_DEBUG_DIR "Debug"
+#define DUMP_DEBUG_BRANCHWATCH_DIR "BranchWatch"
+#define DUMP_DEBUG_JITBLOCKS_DIR "JitBlocks"
 #define LOGS_DIR "Logs"
 #define MAIL_LOGS_DIR "Mail"
 #define SHADERS_DIR "Shaders"
@@ -74,6 +88,7 @@
 #define DYNAMICINPUT_DIR "DynamicInputTextures"
 #define GRAPHICSMOD_DIR "GraphicMods"
 #define WIISDSYNC_DIR "WiiSDSync"
+#define ASSEMBLY_DIR "SavedAssembly"
 
 // This one is only used to remove it if it was present
 #define SHADERCACHE_LEGACY_DIR "ShaderCache"
@@ -88,10 +103,10 @@
 #define WIIPAD_CONFIG "WiimoteNew.ini"
 #define GCKEYBOARD_CONFIG "GCKeyNew.ini"
 #define GFX_CONFIG "GFX.ini"
-#define DEBUGGER_CONFIG "Debugger.ini"
 #define LOGGER_CONFIG "Logger.ini"
 #define DUALSHOCKUDPCLIENT_CONFIG "DSUClient.ini"
 #define FREELOOK_CONFIG "FreeLook.ini"
+#define RETROACHIEVEMENTS_CONFIG "RetroAchievements.ini"
 
 // Files in the directory returned by GetUserPath(D_LOGS_IDX)
 #define MAIN_LOG "dolphin.log"
@@ -142,3 +157,10 @@
 
 // Subdirs in Config
 #define GRAPHICSMOD_CONFIG_DIR "GraphicMods"
+
+// GPU drivers
+#define GPU_DRIVERS "GpuDrivers"
+#define GPU_DRIVERS_EXTRACTED "Extracted"
+#define GPU_DRIVERS_TMP "Tmp"
+#define GPU_DRIVERS_HOOK "Hook"
+#define GPU_DRIVERS_FILE_REDIRECT "FileRedirect"

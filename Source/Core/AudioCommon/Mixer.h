@@ -10,6 +10,7 @@
 #include "AudioCommon/SurroundDecoder.h"
 #include "AudioCommon/WaveFile.h"
 #include "Common/CommonTypes.h"
+#include "Common/Config/Config.h"
 
 class PointerWrap;
 
@@ -30,6 +31,7 @@ public:
   void PushStreamingSamples(const short* samples, unsigned int num_samples);
   void PushWiimoteSpeakerSamples(const short* samples, unsigned int num_samples,
                                  unsigned int sample_rate_divisor);
+  void PushSkylanderPortalSamples(const u8* samples, unsigned int num_samples);
   void PushGBASamples(int device_number, const short* samples, unsigned int num_samples);
 
   unsigned int GetSampleRate() const { return m_sampleRate; }
@@ -47,9 +49,6 @@ public:
 
   void StartLogDSPAudio(const std::string& filename);
   void StopLogDSPAudio();
-
-  float GetCurrentSpeed() const { return m_speed.load(); }
-  void UpdateSpeed(float val) { m_speed.store(val); }
 
   // 54000000 doesn't work here as it doesn't evenly divide with 32000, but 108000000 does
   static constexpr u64 FIXED_SAMPLE_RATE_DIVIDEND = 54000000 * 2;
@@ -100,6 +99,7 @@ private:
   MixerFifo m_dma_mixer{this, FIXED_SAMPLE_RATE_DIVIDEND / 32000, false};
   MixerFifo m_streaming_mixer{this, FIXED_SAMPLE_RATE_DIVIDEND / 48000, false};
   MixerFifo m_wiimote_speaker_mixer{this, FIXED_SAMPLE_RATE_DIVIDEND / 3000, true};
+  MixerFifo m_skylander_portal_mixer{this, FIXED_SAMPLE_RATE_DIVIDEND / 8000, true};
   std::array<MixerFifo, 4> m_gba_mixers{MixerFifo{this, FIXED_SAMPLE_RATE_DIVIDEND / 48000, true},
                                         MixerFifo{this, FIXED_SAMPLE_RATE_DIVIDEND / 48000, true},
                                         MixerFifo{this, FIXED_SAMPLE_RATE_DIVIDEND / 48000, true},
@@ -117,12 +117,9 @@ private:
   bool m_log_dtk_audio = false;
   bool m_log_dsp_audio = false;
 
-  // Current rate of emulation (1.0 = 100% speed)
-  std::atomic<float> m_speed{0.0f};
-
   float m_config_emulation_speed;
   int m_config_timing_variance;
   bool m_config_audio_stretch;
 
-  size_t m_config_changed_callback_id;
+  Config::ConfigChangedCallbackID m_config_changed_callback_id;
 };

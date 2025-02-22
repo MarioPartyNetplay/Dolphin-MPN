@@ -2,6 +2,8 @@ add_library(videometal
   MRCHelpers.h
   MTLBoundingBox.mm
   MTLBoundingBox.h
+  MTLGfx.mm
+  MTLGfx.h
   MTLMain.mm
   MTLObjectCache.h
   MTLObjectCache.mm
@@ -9,8 +11,6 @@ add_library(videometal
   MTLPerfQuery.h
   MTLPipeline.mm
   MTLPipeline.h
-  MTLRenderer.mm
-  MTLRenderer.h
   MTLShader.mm
   MTLShader.h
   MTLStateTracker.mm
@@ -39,3 +39,5 @@ PRIVATE
   ${METAL_LIBRARY}
   ${QUARTZCORE_LIBRARY}
 )
+
+target_compile_options(videometal PRIVATE -fno-objc-arc)

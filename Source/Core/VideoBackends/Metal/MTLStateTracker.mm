@@ -4,10 +4,13 @@
 #include "VideoBackends/Metal/MTLStateTracker.h"
 
 #include <algorithm>
+#include <bit>
 #include <mutex>
 
+#include "Common/Align.h"
 #include "Common/Assert.h"
-#include "Common/BitUtils.h"
+
+#include "Core/System.h"
 
 #include "VideoBackends/Metal/MTLObjectCache.h"
 #include "VideoBackends/Metal/MTLPerfQuery.h"
@@ -15,6 +18,7 @@
 #include "VideoBackends/Metal/MTLTexture.h"
 #include "VideoBackends/Metal/MTLUtil.h"
 
+#include "VideoCommon/GeometryShaderManager.h"
 #include "VideoCommon/PixelShaderManager.h"
 #include "VideoCommon/Statistics.h"
 #include "VideoCommon/VertexShaderManager.h"
@@ -44,12 +48,11 @@ static NSString* GetName(Metal::StateTracker::UploadBuffer buffer)
   // clang-format off
   switch (buffer)
   {
-    case Metal::StateTracker::UploadBuffer::TextureData: return @"Texture Data";
-    case Metal::StateTracker::UploadBuffer::Texels:      return @"Texels";
-    case Metal::StateTracker::UploadBuffer::Vertex:      return @"Vertices";
-    case Metal::StateTracker::UploadBuffer::Index:       return @"Indices";
-    case Metal::StateTracker::UploadBuffer::Uniform:     return @"Uniforms";
-    case Metal::StateTracker::UploadBuffer::Other:       return @"Generic Upload";
+    case Metal::StateTracker::UploadBuffer::Texels:  return @"Texels";
+    case Metal::StateTracker::UploadBuffer::Vertex:  return @"Vertices";
+    case Metal::StateTracker::UploadBuffer::Index:   return @"Indices";
+    case Metal::StateTracker::UploadBuffer::Uniform: return @"Uniforms";
+    case Metal::StateTracker::UploadBuffer::Other:   return @"Generic Upload";
   }
   // clang-format on
 }
@@ -58,8 +61,8 @@ static NSString* GetName(Metal::StateTracker::UploadBuffer buffer)
 
 bool Metal::StateTracker::UsageTracker::PrepareForAllocation(u64 last_draw, size_t amt)
 {
-  auto removeme = std::find_if(m_usage.begin(), m_usage.end(),
-                               [last_draw](UsageEntry usage) { return usage.drawno > last_draw; });
+  auto removeme = std::ranges::find_if(
+      m_usage, [last_draw](UsageEntry usage) { return usage.drawno > last_draw; });
   if (removeme != m_usage.begin())
     m_usage.erase(m_usage.begin(), removeme);
 
@@ -104,12 +107,7 @@ void Metal::StateTracker::UsageTracker::Reset(size_t new_size)
 Metal::StateTracker::StateTracker() : m_backref(std::make_shared<Backref>(this))
 {
   m_flags.should_apply_label = true;
-  for (MRCOwned<MTLRenderPassDescriptor*>& rpdesc : m_render_pass_desc)
-  {
-    rpdesc = MRCTransfer([MTLRenderPassDescriptor new]);
-    [[rpdesc depthAttachment] setStoreAction:MTLStoreActionStore];
-    [[rpdesc stencilAttachment] setStoreAction:MTLStoreActionStore];
-  }
+  m_fence = MRCTransfer([g_device newFence]);
   m_resolve_pass_desc = MRCTransfer([MTLRenderPassDescriptor new]);
   auto color0 = [[m_resolve_pass_desc colorAttachments] objectAtIndexedSubscript:0];
   [color0 setLoadAction:MTLLoadActionLoad];
@@ -140,12 +138,13 @@ Metal::StateTracker::~StateTracker()
 
 // MARK: BufferPair Ops
 
-std::pair<void*, size_t> Metal::StateTracker::Preallocate(UploadBuffer buffer_idx, size_t amt)
+Metal::StateTracker::Map Metal::StateTracker::AllocateForTextureUpload(size_t amt)
 {
-  Buffer& buffer = m_upload_buffers[static_cast<int>(buffer_idx)];
+  amt = (amt + 15) & ~15ull;
+  CPUBuffer& buffer = m_texture_upload_buffer;
   u64 last_draw = m_last_finished_draw.load(std::memory_order_acquire);
   bool needs_new = buffer.usage.PrepareForAllocation(last_draw, amt);
-  if (__builtin_expect(needs_new, false))
+  if (needs_new) [[unlikely]]
   {
     // Orphan buffer
     size_t newsize = std::max<size_t>(buffer.usage.Size() * 2, 4096);
@@ -154,10 +153,60 @@ std::pair<void*, size_t> Metal::StateTracker::Preallocate(UploadBuffer buffer_id
     MTLResourceOptions options =
         MTLResourceStorageModeShared | MTLResourceCPUCacheModeWriteCombined;
     buffer.mtlbuffer = MRCTransfer([g_device newBufferWithLength:newsize options:options]);
-    [buffer.mtlbuffer setLabel:GetName(buffer_idx)];
+    [buffer.mtlbuffer setLabel:@"Texture Upload Buffer"];
     ASSERT_MSG(VIDEO, buffer.mtlbuffer, "Failed to allocate MTLBuffer (out of memory?)");
     buffer.buffer = [buffer.mtlbuffer contents];
     buffer.usage.Reset(newsize);
+  }
+
+  size_t pos = buffer.usage.Allocate(m_current_draw, amt);
+
+  Map ret = {buffer.mtlbuffer, pos, reinterpret_cast<char*>(buffer.buffer) + pos};
+  DEBUG_ASSERT(pos <= buffer.usage.Size() &&
+               "Previous code should have guaranteed there was enough space");
+  return ret;
+}
+
+std::pair<void*, size_t> Metal::StateTracker::Preallocate(UploadBuffer buffer_idx, size_t amt)
+{
+  BufferPair& buffer = m_upload_buffers[static_cast<int>(buffer_idx)];
+  u64 last_draw = m_last_finished_draw.load(std::memory_order_acquire);
+  size_t base_pos = buffer.usage.Pos();
+  bool needs_new = buffer.usage.PrepareForAllocation(last_draw, amt);
+  bool needs_upload = needs_new || buffer.usage.Pos() == 0;
+  if (m_manual_buffer_upload && needs_upload)
+  {
+    if (base_pos != buffer.last_upload)
+    {
+      id<MTLBlitCommandEncoder> encoder = GetUploadEncoder();
+      [encoder copyFromBuffer:buffer.cpubuffer
+                 sourceOffset:buffer.last_upload
+                     toBuffer:buffer.gpubuffer
+            destinationOffset:buffer.last_upload
+                         size:base_pos - buffer.last_upload];
+    }
+    buffer.last_upload = 0;
+  }
+  if (needs_new) [[unlikely]]
+  {
+    // Orphan buffer
+    size_t newsize = std::max<size_t>(buffer.usage.Size() * 2, 4096);
+    while (newsize < amt)
+      newsize *= 2;
+    MTLResourceOptions options =
+        MTLResourceStorageModeShared | MTLResourceCPUCacheModeWriteCombined;
+    buffer.cpubuffer = MRCTransfer([g_device newBufferWithLength:newsize options:options]);
+    [buffer.cpubuffer setLabel:GetName(buffer_idx)];
+    ASSERT_MSG(VIDEO, buffer.cpubuffer, "Failed to allocate MTLBuffer (out of memory?)");
+    buffer.buffer = [buffer.cpubuffer contents];
+    buffer.usage.Reset(newsize);
+    if (g_features.manual_buffer_upload)
+    {
+      options = MTLResourceStorageModePrivate | MTLResourceHazardTrackingModeUntracked;
+      buffer.gpubuffer = MRCTransfer([g_device newBufferWithLength:newsize options:options]);
+      [buffer.gpubuffer setLabel:GetName(buffer_idx)];
+      ASSERT_MSG(VIDEO, buffer.gpubuffer, "Failed to allocate MTLBuffer (out of memory?)");
+    }
   }
   size_t pos = buffer.usage.Pos();
   return std::make_pair(reinterpret_cast<char*>(buffer.buffer) + pos, pos);
@@ -166,16 +215,45 @@ std::pair<void*, size_t> Metal::StateTracker::Preallocate(UploadBuffer buffer_id
 Metal::StateTracker::Map Metal::StateTracker::CommitPreallocation(UploadBuffer buffer_idx,
                                                                   size_t amt)
 {
-  Buffer& buffer = m_upload_buffers[static_cast<int>(buffer_idx)];
+  BufferPair& buffer = m_upload_buffers[static_cast<int>(buffer_idx)];
   size_t pos = buffer.usage.Allocate(m_current_draw, amt);
   Map ret = {nil, pos, reinterpret_cast<char*>(buffer.buffer) + pos};
-  ret.gpu_buffer = buffer.mtlbuffer;
+  ret.gpu_buffer = m_manual_buffer_upload ? buffer.gpubuffer : buffer.cpubuffer;
   DEBUG_ASSERT(pos <= buffer.usage.Size() &&
                "Previous code should have guaranteed there was enough space");
   return ret;
 }
 
+void Metal::StateTracker::Sync(BufferPair& buffer)
+{
+  if (!m_manual_buffer_upload || buffer.usage.Pos() == buffer.last_upload)
+    return;
+
+  id<MTLBlitCommandEncoder> encoder = GetUploadEncoder();
+  [encoder copyFromBuffer:buffer.cpubuffer
+             sourceOffset:buffer.last_upload
+                 toBuffer:buffer.gpubuffer
+        destinationOffset:buffer.last_upload
+                     size:buffer.usage.Pos() - buffer.last_upload];
+  buffer.last_upload = buffer.usage.Pos();
+}
+
 // MARK: Render Pass / Encoder Management
+
+id<MTLBlitCommandEncoder> Metal::StateTracker::GetUploadEncoder()
+{
+  if (!m_upload_cmdbuf)
+  {
+    @autoreleasepool
+    {
+      m_upload_cmdbuf = MRCRetain([g_queue commandBuffer]);
+      [m_upload_cmdbuf setLabel:@"Vertex Upload"];
+      m_upload_encoder = MRCRetain([m_upload_cmdbuf blitCommandEncoder]);
+      [m_upload_encoder setLabel:@"Vertex Upload"];
+    }
+  }
+  return m_upload_encoder;
+}
 
 id<MTLBlitCommandEncoder> Metal::StateTracker::GetTextureUploadEncoder()
 {
@@ -216,27 +294,8 @@ void Metal::StateTracker::SetCurrentFramebuffer(Framebuffer* framebuffer)
 MTLRenderPassDescriptor* Metal::StateTracker::GetRenderPassDescriptor(Framebuffer* framebuffer,
                                                                       MTLLoadAction load_action)
 {
-  const AbstractTextureFormat depth_fmt = framebuffer->GetDepthFormat();
-  MTLRenderPassDescriptor* desc;
-  if (depth_fmt == AbstractTextureFormat::Undefined)
-    desc = m_render_pass_desc[0];
-  else if (!Util::HasStencil(depth_fmt))
-    desc = m_render_pass_desc[1];
-  else
-    desc = m_render_pass_desc[2];
-  desc.colorAttachments[0].texture = framebuffer->GetColor();
-  desc.colorAttachments[0].loadAction = load_action;
-  if (depth_fmt != AbstractTextureFormat::Undefined)
-  {
-    desc.depthAttachment.texture = framebuffer->GetDepth();
-    desc.depthAttachment.loadAction = load_action;
-    if (Util::HasStencil(depth_fmt))
-    {
-      desc.stencilAttachment.texture = framebuffer->GetDepth();
-      desc.stencilAttachment.loadAction = load_action;
-    }
-  }
-  return desc;
+  framebuffer->SetLoadAction(load_action);
+  return framebuffer->PassDesc();
 }
 
 void Metal::StateTracker::BeginClearRenderPass(MTLClearColor color, float depth)
@@ -245,11 +304,9 @@ void Metal::StateTracker::BeginClearRenderPass(MTLClearColor color, float depth)
   MTLRenderPassDescriptor* desc = GetRenderPassDescriptor(framebuffer, MTLLoadActionClear);
   desc.colorAttachments[0].clearColor = color;
   if (framebuffer->GetDepthFormat() != AbstractTextureFormat::Undefined)
-  {
     desc.depthAttachment.clearDepth = depth;
-    if (Util::HasStencil(framebuffer->GetDepthFormat()))
-      desc.stencilAttachment.clearStencil = 0;
-  }
+  for (size_t i = 0; i < framebuffer->NumAdditionalColorTextures(); i++)
+    desc.colorAttachments[i + 1].clearColor = color;
   BeginRenderPass(desc);
 }
 
@@ -269,6 +326,8 @@ void Metal::StateTracker::BeginRenderPass(MTLRenderPassDescriptor* descriptor)
       MRCRetain([GetRenderCmdBuf() renderCommandEncoderWithDescriptor:descriptor]);
   if (m_current_perf_query)
     [descriptor setVisibilityResultBuffer:nil];
+  if (m_manual_buffer_upload)
+    [m_current_render_encoder waitForFence:m_fence beforeStages:MTLRenderStageVertex];
   AbstractTexture* attachment = m_current_framebuffer->GetColorAttachment();
   if (!attachment)
     attachment = m_current_framebuffer->GetDepthAttachment();
@@ -286,8 +345,8 @@ void Metal::StateTracker::BeginRenderPass(MTLRenderPassDescriptor* descriptor)
   m_current.cull_mode = MTLCullModeNone;
   m_current.perf_query_group = static_cast<PerfQueryGroup>(-1);
   m_flags.NewEncoder();
-  m_dirty_samplers = 0xff;
-  m_dirty_textures = 0xff;
+  m_dirty_samplers = (1 << MAX_SAMPLERS) - 1;
+  m_dirty_textures = (1 << MAX_TEXTURES) - 1;
   CheckScissor();
   CheckViewport();
   ASSERT_MSG(VIDEO, m_current_render_encoder, "Failed to create render encoder!");
@@ -298,9 +357,11 @@ void Metal::StateTracker::BeginComputePass()
   EndRenderPass();
   m_current_compute_encoder = MRCRetain([GetRenderCmdBuf() computeCommandEncoder]);
   [m_current_compute_encoder setLabel:@"Compute"];
+  if (m_manual_buffer_upload)
+    [m_current_compute_encoder waitForFence:m_fence];
   m_flags.NewEncoder();
-  m_dirty_samplers = 0xff;
-  m_dirty_textures = 0xff;
+  m_dirty_samplers = (1 << MAX_SAMPLERS) - 1;
+  m_dirty_textures = (1 << MAX_TEXTURES) - 1;
 }
 
 void Metal::StateTracker::EndRenderPass()
@@ -325,6 +386,20 @@ void Metal::StateTracker::FlushEncoders()
   if (!m_current_render_cmdbuf)
     return;
   EndRenderPass();
+  for (int i = 0; i <= static_cast<int>(UploadBuffer::Last); ++i)
+    Sync(m_upload_buffers[i]);
+  if (!m_manual_buffer_upload)
+  {
+    ASSERT(!m_upload_cmdbuf && "Should never be used!");
+  }
+  else if (m_upload_cmdbuf)
+  {
+    [m_upload_encoder updateFence:m_fence];
+    [m_upload_encoder endEncoding];
+    [m_upload_cmdbuf commit];
+    m_upload_encoder = nullptr;
+    m_upload_cmdbuf = nullptr;
+  }
   if (m_texture_upload_cmdbuf)
   {
     [m_texture_upload_encoder endEncoding];
@@ -333,27 +408,30 @@ void Metal::StateTracker::FlushEncoders()
     m_texture_upload_cmdbuf = nullptr;
   }
   [m_current_render_cmdbuf
-    addCompletedHandler:[backref = m_backref, draw = m_current_draw,
-                         q = std::move(m_current_perf_query)](id<MTLCommandBuffer> buf) {
-      std::lock_guard<std::mutex> guard(backref->mtx);
-      if (StateTracker* tracker = backref->state_tracker)
-      {
-        // We can do the update non-atomically because we only ever update under the lock
-        u64 newval = std::max(draw, tracker->m_last_finished_draw.load(std::memory_order_relaxed));
-        tracker->m_last_finished_draw.store(newval, std::memory_order_release);
-        if (q)
+      addCompletedHandler:[backref = m_backref, draw = m_current_draw,
+                           q = std::move(m_current_perf_query)](id<MTLCommandBuffer> buf) {
+        std::lock_guard<std::mutex> guard(backref->mtx);
+        if (StateTracker* tracker = backref->state_tracker)
         {
-          if (PerfQuery* query = static_cast<PerfQuery*>(g_perf_query.get()))
-            query->ReturnResults(q->contents, q->groups.data(), q->groups.size(), q->query_id);
-          tracker->m_perf_query_tracker_cache.emplace_back(std::move(q));
+          // We can do the update non-atomically because we only ever update under the lock
+          u64 newval =
+              std::max(draw, tracker->m_last_finished_draw.load(std::memory_order_relaxed));
+          tracker->m_last_finished_draw.store(newval, std::memory_order_release);
+          if (q)
+          {
+            if (PerfQuery* query = static_cast<PerfQuery*>(g_perf_query.get()))
+              query->ReturnResults(q->contents, q->groups.data(), q->groups.size(), q->query_id);
+            tracker->m_perf_query_tracker_cache.emplace_back(std::move(q));
+          }
         }
-      }
-    }];
+      }];
   m_current_perf_query = nullptr;
   [m_current_render_cmdbuf commit];
   m_last_render_cmdbuf = std::move(m_current_render_cmdbuf);
   m_current_render_cmdbuf = nullptr;
   m_current_draw++;
+  if (g_features.manual_buffer_upload && !m_manual_buffer_upload)
+    SetManualBufferUpload(true);
 }
 
 void Metal::StateTracker::WaitForFlushedEncoders()
@@ -365,6 +443,23 @@ void Metal::StateTracker::ReloadSamplers()
 {
   for (size_t i = 0; i < std::size(m_state.samplers); ++i)
     m_state.samplers[i] = g_object_cache->GetSampler(m_state.sampler_states[i]);
+}
+
+void Metal::StateTracker::SetManualBufferUpload(bool enabled)
+{
+  // When a game does something that needs CPU-GPU sync (e.g. bbox, texture download, etc),
+  // the next command buffer will be done with manual buffer upload disabled,
+  // since overlapping the upload with the previous draw won't be possible (due to sync).
+  // This greatly improves performance in heavy bbox games like Super Paper Mario.
+  m_manual_buffer_upload = enabled;
+  if (enabled)
+  {
+    for (BufferPair& buffer : m_upload_buffers)
+    {
+      // Update sync positions, since Sync doesn't do it when manual buffer upload is off
+      buffer.last_upload = buffer.usage.Pos();
+    }
+  }
 }
 
 // MARK: State Setters
@@ -441,15 +536,6 @@ void Metal::StateTracker::SetSampler(u32 idx, const SamplerState& sampler)
     SetSamplerForce(idx, sampler);
 }
 
-void Metal::StateTracker::SetComputeTexture(const Texture* texture)
-{
-  if (m_state.compute_texture != texture)
-  {
-    m_state.compute_texture = texture;
-    m_flags.has_compute_texture = false;
-  }
-}
-
 void Metal::StateTracker::UnbindTexture(id<MTLTexture> texture)
 {
   for (size_t i = 0; i < std::size(m_state.textures); ++i)
@@ -462,20 +548,24 @@ void Metal::StateTracker::UnbindTexture(id<MTLTexture> texture)
   }
 }
 
-void Metal::StateTracker::InvalidateUniforms(bool vertex, bool fragment)
+void Metal::StateTracker::InvalidateUniforms(bool vertex, bool geometry, bool fragment)
 {
   m_flags.has_gx_vs_uniform &= !vertex;
+  m_flags.has_gx_gs_uniform &= !geometry;
   m_flags.has_gx_ps_uniform &= !fragment;
 }
 
 void Metal::StateTracker::SetUtilityUniform(const void* buffer, size_t size)
 {
+  // Shader often uses 16-byte aligned types
+  // Metal validation will complain if our upload is smaller than the struct with padding
+  size_t aligned_size = Common::AlignUp(size, 16);
   if (m_state.utility_uniform_capacity < size)
   {
-    m_state.utility_uniform = std::unique_ptr<u8[]>(new u8[size]);
-    m_state.utility_uniform_capacity = size;
+    m_state.utility_uniform = std::unique_ptr<u8[]>(new u8[aligned_size]);
+    m_state.utility_uniform_capacity = static_cast<u32>(aligned_size);
   }
-  m_state.utility_uniform_size = size;
+  m_state.utility_uniform_size = static_cast<u32>(aligned_size);
   memcpy(m_state.utility_uniform.get(), buffer, size);
   m_flags.has_utility_vs_uniform = false;
   m_flags.has_utility_ps_uniform = false;
@@ -552,6 +642,7 @@ std::shared_ptr<Metal::StateTracker::PerfQueryTracker> Metal::StateTracker::NewP
                                                   m_perf_query_tracker_counter++]];
       tracker->buffer = MRCTransfer(buffer);
       tracker->contents = static_cast<const u64*>([buffer contents]);
+      tracker->query_id = m_state.perf_query_id;
       return tracker;
     }
   }
@@ -560,6 +651,8 @@ std::shared_ptr<Metal::StateTracker::PerfQueryTracker> Metal::StateTracker::NewP
     // Reuse an old one
     std::shared_ptr<PerfQueryTracker> tracker = std::move(m_perf_query_tracker_cache.back());
     m_perf_query_tracker_cache.pop_back();
+    tracker->groups.clear();
+    tracker->query_id = m_state.perf_query_id;
     return tracker;
   }
 }
@@ -567,15 +660,26 @@ std::shared_ptr<Metal::StateTracker::PerfQueryTracker> Metal::StateTracker::NewP
 void Metal::StateTracker::EnablePerfQuery(PerfQueryGroup group, u32 query_id)
 {
   m_state.perf_query_group = group;
+  m_state.perf_query_id = query_id;
   if (!m_current_perf_query || m_current_perf_query->query_id != query_id ||
       m_current_perf_query->groups.size() == PERF_QUERY_BUFFER_SIZE)
   {
     if (m_current_render_encoder)
       EndRenderPass();
-    if (!m_current_perf_query)
-      m_current_perf_query = NewPerfQueryTracker();
-    m_current_perf_query->groups.clear();
-    m_current_perf_query->query_id = query_id;
+    if (m_current_perf_query)
+    {
+      [m_current_render_cmdbuf
+          addCompletedHandler:[backref = m_backref, q = std::move(m_current_perf_query)](id) {
+            std::lock_guard<std::mutex> guard(backref->mtx);
+            if (StateTracker* tracker = backref->state_tracker)
+            {
+              if (PerfQuery* query = static_cast<PerfQuery*>(g_perf_query.get()))
+                query->ReturnResults(q->contents, q->groups.data(), q->groups.size(), q->query_id);
+              tracker->m_perf_query_tracker_cache.emplace_back(std::move(q));
+            }
+          }];
+      m_current_perf_query.reset();
+    }
   }
 }
 
@@ -594,8 +698,8 @@ static constexpr NSString* LABEL_UTIL = @"Utility Draw";
 static NSRange RangeOfBits(u32 value)
 {
   ASSERT(value && "Value must be nonzero");
-  u32 low = Common::CountTrailingZeros(value);
-  u32 high = 31 - Common::CountLeadingZeros(value);
+  int low = std::countr_zero(value);
+  int high = 31 - std::countl_zero(value);
   return NSMakeRange(low, high + 1 - low);
 }
 
@@ -608,7 +712,7 @@ void Metal::StateTracker::PrepareRender()
     BeginRenderPass(MTLLoadActionLoad);
   id<MTLRenderCommandEncoder> enc = m_current_render_encoder;
   const Pipeline* pipe = m_state.render_pipeline;
-  bool is_gx = pipe->Usage() == AbstractPipelineUsage::GX;
+  bool is_gx = pipe->Usage() != AbstractPipelineUsage::Utility;
   NSString* label = is_gx ? LABEL_GX : LABEL_UTIL;
   if (m_flags.should_apply_label && m_current.label != label)
   {
@@ -679,19 +783,19 @@ void Metal::StateTracker::PrepareRender()
     if (m_state.vertices)
       SetVertexBufferNow(0, m_state.vertices, 0);
   }
-  if (u8 dirty = m_dirty_textures & pipe->GetTextures())
+  if (u32 dirty = m_dirty_textures & pipe->GetTextures())
   {
     m_dirty_textures &= ~pipe->GetTextures();
     NSRange range = RangeOfBits(dirty);
     [enc setFragmentTextures:&m_state.textures[range.location] withRange:range];
   }
-  if (u8 dirty = m_dirty_samplers & pipe->GetSamplers())
+  if (u32 dirty = m_dirty_samplers & pipe->GetSamplers())
   {
     m_dirty_samplers &= ~pipe->GetSamplers();
     NSRange range = RangeOfBits(dirty);
     [enc setFragmentSamplerStates:&m_state.samplers[range.location]
-                     lodMinClamps:m_state.sampler_min_lod.data()
-                     lodMaxClamps:m_state.sampler_max_lod.data()
+                     lodMinClamps:&m_state.sampler_min_lod[range.location]
+                     lodMaxClamps:&m_state.sampler_max_lod[range.location]
                         withRange:range];
   }
   if (m_state.perf_query_group != m_current.perf_query_group)
@@ -715,18 +819,32 @@ void Metal::StateTracker::PrepareRender()
     {
       m_flags.has_gx_vs_uniform = true;
       Map map = Allocate(UploadBuffer::Uniform, sizeof(VertexShaderConstants), AlignMask::Uniform);
-      memcpy(map.cpu_buffer, &VertexShaderManager::constants, sizeof(VertexShaderConstants));
+      auto& system = Core::System::GetInstance();
+      auto& vertex_shader_manager = system.GetVertexShaderManager();
+      memcpy(map.cpu_buffer, &vertex_shader_manager.constants, sizeof(VertexShaderConstants));
       SetVertexBufferNow(1, map.gpu_buffer, map.gpu_offset);
       if (pipe->UsesFragmentBuffer(1))
         SetFragmentBufferNow(1, map.gpu_buffer, map.gpu_offset);
       ADDSTAT(g_stats.this_frame.bytes_uniform_streamed,
               Align(sizeof(VertexShaderConstants), AlignMask::Uniform));
     }
+    if (!m_flags.has_gx_gs_uniform && pipe->UsesVertexBuffer(2))
+    {
+      m_flags.has_gx_gs_uniform = true;
+      auto& system = Core::System::GetInstance();
+      auto& geometry_shader_manager = system.GetGeometryShaderManager();
+      [m_current_render_encoder setVertexBytes:&geometry_shader_manager.constants
+                                        length:sizeof(GeometryShaderConstants)
+                                       atIndex:2];
+      ADDSTAT(g_stats.this_frame.bytes_uniform_streamed, sizeof(GeometryShaderConstants));
+    }
     if (!m_flags.has_gx_ps_uniform)
     {
       m_flags.has_gx_ps_uniform = true;
       Map map = Allocate(UploadBuffer::Uniform, sizeof(PixelShaderConstants), AlignMask::Uniform);
-      memcpy(map.cpu_buffer, &PixelShaderManager::constants, sizeof(PixelShaderConstants));
+      auto& system = Core::System::GetInstance();
+      auto& pixel_shader_manager = system.GetPixelShaderManager();
+      memcpy(map.cpu_buffer, &pixel_shader_manager.constants, sizeof(PixelShaderConstants));
       SetFragmentBufferNow(0, map.gpu_buffer, map.gpu_offset);
       ADDSTAT(g_stats.this_frame.bytes_uniform_streamed,
               Align(sizeof(PixelShaderConstants), AlignMask::Uniform));
@@ -770,10 +888,31 @@ void Metal::StateTracker::PrepareCompute()
     m_flags.has_pipeline = true;
     [enc setComputePipelineState:pipe->GetComputePipeline()];
   }
-  if (!m_flags.has_compute_texture && pipe->UsesTexture(0))
+  if (u32 dirty = m_dirty_textures & pipe->GetTextures())
   {
-    m_flags.has_compute_texture = true;
-    [enc setTexture:m_state.compute_texture->GetMTLTexture() atIndex:0];
+    m_dirty_textures &= ~pipe->GetTextures();
+    // Since there's two sets of textures, it's likely there'll be a few in each
+    // Check each set separately to avoid doing too many unneccessary bindings
+    constexpr u32 lo_mask = (1 << VideoCommon::MAX_COMPUTE_SHADER_SAMPLERS) - 1;
+    if (u32 lo = dirty & lo_mask)
+    {
+      NSRange range = RangeOfBits(lo);
+      [enc setTextures:&m_state.textures[range.location] withRange:range];
+    }
+    if (u32 hi = dirty & ~lo_mask)
+    {
+      NSRange range = RangeOfBits(hi);
+      [enc setTextures:&m_state.textures[range.location] withRange:range];
+    }
+  }
+  if (u32 dirty = m_dirty_samplers & pipe->GetSamplers())
+  {
+    m_dirty_samplers &= ~pipe->GetSamplers();
+    NSRange range = RangeOfBits(dirty);
+    [enc setSamplerStates:&m_state.samplers[range.location]
+             lodMinClamps:&m_state.sampler_min_lod[range.location]
+             lodMaxClamps:&m_state.sampler_max_lod[range.location]
+                withRange:range];
   }
   // Compute and render can't happen at the same time, so just reuse one of the flags
   if (!m_flags.has_utility_vs_uniform && pipe->UsesBuffer(0))

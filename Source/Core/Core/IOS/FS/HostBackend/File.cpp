@@ -81,6 +81,12 @@ Result<FileHandle> HostFileSystem::OpenFile(Uid, Gid, const std::string& path, M
     return ResultCode::NoFreeHandle;
 
   const std::string host_path = BuildFilename(path).host_path;
+  if (File::IsDirectory(host_path))
+  {
+    *handle = Handle{};
+    return ResultCode::Invalid;
+  }
+
   if (!File::IsFile(host_path))
   {
     *handle = Handle{};
@@ -201,8 +207,8 @@ Result<FileStatus> HostFileSystem::GetFileStatus(Fd fd)
 
 HostFileSystem::Handle* HostFileSystem::AssignFreeHandle()
 {
-  const auto it = std::find_if(m_handles.begin(), m_handles.end(),
-                               [](const Handle& handle) { return !handle.opened; });
+  const auto it =
+      std::ranges::find_if(m_handles, [](const Handle& handle) { return !handle.opened; });
   if (it == m_handles.end())
     return nullptr;
 

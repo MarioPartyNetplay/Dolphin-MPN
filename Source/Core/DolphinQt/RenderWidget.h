@@ -34,21 +34,26 @@ signals:
 
 private:
   void HandleCursorTimer();
+  void OnHandleChanged(void* handle);
   void OnHideCursorChanged();
   void OnNeverHideCursorChanged();
   void OnLockCursorChanged();
   void OnKeepOnTopChanged(bool top);
   void UpdateCursor();
-  void PassEventToImGui(const QEvent* event);
-  void SetImGuiKeyMap();
+  void PassEventToPresenter(const QEvent* event);
+  void SetPresenterKeyMap();
   void dragEnterEvent(QDragEnterEvent* event) override;
   void dropEvent(QDropEvent* event) override;
 
   static constexpr int MOUSE_HIDE_DELAY = 3000;
   QTimer* m_mouse_timer;
   QPoint m_last_mouse{};
+  int m_last_window_width = 0;
+  int m_last_window_height = 0;
+  float m_last_window_scale = 0;
   bool m_cursor_locked = false;
   bool m_lock_cursor_on_next_activation = false;
   bool m_dont_lock_cursor_on_show = false;
   bool m_waiting_for_message_box = false;
+  bool m_should_unpause_on_focus = false;
 };

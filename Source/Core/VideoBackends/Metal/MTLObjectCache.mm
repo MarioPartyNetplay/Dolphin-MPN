@@ -17,6 +17,7 @@
 #include "VideoCommon/AbstractPipeline.h"
 #include "VideoCommon/NativeVertexFormat.h"
 #include "VideoCommon/VertexShaderGen.h"
+#include "VideoCommon/VideoBackendBase.h"
 #include "VideoCommon/VideoConfig.h"
 
 MRCOwned<id<MTLDevice>> Metal::g_device;
@@ -91,8 +92,8 @@ static const char* to_string(MTLCompareFunction compare)
 
 // clang-format on
 
-static void SetupDepthStencil(
-    MRCOwned<id<MTLDepthStencilState>> (&dss)[Metal::DepthStencilSelector::N_VALUES])
+static void
+SetupDepthStencil(MRCOwned<id<MTLDepthStencilState>> (&dss)[Metal::DepthStencilSelector::N_VALUES])
 {
   auto desc = MRCTransfer([MTLDepthStencilDescriptor new]);
   Metal::DepthStencilSelector sel;
@@ -220,7 +221,7 @@ static MTLCullMode Convert(CullMode cull)
   switch (cull)
   {
   case CullMode::None:
-  case CullMode::All:  // Handled by disabling rasterization
+  case CullMode::All:  // Handled by VertexLoaderManager::RunVertices
     return MTLCullModeNone;
   case CullMode::Front:
     return MTLCullModeFront;
@@ -289,7 +290,8 @@ public:
       }
     };
     template <size_t N>
-    static void CopyAll(std::array<VertexAttribute, N>& output, const AttributeFormat (&input)[N])
+    static void CopyAll(std::array<VertexAttribute, N>& output,
+                        const std::array<AttributeFormat, N>& input)
     {
       for (size_t i = 0; i < N; ++i)
         output[i] = VertexAttribute(input[i]);
@@ -312,6 +314,8 @@ public:
       framebuffer.color_texture_format = cfg.framebuffer_state.color_texture_format.Value();
       framebuffer.depth_texture_format = cfg.framebuffer_state.depth_texture_format.Value();
       framebuffer.samples = cfg.framebuffer_state.samples.Value();
+      framebuffer.additional_color_attachment_count =
+          cfg.framebuffer_state.additional_color_attachment_count.Value();
       blend.colorupdate = cfg.blending_state.colorupdate.Value();
       blend.alphaupdate = cfg.blending_state.alphaupdate.Value();
       if (cfg.blending_state.blendenable)
@@ -327,13 +331,14 @@ public:
         blend.subtractAlpha  = cfg.blending_state.subtractAlpha.Value();
         // clang-format on
       }
-      // Throw extras in bits we don't otherwise use
-      if (cfg.rasterization_state.cullmode == CullMode::All)
-        blend.hex |= 1 << 29;
-      if (cfg.rasterization_state.primitive == PrimitiveType::Points)
-        blend.hex |= 1 << 30;
-      else if (cfg.rasterization_state.primitive == PrimitiveType::Lines)
-        blend.hex |= 1 << 31;
+
+      if (cfg.usage != AbstractPipelineUsage::GXUber)
+      {
+        if (cfg.rasterization_state.primitive == PrimitiveType::Points)
+          is_points = true;
+        else if (cfg.rasterization_state.primitive == PrimitiveType::Lines)
+          is_lines = true;
+      }
     }
     PipelineID() { memset(this, 0, sizeof(*this)); }
     PipelineID(const PipelineID& other) { memcpy(this, &other, sizeof(*this)); }
@@ -359,7 +364,13 @@ public:
     VertexAttribute v_posmtx;
     const Shader* vertex_shader;
     const Shader* fragment_shader;
-    BlendingState blend;
+    union
+    {
+      BlendingState blend;
+      // Throw extras in bits we don't otherwise use
+      BitField<30, 1, bool, u32> is_points;
+      BitField<31, 1, bool, u32> is_lines;
+    };
     FramebufferState framebuffer;
   };
 
@@ -377,24 +388,17 @@ public:
       auto desc = MRCTransfer([MTLRenderPipelineDescriptor new]);
       [desc setVertexFunction:static_cast<const Shader*>(config.vertex_shader)->GetShader()];
       [desc setFragmentFunction:static_cast<const Shader*>(config.pixel_shader)->GetShader()];
-      if (config.usage == AbstractPipelineUsage::GX)
-      {
-        if ([[[desc vertexFunction] label] containsString:@"Uber"])
-          [desc
-              setLabel:[NSString stringWithFormat:@"GX Uber Pipeline %d", m_pipeline_counter[0]++]];
-        else
-          [desc setLabel:[NSString stringWithFormat:@"GX Pipeline %d", m_pipeline_counter[1]++]];
-      }
+      if (config.usage == AbstractPipelineUsage::GXUber)
+        [desc setLabel:[NSString stringWithFormat:@"GX Uber Pipeline %d", m_pipeline_counter[0]++]];
+      else if (config.usage == AbstractPipelineUsage::GX)
+        [desc setLabel:[NSString stringWithFormat:@"GX Pipeline %d", m_pipeline_counter[1]++]];
       else
-      {
         [desc setLabel:[NSString stringWithFormat:@"Utility Pipeline %d", m_pipeline_counter[2]++]];
-      }
       if (config.vertex_format)
         [desc setVertexDescriptor:static_cast<const VertexFormat*>(config.vertex_format)->Get()];
       RasterizationState rs = config.rasterization_state;
-      [desc setInputPrimitiveTopology:GetClass(rs.primitive)];
-      if (rs.cullmode == CullMode::All)
-        [desc setRasterizationEnabled:NO];
+      if (config.usage != AbstractPipelineUsage::GXUber)
+        [desc setInputPrimitiveTopology:GetClass(rs.primitive)];
       MTLRenderPipelineColorAttachmentDescriptor* color0 =
           [[desc colorAttachments] objectAtIndexedSubscript:0];
       BlendingState bs = config.blending_state;
@@ -417,8 +421,19 @@ public:
         // clang-format on
       }
       FramebufferState fs = config.framebuffer_state;
+      if (fs.color_texture_format == AbstractTextureFormat::Undefined &&
+          fs.depth_texture_format == AbstractTextureFormat::Undefined)
+      {
+        // Intel HD 4000's Metal driver asserts if you try to make one of these
+        PanicAlertFmt("Attempted to create pipeline with no render targets!");
+      }
       [desc setRasterSampleCount:fs.samples];
       [color0 setPixelFormat:Util::FromAbstract(fs.color_texture_format)];
+      if (u32 cnt = fs.additional_color_attachment_count)
+      {
+        for (u32 i = 0; i < cnt; i++)
+          [[desc colorAttachments] setObject:color0 atIndexedSubscript:i + 1];
+      }
       [desc setDepthAttachmentPixelFormat:Util::FromAbstract(fs.depth_texture_format)];
       if (Util::HasStencil(fs.depth_texture_format))
         [desc setStencilAttachmentPixelFormat:Util::FromAbstract(fs.depth_texture_format)];
@@ -431,10 +446,66 @@ public:
                                                    error:&err];
       if (err)
       {
-        PanicAlertFmt("Failed to compile pipeline for {} and {}: {}",
+        static int counter;
+        std::string filename = VideoBackendBase::BadShaderFilename("pipeline", counter++);
+        FILE* file = fopen(filename.c_str(), "w");
+        if (file)
+        {
+          fmt::println(file, "=============== Error ===============");
+          fmt::println(file, "{}", [[err localizedDescription] UTF8String]);
+          fmt::println(file, "============== Pipeline =============");
+          fmt::println(file, "VS: {}", [[[desc vertexFunction] label] UTF8String]);
+          fmt::println(file, "PS: {}", [[[desc fragmentFunction] label] UTF8String]);
+          fmt::println(file, "Color Format: {}", static_cast<u32>(fs.color_texture_format.Value()));
+          fmt::println(file, "Depth Format: {}", static_cast<u32>(fs.depth_texture_format.Value()));
+          fmt::println(file, "Sample Count: {}", fs.samples);
+          if (u32 cnt = fs.additional_color_attachment_count)
+            fmt::println(file, "Additional Color Attachments: {}", cnt);
+          if (bs.colorupdate && bs.alphaupdate)
+            fmt::println(file, "Write Color, Alpha");
+          else if (bs.colorupdate)
+            fmt::println(file, "Write Color");
+          else if (bs.alphaupdate)
+            fmt::println(file, "Write Alpha");
+          else
+            fmt::println(file, "Write None");
+          if (bs.blendenable)
+          {
+            auto print_blend = [file](const char* name, SrcBlendFactor src, DstBlendFactor dst,
+                                      bool subtract) {
+              if (subtract)
+                fmt::println(file, "{}: dst * {} - src * {}", name, dst, src);
+              else
+                fmt::println(file, "{}: src * {} + dst * {}", name, src, dst);
+            };
+            print_blend("Color Blend", bs.srcfactor, bs.dstfactor, bs.subtract);
+            print_blend("Alpha Blend", bs.srcfactoralpha, bs.dstfactoralpha, bs.subtractAlpha);
+            fmt::println(file, "Blend Dual Source: {}", bs.usedualsrc ? "true" : "false");
+          }
+          else
+          {
+            fmt::println(file, "Blend Disabled");
+          }
+          if (const Shader* vs = static_cast<const Shader*>(config.vertex_shader))
+          {
+            fmt::println(file, "========= Vertex Shader MSL =========");
+            fmt::println(file, "{}", vs->GetMSL());
+          }
+          if (const Shader* ps = static_cast<const Shader*>(config.pixel_shader))
+          {
+            fmt::println(file, "========== Pixel Shader MSL =========");
+            fmt::println(file, "{}", ps->GetMSL());
+          }
+          fclose(file);
+        }
+
+        std::string file_msg = file ? fmt::format("Details were written to {}", filename) :
+                                      "Failed to write detailed info";
+
+        PanicAlertFmt("Failed to compile pipeline for {} and {}: {}\n{}",
                       [[[desc vertexFunction] label] UTF8String],
                       [[[desc fragmentFunction] label] UTF8String],
-                      [[err localizedDescription] UTF8String]);
+                      [[err localizedDescription] UTF8String], file_msg);
         return std::make_pair(nullptr, PipelineReflection());
       }
 
@@ -489,9 +560,10 @@ Metal::ObjectCache::CreatePipeline(const AbstractPipelineConfig& config)
   Internal::StoredPipeline pipeline = m_internal->GetOrCreatePipeline(config);
   if (!pipeline.first)
     return nullptr;
-  return std::make_unique<Pipeline>(
-      std::move(pipeline.first), pipeline.second, Convert(config.rasterization_state.primitive),
-      Convert(config.rasterization_state.cullmode), config.depth_state, config.usage);
+  return std::make_unique<Pipeline>(config, std::move(pipeline.first), pipeline.second,
+                                    Convert(config.rasterization_state.primitive),
+                                    Convert(config.rasterization_state.cullmode),
+                                    config.depth_state, config.usage);
 }
 
 void Metal::ObjectCache::ShaderDestroyed(const Shader* shader)

@@ -16,6 +16,7 @@
 #include "Core/HW/Memmap.h"
 #include "Core/IOS/ES/Formats.h"
 #include "Core/IOS/VersionInfo.h"
+#include "Core/System.h"
 
 namespace IOS::HLE
 {
@@ -40,9 +41,12 @@ IPCReply ESDevice::GetTicketViewCount(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(1, 1))
     return IPCReply(ES_EINVAL);
 
-  const u64 TitleID = Memory::Read_U64(request.in_vectors[0].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
 
-  const ES::TicketReader ticket = FindSignedTicket(TitleID);
+  const u64 TitleID = memory.Read_U64(request.in_vectors[0].address);
+
+  const ES::TicketReader ticket = m_core.FindSignedTicket(TitleID);
   u32 view_count = ticket.IsValid() ? static_cast<u32>(ticket.GetNumberOfTickets()) : 0;
 
   if (!IsEmulated(TitleID))
@@ -50,7 +54,7 @@ IPCReply ESDevice::GetTicketViewCount(const IOCtlVRequest& request)
     view_count = 0;
     ERROR_LOG_FMT(IOS_ES, "GetViewCount: Dolphin doesn't emulate IOS title {:016x}", TitleID);
   }
-  else if (ShouldReturnFakeViewsForIOSes(TitleID, m_title_context))
+  else if (ShouldReturnFakeViewsForIOSes(TitleID, m_core.m_title_context))
   {
     view_count = 1;
     WARN_LOG_FMT(IOS_ES, "GetViewCount: Faking IOS title {:016x} being present", TitleID);
@@ -59,7 +63,7 @@ IPCReply ESDevice::GetTicketViewCount(const IOCtlVRequest& request)
   INFO_LOG_FMT(IOS_ES, "IOCTL_ES_GETVIEWCNT for titleID: {:016x} (View Count = {})", TitleID,
                view_count);
 
-  Memory::Write_U32(view_count, request.io_vectors[0].address);
+  memory.Write_U32(view_count, request.io_vectors[0].address);
   return IPCReply(IPC_SUCCESS);
 }
 
@@ -68,10 +72,13 @@ IPCReply ESDevice::GetTicketViews(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(2, 1))
     return IPCReply(ES_EINVAL);
 
-  const u64 TitleID = Memory::Read_U64(request.in_vectors[0].address);
-  const u32 maxViews = Memory::Read_U32(request.in_vectors[1].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
 
-  const ES::TicketReader ticket = FindSignedTicket(TitleID);
+  const u64 TitleID = memory.Read_U64(request.in_vectors[0].address);
+  const u32 maxViews = memory.Read_U32(request.in_vectors[1].address);
+
+  const ES::TicketReader ticket = m_core.FindSignedTicket(TitleID);
 
   if (!IsEmulated(TitleID))
   {
@@ -83,13 +90,13 @@ IPCReply ESDevice::GetTicketViews(const IOCtlVRequest& request)
     for (u32 view = 0; view < number_of_views; ++view)
     {
       const std::vector<u8> ticket_view = ticket.GetRawTicketView(view);
-      Memory::CopyToEmu(request.io_vectors[0].address + view * sizeof(ES::TicketView),
-                        ticket_view.data(), ticket_view.size());
+      memory.CopyToEmu(request.io_vectors[0].address + view * sizeof(ES::TicketView),
+                       ticket_view.data(), ticket_view.size());
     }
   }
-  else if (ShouldReturnFakeViewsForIOSes(TitleID, m_title_context))
+  else if (ShouldReturnFakeViewsForIOSes(TitleID, m_core.m_title_context))
   {
-    Memory::Memset(request.io_vectors[0].address, 0, sizeof(ES::TicketView));
+    memory.Memset(request.io_vectors[0].address, 0, sizeof(ES::TicketView));
     WARN_LOG_FMT(IOS_ES, "GetViews: Faking IOS title {:016x} being present", TitleID);
   }
 
@@ -98,17 +105,26 @@ IPCReply ESDevice::GetTicketViews(const IOCtlVRequest& request)
   return IPCReply(IPC_SUCCESS);
 }
 
-ReturnCode ESDevice::GetV0TicketFromView(const u8* ticket_view, u8* ticket) const
+ReturnCode ESCore::GetTicketFromView(const u8* ticket_view, u8* ticket, u32* ticket_size,
+                                     std::optional<u8> desired_version) const
 {
   const u64 title_id = Common::swap64(&ticket_view[offsetof(ES::TicketView, title_id)]);
   const u64 ticket_id = Common::swap64(&ticket_view[offsetof(ES::TicketView, ticket_id)]);
+  const u8 view_version = ticket_view[offsetof(ES::TicketView, version)];
+  const u8 version = desired_version.value_or(view_version);
 
-  const auto installed_ticket = FindSignedTicket(title_id);
-  // TODO: when we get std::optional, check for presence instead of validity.
-  // This is close enough, though.
+  const auto installed_ticket = FindSignedTicket(title_id, version);
   if (!installed_ticket.IsValid())
     return ES_NO_TICKET;
 
+  // Handle GetTicketSizeFromView
+  if (ticket == nullptr)
+  {
+    *ticket_size = installed_ticket.GetTicketSize();
+    return IPC_SUCCESS;
+  }
+
+  // Handle GetTicketFromView or GetV0TicketFromView
   const std::vector<u8> ticket_bytes = installed_ticket.GetRawTicket(ticket_id);
   if (ticket_bytes.empty())
     return ES_NO_TICKET;
@@ -131,28 +147,7 @@ ReturnCode ESDevice::GetV0TicketFromView(const u8* ticket_view, u8* ticket) cons
     return ES_EACCES;
   }
 
-  std::copy(ticket_bytes.begin(), ticket_bytes.end(), ticket);
-  return IPC_SUCCESS;
-}
-
-ReturnCode ESDevice::GetTicketFromView(const u8* ticket_view, u8* ticket, u32* ticket_size) const
-{
-  const u8 version = ticket_view[offsetof(ES::TicketView, version)];
-  if (version == 1)
-  {
-    // Currently, we have no support for v1 tickets at all (unlike IOS), so we fake it
-    // and return that there is no ticket.
-    // TODO: implement GetV1TicketFromView when we gain v1 ticket support.
-    ERROR_LOG_FMT(IOS_ES, "GetV1TicketFromView: Unimplemented -- returning -1028");
-    return ES_NO_TICKET;
-  }
-  if (ticket != nullptr)
-  {
-    if (*ticket_size >= sizeof(ES::Ticket))
-      return GetV0TicketFromView(ticket_view, ticket);
-    return ES_EINVAL;
-  }
-  *ticket_size = sizeof(ES::Ticket);
+  std::ranges::copy(ticket_bytes, ticket);
   return IPC_SUCCESS;
 }
 
@@ -164,8 +159,12 @@ IPCReply ESDevice::GetV0TicketFromView(const IOCtlVRequest& request)
   {
     return IPCReply(ES_EINVAL);
   }
-  return IPCReply(GetV0TicketFromView(Memory::GetPointer(request.in_vectors[0].address),
-                                      Memory::GetPointer(request.io_vectors[0].address)));
+
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+  return IPCReply(m_core.GetTicketFromView(
+      memory.GetPointerForRange(request.in_vectors[0].address, sizeof(ES::TicketView)),
+      memory.GetPointerForRange(request.io_vectors[0].address, sizeof(ES::Ticket)), nullptr, 0));
 }
 
 IPCReply ESDevice::GetTicketSizeFromView(const IOCtlVRequest& request)
@@ -177,9 +176,13 @@ IPCReply ESDevice::GetTicketSizeFromView(const IOCtlVRequest& request)
   {
     return IPCReply(ES_EINVAL);
   }
-  const ReturnCode ret =
-      GetTicketFromView(Memory::GetPointer(request.in_vectors[0].address), nullptr, &ticket_size);
-  Memory::Write_U32(ticket_size, request.io_vectors[0].address);
+
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+  const ReturnCode ret = m_core.GetTicketFromView(
+      memory.GetPointerForRange(request.in_vectors[0].address, sizeof(ES::TicketView)), nullptr,
+      &ticket_size, std::nullopt);
+  memory.Write_U32(ticket_size, request.io_vectors[0].address);
   return IPCReply(ret);
 }
 
@@ -192,13 +195,17 @@ IPCReply ESDevice::GetTicketFromView(const IOCtlVRequest& request)
     return IPCReply(ES_EINVAL);
   }
 
-  u32 ticket_size = Memory::Read_U32(request.in_vectors[1].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
+  u32 ticket_size = memory.Read_U32(request.in_vectors[1].address);
   if (ticket_size != request.io_vectors[0].size)
     return IPCReply(ES_EINVAL);
 
-  return IPCReply(GetTicketFromView(Memory::GetPointer(request.in_vectors[0].address),
-                                    Memory::GetPointer(request.io_vectors[0].address),
-                                    &ticket_size));
+  return IPCReply(m_core.GetTicketFromView(
+      memory.GetPointerForRange(request.in_vectors[0].address, sizeof(ES::TicketView)),
+      memory.GetPointerForRange(request.io_vectors[0].address, ticket_size), &ticket_size,
+      std::nullopt));
 }
 
 IPCReply ESDevice::GetTMDViewSize(const IOCtlVRequest& request)
@@ -206,14 +213,17 @@ IPCReply ESDevice::GetTMDViewSize(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(1, 1))
     return IPCReply(ES_EINVAL);
 
-  const u64 TitleID = Memory::Read_U64(request.in_vectors[0].address);
-  const ES::TMDReader tmd = FindInstalledTMD(TitleID);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
+  const u64 TitleID = memory.Read_U64(request.in_vectors[0].address);
+  const ES::TMDReader tmd = m_core.FindInstalledTMD(TitleID);
 
   if (!tmd.IsValid())
     return IPCReply(FS_ENOENT);
 
   const u32 view_size = static_cast<u32>(tmd.GetRawView().size());
-  Memory::Write_U32(view_size, request.io_vectors[0].address);
+  memory.Write_U32(view_size, request.io_vectors[0].address);
 
   INFO_LOG_FMT(IOS_ES, "GetTMDViewSize: {} bytes for title {:016x}", view_size, TitleID);
   return IPCReply(IPC_SUCCESS);
@@ -221,16 +231,19 @@ IPCReply ESDevice::GetTMDViewSize(const IOCtlVRequest& request)
 
 IPCReply ESDevice::GetTMDViews(const IOCtlVRequest& request)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   if (!request.HasNumberOfValidVectors(2, 1) ||
       request.in_vectors[0].size != sizeof(ES::TMDHeader::title_id) ||
       request.in_vectors[1].size != sizeof(u32) ||
-      Memory::Read_U32(request.in_vectors[1].address) != request.io_vectors[0].size)
+      memory.Read_U32(request.in_vectors[1].address) != request.io_vectors[0].size)
   {
     return IPCReply(ES_EINVAL);
   }
 
-  const u64 title_id = Memory::Read_U64(request.in_vectors[0].address);
-  const ES::TMDReader tmd = FindInstalledTMD(title_id);
+  const u64 title_id = memory.Read_U64(request.in_vectors[0].address);
+  const ES::TMDReader tmd = m_core.FindInstalledTMD(title_id);
 
   if (!tmd.IsValid())
     return IPCReply(FS_ENOENT);
@@ -239,7 +252,7 @@ IPCReply ESDevice::GetTMDViews(const IOCtlVRequest& request)
   if (request.io_vectors[0].size < raw_view.size())
     return IPCReply(ES_EINVAL);
 
-  Memory::CopyToEmu(request.io_vectors[0].address, raw_view.data(), raw_view.size());
+  memory.CopyToEmu(request.io_vectors[0].address, raw_view.data(), raw_view.size());
 
   INFO_LOG_FMT(IOS_ES, "GetTMDView: {} bytes for title {:016x}", raw_view.size(), title_id);
   return IPCReply(IPC_SUCCESS);
@@ -257,13 +270,16 @@ IPCReply ESDevice::DIGetTMDViewSize(const IOCtlVRequest& request)
   if (request.io_vectors[0].size != sizeof(u32))
     return IPCReply(ES_EINVAL);
 
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   const bool has_tmd = request.in_vectors[0].size != 0;
   size_t tmd_view_size = 0;
 
   if (has_tmd)
   {
     std::vector<u8> tmd_bytes(request.in_vectors[0].size);
-    Memory::CopyFromEmu(tmd_bytes.data(), request.in_vectors[0].address, tmd_bytes.size());
+    memory.CopyFromEmu(tmd_bytes.data(), request.in_vectors[0].address, tmd_bytes.size());
     const ES::TMDReader tmd{std::move(tmd_bytes)};
 
     // Yes, this returns -1017, not ES_INVALID_TMD.
@@ -276,13 +292,13 @@ IPCReply ESDevice::DIGetTMDViewSize(const IOCtlVRequest& request)
   else
   {
     // If no TMD was passed in and no title is active, IOS returns -1017.
-    if (!m_title_context.active)
+    if (!m_core.m_title_context.active)
       return IPCReply(ES_EINVAL);
 
-    tmd_view_size = m_title_context.tmd.GetRawView().size();
+    tmd_view_size = m_core.m_title_context.tmd.GetRawView().size();
   }
 
-  Memory::Write_U32(static_cast<u32>(tmd_view_size), request.io_vectors[0].address);
+  memory.Write_U32(static_cast<u32>(tmd_view_size), request.io_vectors[0].address);
   return IPCReply(IPC_SUCCESS);
 }
 
@@ -295,9 +311,12 @@ IPCReply ESDevice::DIGetTMDView(const IOCtlVRequest& request)
   if (request.in_vectors[0].size >= 4 * 1024 * 1024)
     return IPCReply(ES_EINVAL);
 
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   // Check whether the TMD view size is consistent.
   if (request.in_vectors[1].size != sizeof(u32) ||
-      Memory::Read_U32(request.in_vectors[1].address) != request.io_vectors[0].size)
+      memory.Read_U32(request.in_vectors[1].address) != request.io_vectors[0].size)
   {
     return IPCReply(ES_EINVAL);
   }
@@ -308,7 +327,7 @@ IPCReply ESDevice::DIGetTMDView(const IOCtlVRequest& request)
   if (has_tmd)
   {
     std::vector<u8> tmd_bytes(request.in_vectors[0].size);
-    Memory::CopyFromEmu(tmd_bytes.data(), request.in_vectors[0].address, tmd_bytes.size());
+    memory.CopyFromEmu(tmd_bytes.data(), request.in_vectors[0].address, tmd_bytes.size());
     const ES::TMDReader tmd{std::move(tmd_bytes)};
 
     if (!tmd.IsValid())
@@ -319,16 +338,16 @@ IPCReply ESDevice::DIGetTMDView(const IOCtlVRequest& request)
   else
   {
     // If no TMD was passed in and no title is active, IOS returns -1017.
-    if (!m_title_context.active)
+    if (!m_core.m_title_context.active)
       return IPCReply(ES_EINVAL);
 
-    tmd_view = m_title_context.tmd.GetRawView();
+    tmd_view = m_core.m_title_context.tmd.GetRawView();
   }
 
   if (tmd_view.size() > request.io_vectors[0].size)
     return IPCReply(ES_EINVAL);
 
-  Memory::CopyToEmu(request.io_vectors[0].address, tmd_view.data(), tmd_view.size());
+  memory.CopyToEmu(request.io_vectors[0].address, tmd_view.data(), tmd_view.size());
   return IPCReply(IPC_SUCCESS);
 }
 
@@ -346,27 +365,30 @@ IPCReply ESDevice::DIGetTicketView(const IOCtlVRequest& request)
   if (!has_ticket_vector && request.in_vectors[0].size != 0)
     return IPCReply(ES_EINVAL);
 
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   std::vector<u8> view;
 
   // If no ticket was passed in, IOS returns the ticket view for the current title.
   // Of course, this returns -1017 if no title is active and no ticket is passed.
   if (!has_ticket_vector)
   {
-    if (!m_title_context.active)
+    if (!m_core.m_title_context.active)
       return IPCReply(ES_EINVAL);
 
-    view = m_title_context.ticket.GetRawTicketView(0);
+    view = m_core.m_title_context.ticket.GetRawTicketView(0);
   }
   else
   {
     std::vector<u8> ticket_bytes(request.in_vectors[0].size);
-    Memory::CopyFromEmu(ticket_bytes.data(), request.in_vectors[0].address, ticket_bytes.size());
+    memory.CopyFromEmu(ticket_bytes.data(), request.in_vectors[0].address, ticket_bytes.size());
     const ES::TicketReader ticket{std::move(ticket_bytes)};
 
     view = ticket.GetRawTicketView(0);
   }
 
-  Memory::CopyToEmu(request.io_vectors[0].address, view.data(), view.size());
+  memory.CopyToEmu(request.io_vectors[0].address, view.data(), view.size());
   return IPCReply(IPC_SUCCESS);
 }
 
@@ -375,11 +397,13 @@ IPCReply ESDevice::DIGetTMDSize(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(0, 1) || request.io_vectors[0].size != sizeof(u32))
     return IPCReply(ES_EINVAL);
 
-  if (!m_title_context.active)
+  if (!m_core.m_title_context.active)
     return IPCReply(ES_EINVAL);
 
-  Memory::Write_U32(static_cast<u32>(m_title_context.tmd.GetBytes().size()),
-                    request.io_vectors[0].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+  memory.Write_U32(static_cast<u32>(m_core.m_title_context.tmd.GetBytes().size()),
+                   request.io_vectors[0].address);
   return IPCReply(IPC_SUCCESS);
 }
 
@@ -388,19 +412,22 @@ IPCReply ESDevice::DIGetTMD(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(1, 1) || request.in_vectors[0].size != sizeof(u32))
     return IPCReply(ES_EINVAL);
 
-  const u32 tmd_size = Memory::Read_U32(request.in_vectors[0].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
+  const u32 tmd_size = memory.Read_U32(request.in_vectors[0].address);
   if (tmd_size != request.io_vectors[0].size)
     return IPCReply(ES_EINVAL);
 
-  if (!m_title_context.active)
+  if (!m_core.m_title_context.active)
     return IPCReply(ES_EINVAL);
 
-  const std::vector<u8>& tmd_bytes = m_title_context.tmd.GetBytes();
+  const std::vector<u8>& tmd_bytes = m_core.m_title_context.tmd.GetBytes();
 
   if (static_cast<u32>(tmd_bytes.size()) > tmd_size)
     return IPCReply(ES_EINVAL);
 
-  Memory::CopyToEmu(request.io_vectors[0].address, tmd_bytes.data(), tmd_bytes.size());
+  memory.CopyToEmu(request.io_vectors[0].address, tmd_bytes.data(), tmd_bytes.size());
   return IPCReply(IPC_SUCCESS);
 }
 }  // namespace IOS::HLE

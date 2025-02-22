@@ -13,12 +13,13 @@
 
 #include "VideoBackends/D3D/D3DBase.h"
 #include "VideoBackends/D3D/D3DBoundingBox.h"
+#include "VideoBackends/D3D/D3DGfx.h"
 #include "VideoBackends/D3D/D3DPerfQuery.h"
-#include "VideoBackends/D3D/D3DRender.h"
 #include "VideoBackends/D3D/D3DSwapChain.h"
 #include "VideoBackends/D3D/D3DVertexManager.h"
 #include "VideoBackends/D3DCommon/D3DCommon.h"
 
+#include "VideoCommon/AbstractGfx.h"
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/ShaderCache.h"
 #include "VideoCommon/TextureCacheBase.h"
@@ -41,7 +42,7 @@ std::optional<std::string> VideoBackend::GetWarningMessage() const
 {
   std::optional<std::string> result;
 
-  // If user is on Win7, show a warning about partial DX11.1 support
+  // If relevant, show a warning about partial DX11.1 support
   // This is being called BEFORE FillBackendInfo is called for this backend,
   // so query for logic op support manually
   bool supportsLogicOp = false;
@@ -53,16 +54,17 @@ std::optional<std::string> VideoBackend::GetWarningMessage() const
 
   if (!supportsLogicOp)
   {
-    result = _trans("Direct3D 11 renderer requires support for features not supported by your "
-                    "system configuration. This is most likely because you are using Windows 7. "
-                    "You may still use this backend, but you might encounter graphical artifacts."
-                    "\n\nDo you really want to switch to Direct3D 11? If unsure, select 'No'.");
+    result = _trans("The Direct3D 11 renderer requires support for features not supported by your "
+                    "system configuration. You may still use this backend, but you will encounter "
+                    "graphical artifacts in certain games.\n"
+                    "\n"
+                    "Do you really want to switch to Direct3D 11? If unsure, select 'No'.");
   }
 
   return result;
 }
 
-void VideoBackend::InitBackendInfo()
+void VideoBackend::InitBackendInfo(const WindowSystemInfo& wsi)
 {
   if (!D3DCommon::LoadLibraries())
     return;
@@ -112,6 +114,8 @@ void VideoBackend::FillBackendInfo()
   g_Config.backend_info.bSupportsLogicOp = D3D::SupportsLogicOp(g_Config.iAdapter);
   g_Config.backend_info.bSupportsSettingObjectNames = true;
   g_Config.backend_info.bSupportsPartialMultisampleResolve = true;
+  g_Config.backend_info.bSupportsDynamicVertexLoader = false;
+  g_Config.backend_info.bSupportsHDROutput = true;
 
   g_Config.backend_info.Adapters = D3DCommon::GetAdapterNames();
   g_Config.backend_info.AAModes = D3D::GetAAModes(g_Config.iAdapter);
@@ -142,7 +146,7 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
     return false;
 
   FillBackendInfo();
-  InitializeShared();
+  UpdateActiveConfig();
 
   std::unique_ptr<SwapChain> swap_chain;
   if (wsi.render_surface && !(swap_chain = SwapChain::Create(wsi)))
@@ -153,36 +157,17 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
     return false;
   }
 
-  g_renderer = std::make_unique<Renderer>(std::move(swap_chain), wsi.render_surface_scale);
-  g_vertex_manager = std::make_unique<VertexManager>();
-  g_shader_cache = std::make_unique<VideoCommon::ShaderCache>();
-  g_framebuffer_manager = std::make_unique<FramebufferManager>();
-  g_texture_cache = std::make_unique<TextureCacheBase>();
-  g_perf_query = std::make_unique<PerfQuery>();
-  if (!g_vertex_manager->Initialize() || !g_shader_cache->Initialize() ||
-      !g_renderer->Initialize() || !g_framebuffer_manager->Initialize() ||
-      !g_texture_cache->Initialize())
-  {
-    Shutdown();
-    return false;
-  }
+  auto gfx = std::make_unique<DX11::Gfx>(std::move(swap_chain), wsi.render_surface_scale);
+  auto vertex_manager = std::make_unique<VertexManager>();
+  auto perf_query = std::make_unique<PerfQuery>();
+  auto bounding_box = std::make_unique<D3DBoundingBox>();
 
-  g_shader_cache->InitializeShaderCache();
-  return true;
+  return InitializeShared(std::move(gfx), std::move(vertex_manager), std::move(perf_query),
+                          std::move(bounding_box));
 }
 
 void VideoBackend::Shutdown()
 {
-  g_shader_cache->Shutdown();
-  g_renderer->Shutdown();
-
-  g_perf_query.reset();
-  g_texture_cache.reset();
-  g_framebuffer_manager.reset();
-  g_shader_cache.reset();
-  g_vertex_manager.reset();
-  g_renderer.reset();
-
   ShutdownShared();
   D3D::Destroy();
 }

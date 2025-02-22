@@ -19,7 +19,7 @@ namespace VideoCommon
 // As pipelines encompass both shader UIDs and render states, changes to either of these should
 // also increment the pipeline UID version. Incrementing the UID version will cause all UID
 // caches to be invalidated.
-constexpr u32 GX_PIPELINE_UID_VERSION = 5;  // Last changed in PR 10747
+constexpr u32 GX_PIPELINE_UID_VERSION = 8;  // Last changed in PR 12185
 
 struct GXPipelineUid
 {
@@ -43,7 +43,6 @@ struct GXPipelineUid
   {
     return std::memcmp(this, &rhs, sizeof(*this)) == 0;
   }
-  bool operator!=(const GXPipelineUid& rhs) const { return !operator==(rhs); }
 };
 struct GXUberPipelineUid
 {
@@ -64,7 +63,6 @@ struct GXUberPipelineUid
   {
     return std::memcmp(this, &rhs, sizeof(*this)) == 0;
   }
-  bool operator!=(const GXUberPipelineUid& rhs) const { return !operator==(rhs); }
 };
 
 // Disk cache of pipeline UIDs. We can't use the whole UID as a type as it contains pointers.

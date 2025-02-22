@@ -52,11 +52,11 @@ private:
   void ModSelectionChanged();
   void ModItemChanged(QListWidgetItem* item);
 
-  void OnModChanged(std::optional<std::string> absolute_path);
+  void OnModChanged(const std::optional<std::string>& absolute_path);
 
   void SaveModList();
 
-  void ClearLayoutRecursively(QLayout* layout);
+  void OpenGraphicsModDir();
 
   void CalculateGameRunning(Core::State state);
   bool m_loaded_game_is_running = false;
@@ -67,6 +67,7 @@ private:
   QLabel* m_selected_mod_name;
   QVBoxLayout* m_mod_meta_layout;
 
+  QPushButton* m_open_directory_button;
   QPushButton* m_refresh;
   GraphicsModWarningWidget* m_warning;
 

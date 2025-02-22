@@ -34,12 +34,11 @@ public:
   VkSurfaceKHR GetSurface() const { return m_surface; }
   VkSurfaceFormatKHR GetSurfaceFormat() const { return m_surface_format; }
   AbstractTextureFormat GetTextureFormat() const { return m_texture_format; }
-  bool IsVSyncEnabled() const { return m_vsync_enabled; }
-  bool IsStereoEnabled() const { return m_layers == 2; }
   VkSwapchainKHR GetSwapChain() const { return m_swap_chain; }
   u32 GetWidth() const { return m_width; }
   u32 GetHeight() const { return m_height; }
   u32 GetCurrentImageIndex() const { return m_current_swap_chain_image_index; }
+  bool IsCurrentImageValid() const { return m_current_swap_chain_image_is_valid; }
   VkImage GetCurrentImage() const
   {
     return m_swap_chain_images[m_current_swap_chain_image_index].image;
@@ -100,6 +99,7 @@ private:
   bool m_fullscreen_supported = false;
   bool m_current_fullscreen_state = false;
   bool m_next_fullscreen_state = false;
+  bool m_current_swap_chain_image_is_valid = false;
 
   VkSwapchainKHR m_swap_chain = VK_NULL_HANDLE;
   std::vector<SwapChainImage> m_swap_chain_images;

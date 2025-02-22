@@ -24,6 +24,11 @@ union TVec3
   {
   }
 
+  constexpr bool operator==(const TVec3& other) const
+  {
+    return x == other.x && y == other.y && z == other.z;
+  }
+
   constexpr TVec3 Cross(const TVec3& rhs) const
   {
     return {(y * rhs.z) - (rhs.y * z), (z * rhs.x) - (rhs.z * x), (x * rhs.y) - (rhs.x * y)};
@@ -153,6 +158,11 @@ union TVec4
   constexpr TVec4(TVec3<T> _vec, T _w) : TVec4{_vec.x, _vec.y, _vec.z, _w} {}
   constexpr TVec4(T _x, T _y, T _z, T _w) : data{_x, _y, _z, _w} {}
 
+  constexpr bool operator==(const TVec4& other) const
+  {
+    return x == other.x && y == other.y && z == other.z && w == other.w;
+  }
+
   constexpr T Dot(const TVec4& other) const
   {
     return x * other.x + y * other.y + z * other.z + w * other.w;
@@ -215,6 +225,8 @@ union TVec2
   constexpr explicit TVec2(const TVec2<OtherT>& other) : TVec2(other.x, other.y)
   {
   }
+
+  constexpr bool operator==(const TVec2& other) const { return x == other.x && y == other.y; }
 
   constexpr T Cross(const TVec2& rhs) const { return (x * rhs.y) - (y * rhs.x); }
   constexpr T Dot(const TVec2& rhs) const { return (x * rhs.x) + (y * rhs.y); }
@@ -380,6 +392,7 @@ public:
   static void Multiply(const Matrix33& a, const Vec3& vec, Vec3* result);
 
   Matrix33 Inverted() const;
+  float Determinant() const;
 
   Matrix33& operator*=(const Matrix33& rhs)
   {
@@ -419,6 +432,8 @@ public:
 
   // For when a vec4 isn't needed a multiplication function that takes a Vec3 and w:
   Vec3 Transform(const Vec3& point, float w) const;
+
+  float Determinant() const;
 
   Matrix44& operator*=(const Matrix44& rhs)
   {

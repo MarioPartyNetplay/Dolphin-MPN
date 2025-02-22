@@ -3,11 +3,18 @@
 
 #pragma once
 
-#include <iosfwd>
 #include <memory>
 #include "Common/CommonTypes.h"
 
 class PointerWrap;
+namespace Core
+{
+class System;
+}
+namespace SystemTimers
+{
+class SystemTimersManager;
+}
 
 namespace SerialInterface
 {
@@ -47,6 +54,7 @@ enum class EBufferCommands : u8
   CMD_STATUS = 0x00,
   CMD_READ_GBA = 0x14,
   CMD_WRITE_GBA = 0x15,
+  CMD_SET_GAME_ID = 0x1d,
   CMD_DIRECT = 0x40,
   CMD_ORIGIN = 0x41,
   CMD_RECALIBRATE = 0x42,
@@ -98,13 +106,10 @@ enum SIDevices : int
   SIDEVICE_COUNT,
 };
 
-std::ostream& operator<<(std::ostream& stream, SIDevices device);
-std::istream& operator>>(std::istream& stream, SIDevices& device);
-
 class ISIDevice
 {
 public:
-  ISIDevice(SIDevices device_type, int device_number);
+  ISIDevice(Core::System& system, SIDevices device_type, int device_number);
   virtual ~ISIDevice();
 
   int GetDeviceNumber() const;
@@ -127,12 +132,15 @@ public:
   virtual void OnEvent(u64 userdata, s64 cycles_late);
 
 protected:
+  Core::System& m_system;
+
   int m_device_number;
   SIDevices m_device_type;
 };
 
-int SIDevice_GetGBATransferTime(EBufferCommands cmd);
+int SIDevice_GetGBATransferTime(const SystemTimers::SystemTimersManager& timers,
+                                EBufferCommands cmd);
 bool SIDevice_IsGCController(SIDevices type);
 
-std::unique_ptr<ISIDevice> SIDevice_Create(SIDevices device, int port_number);
+std::unique_ptr<ISIDevice> SIDevice_Create(Core::System& system, SIDevices device, int port_number);
 }  // namespace SerialInterface

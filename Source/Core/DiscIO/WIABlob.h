@@ -49,6 +49,7 @@ public:
   static std::unique_ptr<WIARVZFileReader> Create(File::IOFile file, const std::string& path);
 
   BlobType GetBlobType() const override;
+  std::unique_ptr<BlobReader> CopyReader() const override;
 
   u64 GetRawSize() const override { return Common::swap64(m_header_1.wia_file_size); }
   u64 GetDataSize() const override { return Common::swap64(m_header_1.iso_file_size); }
@@ -263,7 +264,6 @@ private:
              std::tie(other.partition_key, other.data_size, other.encrypted, other.value);
     }
 
-    bool operator!=(const ReuseID& other) const { return !operator==(other); }
     bool operator>=(const ReuseID& other) const { return !operator<(other); }
     bool operator<=(const ReuseID& other) const { return !operator>(other); }
 
@@ -365,6 +365,7 @@ private:
   WIARVZCompressionType m_compression_type;
 
   File::IOFile m_file;
+  std::string m_path;
   Chunk m_cached_chunk;
   u64 m_cached_chunk_offset = std::numeric_limits<u64>::max();
   WiiEncryptionCache m_encryption_cache;

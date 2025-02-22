@@ -776,14 +776,11 @@ bool DSPAssembler::AssemblePass(const std::string& text, int pass)
   m_location.line_num = 0;
   m_cur_pass = pass;
 
-#define LINEBUF_SIZE 1024
-  char line[LINEBUF_SIZE] = {0};
-  while (!m_failed && !fsrc.fail() && !fsrc.eof())
+  constexpr int LINEBUF_SIZE = 1024;
+  char line[LINEBUF_SIZE] = {};
+  while (!m_failed && fsrc.getline(line, LINEBUF_SIZE))
   {
     int opcode_size = 0;
-    fsrc.getline(line, LINEBUF_SIZE);
-    if (fsrc.fail())
-      break;
 
     m_location.line_text = line;
     m_location.line_num++;
@@ -912,7 +909,10 @@ bool DSPAssembler::AssemblePass(const std::string& text, int pass)
         }
       }
       if (pass == 1)
-        m_labels.RegisterLabel(label, lval);
+      {
+        if (!m_labels.RegisterLabel(label, lval))
+          ShowError(AssemblerError::LabelAlreadyExists);
+      }
     }
 
     if (opcode == nullptr)

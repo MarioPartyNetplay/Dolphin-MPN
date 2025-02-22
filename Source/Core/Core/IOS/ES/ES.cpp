@@ -9,12 +9,16 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/format.h>
+
 #include "Common/ChunkFile.h"
+#include "Common/EnumUtils.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 #include "Common/NandPaths.h"
 #include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
+#include "Core/AchievementManager.h"
 #include "Core/CommonTitles.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
@@ -26,6 +30,7 @@
 #include "Core/IOS/IOSC.h"
 #include "Core/IOS/Uids.h"
 #include "Core/IOS/VersionInfo.h"
+#include "Core/System.h"
 #include "DiscIO/Enums.h"
 
 namespace IOS::HLE
@@ -80,7 +85,7 @@ constexpr SystemTimers::TimeBaseTick GetESBootTicks(u32 ios_version)
 }
 }  // namespace
 
-ESDevice::ESDevice(Kernel& ios, const std::string& device_name) : Device(ios, device_name)
+ESCore::ESCore(Kernel& ios) : m_ios(ios)
 {
   for (const auto& directory : s_directories_to_create)
   {
@@ -91,7 +96,7 @@ ESDevice::ESDevice(Kernel& ios, const std::string& device_name) : Device(ios, de
     if (result != FS::ResultCode::Success && result != FS::ResultCode::AlreadyExists)
     {
       ERROR_LOG_FMT(IOS_ES, "Failed to create {}: error {}", directory.path,
-                    FS::ConvertResult(result));
+                    Common::ToUnderlying(FS::ConvertResult(result)));
     }
 
     // Now update the UID/GID and other attributes.
@@ -100,11 +105,19 @@ ESDevice::ESDevice(Kernel& ios, const std::string& device_name) : Device(ios, de
   }
 
   FinishAllStaleImports();
+}
 
-  if (Core::IsRunningAndStarted())
+ESCore::~ESCore() = default;
+
+ESDevice::ESDevice(EmulationKernel& ios, ESCore& core, const std::string& device_name)
+    : EmulationDevice(ios, device_name), m_core(core)
+{
+  auto& system = ios.GetSystem();
+  if (Core::IsRunning(system))
   {
-    CoreTiming::RemoveEvent(s_finish_init_event);
-    CoreTiming::ScheduleEvent(GetESBootTicks(m_ios.GetVersion()), s_finish_init_event);
+    auto& core_timing = system.GetCoreTiming();
+    core_timing.RemoveEvent(s_finish_init_event);
+    core_timing.ScheduleEvent(GetESBootTicks(ios.GetVersion()), s_finish_init_event);
   }
   else
   {
@@ -112,16 +125,22 @@ ESDevice::ESDevice(Kernel& ios, const std::string& device_name) : Device(ios, de
   }
 }
 
-void ESDevice::InitializeEmulationState()
+ESDevice::~ESDevice() = default;
+
+void ESDevice::InitializeEmulationState(CoreTiming::CoreTimingManager& core_timing)
 {
-  s_finish_init_event = CoreTiming::RegisterEvent(
-      "IOS-ESFinishInit", [](u64, s64) { GetIOS()->GetES()->FinishInit(); });
-  s_reload_ios_for_ppc_launch_event =
-      CoreTiming::RegisterEvent("IOS-ESReloadIOSForPPCLaunch", [](u64 ios_id, s64) {
-        GetIOS()->GetES()->LaunchTitle(ios_id, HangPPC::Yes);
+  s_finish_init_event =
+      core_timing.RegisterEvent("IOS-ESFinishInit", [](Core::System& system_, u64, s64) {
+        system_.GetIOS()->GetESDevice()->FinishInit();
       });
-  s_bootstrap_ppc_for_launch_event = CoreTiming::RegisterEvent(
-      "IOS-ESBootstrapPPCForLaunch", [](u64, s64) { GetIOS()->GetES()->BootstrapPPC(); });
+  s_reload_ios_for_ppc_launch_event = core_timing.RegisterEvent(
+      "IOS-ESReloadIOSForPPCLaunch", [](Core::System& system_, u64 ios_id, s64) {
+        system_.GetIOS()->GetESDevice()->LaunchTitle(ios_id, HangPPC::Yes);
+      });
+  s_bootstrap_ppc_for_launch_event =
+      core_timing.RegisterEvent("IOS-ESBootstrapPPCForLaunch", [](Core::System& system_, u64, s64) {
+        system_.GetIOS()->GetESDevice()->BootstrapPPC();
+      });
 }
 
 void ESDevice::FinalizeEmulationState()
@@ -133,13 +152,13 @@ void ESDevice::FinalizeEmulationState()
 
 void ESDevice::FinishInit()
 {
-  m_ios.InitIPC();
+  GetEmulationKernel().InitIPC();
 
   std::optional<u64> pending_launch_title_id;
 
   {
-    const auto launch_file =
-        m_ios.GetFS()->OpenFile(PID_KERNEL, PID_KERNEL, LAUNCH_FILE_PATH, FS::Mode::Read);
+    const auto launch_file = GetEmulationKernel().GetFS()->OpenFile(
+        PID_KERNEL, PID_KERNEL, LAUNCH_FILE_PATH, FS::Mode::Read);
     if (launch_file)
     {
       u64 id;
@@ -195,17 +214,21 @@ IPCReply ESDevice::GetTitleDirectory(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(1, 1))
     return IPCReply(ES_EINVAL);
 
-  const u64 title_id = Memory::Read_U64(request.in_vectors[0].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
 
-  char* path = reinterpret_cast<char*>(Memory::GetPointer(request.io_vectors[0].address));
-  sprintf(path, "/title/%08x/%08x/data", static_cast<u32>(title_id >> 32),
-          static_cast<u32>(title_id));
+  const u64 title_id = memory.Read_U64(request.in_vectors[0].address);
+  const auto path = fmt::format("/title/{:08x}/{:08x}/data", static_cast<u32>(title_id >> 32),
+                                static_cast<u32>(title_id));
+
+  const auto path_dst = request.io_vectors[0].address;
+  memory.CopyToEmu(path_dst, path.data(), path.size());
 
   INFO_LOG_FMT(IOS_ES, "IOCTL_ES_GETTITLEDIR: {}", path);
   return IPCReply(IPC_SUCCESS);
 }
 
-ReturnCode ESDevice::GetTitleId(u64* title_id) const
+ReturnCode ESCore::GetTitleId(u64* title_id) const
 {
   if (!m_title_context.active)
     return ES_EINVAL;
@@ -219,19 +242,22 @@ IPCReply ESDevice::GetTitleId(const IOCtlVRequest& request)
     return IPCReply(ES_EINVAL);
 
   u64 title_id;
-  const ReturnCode ret = GetTitleId(&title_id);
+  const ReturnCode ret = m_core.GetTitleId(&title_id);
   if (ret != IPC_SUCCESS)
     return IPCReply(ret);
 
-  Memory::Write_U64(title_id, request.io_vectors[0].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
+  memory.Write_U64(title_id, request.io_vectors[0].address);
   INFO_LOG_FMT(IOS_ES, "IOCTL_ES_GETTITLEID: {:08x}/{:08x}", static_cast<u32>(title_id >> 32),
                static_cast<u32>(title_id));
   return IPCReply(IPC_SUCCESS);
 }
 
-static bool UpdateUIDAndGID(Kernel& kernel, const ES::TMDReader& tmd)
+static bool UpdateUIDAndGID(EmulationKernel& kernel, const ES::TMDReader& tmd)
 {
-  ES::UIDSys uid_sys{kernel.GetFSDevice()};
+  ES::UIDSys uid_sys{kernel.GetFSCore()};
   const u64 title_id = tmd.GetTitleId();
   const u32 uid = uid_sys.GetOrInsertUIDForTitle(title_id);
   if (uid == 0)
@@ -244,10 +270,10 @@ static bool UpdateUIDAndGID(Kernel& kernel, const ES::TMDReader& tmd)
   return true;
 }
 
-static ReturnCode CheckIsAllowedToSetUID(Kernel& kernel, const u32 caller_uid,
+static ReturnCode CheckIsAllowedToSetUID(EmulationKernel& kernel, const u32 caller_uid,
                                          const ES::TMDReader& active_tmd)
 {
-  ES::UIDSys uid_map{kernel.GetFSDevice()};
+  ES::UIDSys uid_map{kernel.GetFSCore()};
   const u32 system_menu_uid = uid_map.GetOrInsertUIDForTitle(Titles::SYSTEM_MENU);
   if (!system_menu_uid)
     return ES_SHORT_READ;
@@ -271,20 +297,23 @@ IPCReply ESDevice::SetUID(u32 uid, const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(1, 0) || request.in_vectors[0].size != 8)
     return IPCReply(ES_EINVAL);
 
-  const u64 title_id = Memory::Read_U64(request.in_vectors[0].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
 
-  const s32 ret = CheckIsAllowedToSetUID(m_ios, uid, m_title_context.tmd);
+  const u64 title_id = memory.Read_U64(request.in_vectors[0].address);
+
+  const s32 ret = CheckIsAllowedToSetUID(GetEmulationKernel(), uid, m_core.m_title_context.tmd);
   if (ret < 0)
   {
     ERROR_LOG_FMT(IOS_ES, "SetUID: Permission check failed with error {}", ret);
     return IPCReply(ret);
   }
 
-  const auto tmd = FindInstalledTMD(title_id);
+  const auto tmd = m_core.FindInstalledTMD(title_id);
   if (!tmd.IsValid())
     return IPCReply(FS_ENOENT);
 
-  if (!UpdateUIDAndGID(m_ios, tmd))
+  if (!UpdateUIDAndGID(GetEmulationKernel(), tmd))
   {
     ERROR_LOG_FMT(IOS_ES, "SetUID: Failed to get UID for title {:016x}", title_id);
     return IPCReply(ES_SHORT_READ);
@@ -295,13 +324,13 @@ IPCReply ESDevice::SetUID(u32 uid, const IOCtlVRequest& request)
 
 bool ESDevice::LaunchTitle(u64 title_id, HangPPC hang_ppc)
 {
-  m_title_context.Clear();
+  m_core.m_title_context.Clear();
   INFO_LOG_FMT(IOS_ES, "ES_Launch: Title context changed: (none)");
 
   NOTICE_LOG_FMT(IOS_ES, "Launching title {:016x}...", title_id);
 
   if ((title_id == Titles::SHOP || title_id == Titles::KOREAN_SHOP) &&
-      m_ios.GetIOSC().IsUsingDefaultId())
+      GetEmulationKernel().GetIOSC().IsUsingDefaultId())
   {
     ERROR_LOG_FMT(IOS_ES, "Refusing to launch the shop channel with default device credentials");
     CriticalAlertFmtT(
@@ -342,11 +371,12 @@ bool ESDevice::LaunchIOS(u64 ios_title_id, HangPPC hang_ppc)
   // so only have this check for MIOS (for which having the binary is *required*).
   if (ios_title_id == Titles::MIOS)
   {
-    const ES::TMDReader tmd = FindInstalledTMD(ios_title_id);
-    const ES::TicketReader ticket = FindSignedTicket(ios_title_id);
+    const ES::TMDReader tmd = m_core.FindInstalledTMD(ios_title_id);
+    const ES::TicketReader ticket = m_core.FindSignedTicket(ios_title_id);
     ES::Content content;
     if (!tmd.IsValid() || !ticket.IsValid() || !tmd.GetContent(tmd.GetBootIndex(), &content) ||
-        !m_ios.BootIOS(ios_title_id, hang_ppc, GetContentPath(ios_title_id, content)))
+        !GetEmulationKernel().BootIOS(ios_title_id, hang_ppc,
+                                      m_core.GetContentPath(ios_title_id, content)))
     {
       PanicAlertFmtT("Could not launch IOS {0:016x} because it is missing from the NAND.\n"
                      "The emulated software will likely hang now.",
@@ -356,12 +386,12 @@ bool ESDevice::LaunchIOS(u64 ios_title_id, HangPPC hang_ppc)
     return true;
   }
 
-  return m_ios.BootIOS(ios_title_id, hang_ppc);
+  return GetEmulationKernel().BootIOS(ios_title_id, hang_ppc);
 }
 
 s32 ESDevice::WriteLaunchFile(const ES::TMDReader& tmd, Ticks ticks)
 {
-  m_ios.GetFSDevice()->DeleteFile(PID_KERNEL, PID_KERNEL, SPACE_FILE_PATH, ticks);
+  GetEmulationKernel().GetFSCore().DeleteFile(PID_KERNEL, PID_KERNEL, SPACE_FILE_PATH, ticks);
 
   std::vector<u8> launch_data(sizeof(u64) + sizeof(ES::TicketView));
   const u64 title_id = tmd.GetTitleId();
@@ -376,8 +406,8 @@ bool ESDevice::LaunchPPCTitle(u64 title_id)
 {
   u64 ticks = 0;
 
-  const ES::TMDReader tmd = FindInstalledTMD(title_id, &ticks);
-  const ES::TicketReader ticket = FindSignedTicket(title_id);
+  const ES::TMDReader tmd = m_core.FindInstalledTMD(title_id, &ticks);
+  const ES::TicketReader ticket = m_core.FindSignedTicket(title_id);
 
   if (!tmd.IsValid() || !ticket.IsValid())
   {
@@ -395,6 +425,9 @@ bool ESDevice::LaunchPPCTitle(u64 title_id)
     return false;
   }
 
+  auto& system = GetSystem();
+  auto& core_timing = system.GetCoreTiming();
+
   // Before launching a title, IOS first reads the TMD and reloads into the specified IOS version,
   // even when that version is already running. After it has reloaded, ES_Launch will be called
   // again and the PPC will be bootstrapped then.
@@ -402,7 +435,7 @@ bool ESDevice::LaunchPPCTitle(u64 title_id)
   // To keep track of the PPC title launch, a temporary launch file (LAUNCH_FILE_PATH) is used
   // to store the title ID of the title to launch and its TMD.
   // The launch file not existing means an IOS reload is required.
-  if (const auto launch_file_fd = m_ios.GetFSDevice()->Open(
+  if (const auto launch_file_fd = GetEmulationKernel().GetFSCore().Open(
           PID_KERNEL, PID_KERNEL, LAUNCH_FILE_PATH, FS::Mode::Read, {}, &ticks);
       launch_file_fd.Get() < 0)
   {
@@ -413,26 +446,26 @@ bool ESDevice::LaunchPPCTitle(u64 title_id)
     }
 
     const u64 required_ios = tmd.GetIOSId();
-    if (!Core::IsRunningAndStarted())
+    if (!Core::IsRunning(system))
       return LaunchTitle(required_ios, HangPPC::Yes);
-    CoreTiming::RemoveEvent(s_reload_ios_for_ppc_launch_event);
-    CoreTiming::ScheduleEvent(ticks, s_reload_ios_for_ppc_launch_event, required_ios);
+    core_timing.RemoveEvent(s_reload_ios_for_ppc_launch_event);
+    core_timing.ScheduleEvent(ticks, s_reload_ios_for_ppc_launch_event, required_ios);
     return true;
   }
 
   // Otherwise, assume that the PPC title can now be launched directly.
   // Unlike IOS, we won't bother checking the title ID in the launch file. (It's not useful.)
-  m_ios.GetFSDevice()->DeleteFile(PID_KERNEL, PID_KERNEL, LAUNCH_FILE_PATH, &ticks);
+  GetEmulationKernel().GetFSCore().DeleteFile(PID_KERNEL, PID_KERNEL, LAUNCH_FILE_PATH, &ticks);
   WriteSystemFile(SPACE_FILE_PATH, std::vector<u8>(SPACE_FILE_SIZE), &ticks);
 
-  m_title_context.Update(tmd, ticket, DiscIO::Platform::WiiWAD);
+  m_core.m_title_context.Update(tmd, ticket, DiscIO::Platform::WiiWAD);
   INFO_LOG_FMT(IOS_ES, "LaunchPPCTitle: Title context changed: {:016x}", tmd.GetTitleId());
 
   // Note: the UID/GID is also updated for IOS titles, but since we have no guarantee IOS titles
   // are installed, we can only do this for PPC titles.
-  if (!UpdateUIDAndGID(m_ios, m_title_context.tmd))
+  if (!UpdateUIDAndGID(GetEmulationKernel(), m_core.m_title_context.tmd))
   {
-    m_title_context.Clear();
+    m_core.m_title_context.Clear();
     INFO_LOG_FMT(IOS_ES, "LaunchPPCTitle: Title context changed: (none)");
     return false;
   }
@@ -441,22 +474,27 @@ bool ESDevice::LaunchPPCTitle(u64 title_id)
   if (!tmd.GetContent(tmd.GetBootIndex(), &content))
     return false;
 
-  m_pending_ppc_boot_content_path = GetContentPath(tmd.GetTitleId(), content);
-  if (!Core::IsRunningAndStarted())
+  m_pending_ppc_boot_content_path = m_core.GetContentPath(tmd.GetTitleId(), content);
+  if (!Core::IsRunning(system))
     return BootstrapPPC();
-  CoreTiming::RemoveEvent(s_bootstrap_ppc_for_launch_event);
-  CoreTiming::ScheduleEvent(ticks, s_bootstrap_ppc_for_launch_event);
+
+  INFO_LOG_FMT(ACHIEVEMENTS,
+               "WAD and NAND formats not currently supported by Achievement Manager.");
+  AchievementManager::GetInstance().CloseGame();
+
+  core_timing.RemoveEvent(s_bootstrap_ppc_for_launch_event);
+  core_timing.ScheduleEvent(ticks, s_bootstrap_ppc_for_launch_event);
   return true;
 }
 
 bool ESDevice::BootstrapPPC()
 {
-  const bool result = m_ios.BootstrapPPC(m_pending_ppc_boot_content_path);
+  const bool result = GetEmulationKernel().BootstrapPPC(m_pending_ppc_boot_content_path);
   m_pending_ppc_boot_content_path = {};
   return result;
 }
 
-void ESDevice::Context::DoState(PointerWrap& p)
+void ESCore::Context::DoState(PointerWrap& p)
 {
   p.Do(uid);
   p.Do(gid);
@@ -470,7 +508,7 @@ void ESDevice::DoState(PointerWrap& p)
 {
   Device::DoState(p);
 
-  for (auto& entry : m_content_table)
+  for (auto& entry : m_core.m_content_table)
   {
     p.Do(entry.m_opened);
     p.Do(entry.m_title_id);
@@ -479,7 +517,7 @@ void ESDevice::DoState(PointerWrap& p)
     p.Do(entry.m_uid);
   }
 
-  m_title_context.DoState(p);
+  m_core.m_title_context.DoState(p);
 
   for (auto& context : m_contexts)
     context.DoState(p);
@@ -489,14 +527,13 @@ void ESDevice::DoState(PointerWrap& p)
 
 ESDevice::ContextArray::iterator ESDevice::FindActiveContext(s32 fd)
 {
-  return std::find_if(m_contexts.begin(), m_contexts.end(),
-                      [fd](const auto& context) { return context.ipc_fd == fd && context.active; });
+  return std::ranges::find_if(
+      m_contexts, [fd](const auto& context) { return context.ipc_fd == fd && context.active; });
 }
 
 ESDevice::ContextArray::iterator ESDevice::FindInactiveContext()
 {
-  return std::find_if(m_contexts.begin(), m_contexts.end(),
-                      [](const auto& context) { return !context.active; });
+  return std::ranges::find_if(m_contexts, [](const auto& context) { return !context.active; });
 }
 
 std::optional<IPCReply> ESDevice::Open(const OpenRequest& request)
@@ -680,7 +717,7 @@ std::optional<IPCReply> ESDevice::IOCtlV(const IOCtlVRequest& request)
   case IOCTL_ES_UNKNOWN_42:
     PanicAlertFmt("IOS-ES: Unimplemented ioctlv {:#x} ({} in vectors, {} io vectors)",
                   request.request, request.in_vectors.size(), request.io_vectors.size());
-    request.DumpUnknown(GetDeviceName(), Common::Log::LogType::IOS_ES,
+    request.DumpUnknown(GetSystem(), GetDeviceName(), Common::Log::LogType::IOS_ES,
                         Common::Log::LogLevel::LERROR);
     return IPCReply(IPC_EINVAL);
 
@@ -696,7 +733,9 @@ IPCReply ESDevice::GetConsumption(const IOCtlVRequest& request)
     return IPCReply(ES_EINVAL);
 
   // This is at least what crediar's ES module does
-  Memory::Write_U32(0, request.io_vectors[1].address);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+  memory.Write_U32(0, request.io_vectors[1].address);
   INFO_LOG_FMT(IOS_ES, "IOCTL_ES_GETCONSUMPTION");
   return IPCReply(IPC_SUCCESS);
 }
@@ -706,12 +745,15 @@ std::optional<IPCReply> ESDevice::Launch(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(2, 0))
     return IPCReply(ES_EINVAL);
 
-  const u64 title_id = Memory::Read_U64(request.in_vectors[0].address);
-  const u32 view = Memory::Read_U32(request.in_vectors[1].address);
-  const u64 ticketid = Memory::Read_U64(request.in_vectors[1].address + 4);
-  const u32 devicetype = Memory::Read_U32(request.in_vectors[1].address + 12);
-  const u64 titleid = Memory::Read_U64(request.in_vectors[1].address + 16);
-  const u16 access = Memory::Read_U16(request.in_vectors[1].address + 24);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
+  const u64 title_id = memory.Read_U64(request.in_vectors[0].address);
+  const u32 view = memory.Read_U32(request.in_vectors[1].address);
+  const u64 ticketid = memory.Read_U64(request.in_vectors[1].address + 4);
+  const u32 devicetype = memory.Read_U32(request.in_vectors[1].address + 12);
+  const u64 titleid = memory.Read_U64(request.in_vectors[1].address + 16);
+  const u16 access = memory.Read_U16(request.in_vectors[1].address + 24);
 
   INFO_LOG_FMT(IOS_ES, "IOCTL_ES_LAUNCH {:016x} {:08x} {:016x} {:08x} {:016x} {:04x}", title_id,
                view, ticketid, devicetype, titleid, access);
@@ -738,7 +780,7 @@ std::optional<IPCReply> ESDevice::LaunchBC(const IOCtlVRequest& request)
 
   // Here, IOS checks the clock speed and prevents ioctlv 0x25 from being used in GC mode.
   // An alternative way to do this is to check whether the current active IOS is MIOS.
-  if (m_ios.GetVersion() == 0x101)
+  if (GetEmulationKernel().GetVersion() == 0x101)
     return IPCReply(ES_EINVAL);
 
   if (!LaunchTitle(0x0000000100000100))
@@ -781,7 +823,7 @@ static ReturnCode WriteTmdForDiVerify(FS::FileSystem* fs, const ES::TMDReader& t
 
 ReturnCode ESDevice::DIVerify(const ES::TMDReader& tmd, const ES::TicketReader& ticket)
 {
-  m_title_context.Clear();
+  m_core.m_title_context.Clear();
   INFO_LOG_FMT(IOS_ES, "ES_DIVerify: Title context changed: (none)");
 
   if (!tmd.IsValid() || !ticket.IsValid())
@@ -790,14 +832,14 @@ ReturnCode ESDevice::DIVerify(const ES::TMDReader& tmd, const ES::TicketReader& 
   if (tmd.GetTitleId() != ticket.GetTitleId())
     return ES_EINVAL;
 
-  m_title_context.Update(tmd, ticket, DiscIO::Platform::WiiDisc);
+  m_core.m_title_context.Update(tmd, ticket, DiscIO::Platform::WiiDisc);
   INFO_LOG_FMT(IOS_ES, "ES_DIVerify: Title context changed: {:016x}", tmd.GetTitleId());
 
   // XXX: We are supposed to verify the TMD and ticket here, but cannot because
   // this may cause issues with custom/patched games.
 
-  const auto fs = m_ios.GetFS();
-  if (!FindInstalledTMD(tmd.GetTitleId()).IsValid())
+  const auto fs = GetEmulationKernel().GetFS();
+  if (!m_core.FindInstalledTMD(tmd.GetTitleId()).IsValid())
   {
     if (const ReturnCode ret = WriteTmdForDiVerify(fs.get(), tmd))
     {
@@ -806,7 +848,7 @@ ReturnCode ESDevice::DIVerify(const ES::TMDReader& tmd, const ES::TicketReader& 
     }
   }
 
-  if (!UpdateUIDAndGID(*GetIOS(), m_title_context.tmd))
+  if (!UpdateUIDAndGID(GetEmulationKernel(), m_core.m_title_context.tmd))
   {
     return ES_SHORT_READ;
   }
@@ -815,12 +857,12 @@ ReturnCode ESDevice::DIVerify(const ES::TMDReader& tmd, const ES::TicketReader& 
   // Might already exist, so we only need to check whether the second operation succeeded.
   constexpr FS::Modes data_dir_modes{FS::Mode::ReadWrite, FS::Mode::None, FS::Mode::None};
   fs->CreateDirectory(PID_KERNEL, PID_KERNEL, data_dir, 0, data_dir_modes);
-  return FS::ConvertResult(
-      fs->SetMetadata(0, data_dir, m_ios.GetUidForPPC(), m_ios.GetGidForPPC(), 0, data_dir_modes));
+  return FS::ConvertResult(fs->SetMetadata(0, data_dir, GetEmulationKernel().GetUidForPPC(),
+                                           GetEmulationKernel().GetGidForPPC(), 0, data_dir_modes));
 }
 
-ReturnCode ESDevice::CheckStreamKeyPermissions(const u32 uid, const u8* ticket_view,
-                                               const ES::TMDReader& tmd) const
+ReturnCode ESCore::CheckStreamKeyPermissions(const u32 uid, const u8* ticket_view,
+                                             const ES::TMDReader& tmd) const
 {
   const u32 title_flags = tmd.GetTitleFlags();
   // Only allow using this function with some titles (WFS titles).
@@ -862,8 +904,8 @@ ReturnCode ESDevice::CheckStreamKeyPermissions(const u32 uid, const u8* ticket_v
   return IPC_SUCCESS;
 }
 
-ReturnCode ESDevice::SetUpStreamKey(const u32 uid, const u8* ticket_view, const ES::TMDReader& tmd,
-                                    u32* handle)
+ReturnCode ESCore::SetUpStreamKey(const u32 uid, const u8* ticket_view, const ES::TMDReader& tmd,
+                                  u32* handle)
 {
   ReturnCode ret = CheckStreamKeyPermissions(uid, ticket_view, tmd);
   if (ret != IPC_SUCCESS)
@@ -899,7 +941,7 @@ ReturnCode ESDevice::SetUpStreamKey(const u32 uid, const u8* ticket_view, const 
   std::array<u8, 16> iv{};
   std::memcpy(iv.data(), &title_id, sizeof(title_id));
   ret = m_ios.GetIOSC().CreateObject(handle, IOSC::ObjectType::TYPE_SECRET_KEY,
-                                     IOSC::ObjectSubType::SUBTYPE_AES128, PID_ES);
+                                     IOSC::ObjectSubType::AES128, PID_ES);
   if (ret != IPC_SUCCESS)
     return ret;
 
@@ -925,17 +967,21 @@ IPCReply ESDevice::SetUpStreamKey(const Context& context, const IOCtlVRequest& r
     return IPCReply(ES_EINVAL);
   }
 
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   std::vector<u8> tmd_bytes(request.in_vectors[1].size);
-  Memory::CopyFromEmu(tmd_bytes.data(), request.in_vectors[1].address, tmd_bytes.size());
+  memory.CopyFromEmu(tmd_bytes.data(), request.in_vectors[1].address, tmd_bytes.size());
   const ES::TMDReader tmd{std::move(tmd_bytes)};
 
   if (!tmd.IsValid())
     return IPCReply(ES_EINVAL);
 
   u32 handle;
-  const ReturnCode ret =
-      SetUpStreamKey(context.uid, Memory::GetPointer(request.in_vectors[0].address), tmd, &handle);
-  Memory::Write_U32(handle, request.io_vectors[0].address);
+  const ReturnCode ret = m_core.SetUpStreamKey(
+      context.uid, memory.GetPointerForRange(request.in_vectors[0].address, sizeof(ES::TicketView)),
+      tmd, &handle);
+  memory.Write_U32(handle, request.io_vectors[0].address);
   return IPCReply(ret);
 }
 
@@ -944,11 +990,13 @@ IPCReply ESDevice::DeleteStreamKey(const IOCtlVRequest& request)
   if (!request.HasNumberOfValidVectors(1, 0) || request.in_vectors[0].size != sizeof(u32))
     return IPCReply(ES_EINVAL);
 
-  const u32 handle = Memory::Read_U32(request.in_vectors[0].address);
-  return IPCReply(m_ios.GetIOSC().DeleteObject(handle, PID_ES));
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+  const u32 handle = memory.Read_U32(request.in_vectors[0].address);
+  return IPCReply(GetEmulationKernel().GetIOSC().DeleteObject(handle, PID_ES));
 }
 
-bool ESDevice::IsActiveTitlePermittedByTicket(const u8* ticket_view) const
+bool ESCore::IsActiveTitlePermittedByTicket(const u8* ticket_view) const
 {
   if (!m_title_context.active)
     return false;
@@ -961,16 +1009,16 @@ bool ESDevice::IsActiveTitlePermittedByTicket(const u8* ticket_view) const
   return title_identifier && (title_identifier & ~permitted_title_mask) == permitted_title_id;
 }
 
-bool ESDevice::IsIssuerCorrect(VerifyContainerType type, const ES::CertReader& issuer_cert) const
+bool ESCore::IsIssuerCorrect(VerifyContainerType type, const ES::CertReader& issuer_cert) const
 {
   switch (type)
   {
   case VerifyContainerType::TMD:
-    return issuer_cert.GetName().compare(0, 2, "CP") == 0;
+    return issuer_cert.GetName().starts_with("CP");
   case VerifyContainerType::Ticket:
-    return issuer_cert.GetName().compare(0, 2, "XS") == 0;
+    return issuer_cert.GetName().starts_with("XS");
   case VerifyContainerType::Device:
-    return issuer_cert.GetName().compare(0, 2, "MS") == 0;
+    return issuer_cert.GetName().starts_with("MS");
   default:
     return false;
   }
@@ -978,7 +1026,7 @@ bool ESDevice::IsIssuerCorrect(VerifyContainerType type, const ES::CertReader& i
 
 static const std::string CERT_STORE_PATH = "/sys/cert.sys";
 
-ReturnCode ESDevice::ReadCertStore(std::vector<u8>* buffer) const
+ReturnCode ESCore::ReadCertStore(std::vector<u8>* buffer) const
 {
   const auto store_file =
       m_ios.GetFS()->OpenFile(PID_KERNEL, PID_KERNEL, CERT_STORE_PATH, FS::Mode::Read);
@@ -991,7 +1039,7 @@ ReturnCode ESDevice::ReadCertStore(std::vector<u8>* buffer) const
   return IPC_SUCCESS;
 }
 
-ReturnCode ESDevice::WriteNewCertToStore(const ES::CertReader& cert)
+ReturnCode ESCore::WriteNewCertToStore(const ES::CertReader& cert)
 {
   // Read the current store to determine if the new cert needs to be written.
   std::vector<u8> current_store;
@@ -1000,7 +1048,7 @@ ReturnCode ESDevice::WriteNewCertToStore(const ES::CertReader& cert)
   {
     const std::map<std::string, ES::CertReader> certs = ES::ParseCertChain(current_store);
     // The cert is already present in the store. Nothing to do.
-    if (certs.find(cert.GetName()) != certs.end())
+    if (certs.contains(cert.GetName()))
       return IPC_SUCCESS;
   }
 
@@ -1016,9 +1064,9 @@ ReturnCode ESDevice::WriteNewCertToStore(const ES::CertReader& cert)
   return IPC_SUCCESS;
 }
 
-ReturnCode ESDevice::VerifyContainer(VerifyContainerType type, VerifyMode mode,
-                                     const ES::SignedBlobReader& signed_blob,
-                                     const std::vector<u8>& cert_chain, u32* issuer_handle_out)
+ReturnCode ESCore::VerifyContainer(VerifyContainerType type, VerifyMode mode,
+                                   const ES::SignedBlobReader& signed_blob,
+                                   const std::vector<u8>& cert_chain, u32* issuer_handle_out)
 {
   if (!signed_blob.IsSignatureValid())
     return ES_EINVAL;
@@ -1047,32 +1095,35 @@ ReturnCode ESDevice::VerifyContainer(VerifyContainerType type, VerifyMode mode,
   // IOS assumes that the CA cert will always be signed by the root certificate,
   // and that the issuer is signed by the CA.
   IOSC& iosc = m_ios.GetIOSC();
-  IOSC::Handle handle;
+  IOSC::Handle ca_handle;
 
   // Create and initialise a handle for the CA cert and the issuer cert.
-  ReturnCode ret = iosc.CreateObject(&handle, IOSC::TYPE_PUBLIC_KEY, IOSC::SUBTYPE_RSA2048, PID_ES);
+  ReturnCode ret =
+      iosc.CreateObject(&ca_handle, IOSC::TYPE_PUBLIC_KEY, IOSC::ObjectSubType::RSA2048, PID_ES);
   if (ret != IPC_SUCCESS)
     return ret;
-  Common::ScopeGuard ca_guard{[&] { iosc.DeleteObject(handle, PID_ES); }};
-  ret = iosc.ImportCertificate(ca_cert, IOSC::HANDLE_ROOT_KEY, handle, PID_ES);
+  Common::ScopeGuard ca_guard{[&] { iosc.DeleteObject(ca_handle, PID_ES); }};
+  ret = iosc.ImportCertificate(ca_cert, IOSC::HANDLE_ROOT_KEY, ca_handle, PID_ES);
   if (ret != IPC_SUCCESS)
   {
-    ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_ImportCertificate(ca) failed with error {}", ret);
+    ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_ImportCertificate(ca) failed with error {}",
+                  Common::ToUnderlying(ret));
     return ret;
   }
 
   IOSC::Handle issuer_handle;
-  const IOSC::ObjectSubType subtype =
-      type == VerifyContainerType::Device ? IOSC::SUBTYPE_ECC233 : IOSC::SUBTYPE_RSA2048;
+  const IOSC::ObjectSubType subtype = type == VerifyContainerType::Device ?
+                                          IOSC::ObjectSubType::ECC233 :
+                                          IOSC::ObjectSubType::RSA2048;
   ret = iosc.CreateObject(&issuer_handle, IOSC::TYPE_PUBLIC_KEY, subtype, PID_ES);
   if (ret != IPC_SUCCESS)
     return ret;
   Common::ScopeGuard issuer_guard{[&] { iosc.DeleteObject(issuer_handle, PID_ES); }};
-  ret = iosc.ImportCertificate(issuer_cert, handle, issuer_handle, PID_ES);
+  ret = iosc.ImportCertificate(issuer_cert, ca_handle, issuer_handle, PID_ES);
   if (ret != IPC_SUCCESS)
   {
     ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_ImportCertificate(issuer) failed with error {}",
-                  ret);
+                  Common::ToUnderlying(ret));
     return ret;
   }
 
@@ -1081,7 +1132,8 @@ ReturnCode ESDevice::VerifyContainer(VerifyContainerType type, VerifyMode mode,
   ret = iosc.VerifyPublicKeySign(signed_blob.GetSha1(), issuer_handle, signature, PID_ES);
   if (ret != IPC_SUCCESS)
   {
-    ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_VerifyPublicKeySign failed with error {}", ret);
+    ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_VerifyPublicKeySign failed with error {}",
+                  Common::ToUnderlying(ret));
     return ret;
   }
 
@@ -1091,12 +1143,13 @@ ReturnCode ESDevice::VerifyContainer(VerifyContainerType type, VerifyMode mode,
     if (ret != IPC_SUCCESS)
     {
       ERROR_LOG_FMT(IOS_ES, "VerifyContainer: Writing the issuer cert failed with return code {}",
-                    ret);
+                    Common::ToUnderlying(ret));
     }
 
     ret = WriteNewCertToStore(ca_cert);
     if (ret != IPC_SUCCESS)
-      ERROR_LOG_FMT(IOS_ES, "VerifyContainer: Writing the CA cert failed with return code {}", ret);
+      ERROR_LOG_FMT(IOS_ES, "VerifyContainer: Writing the CA cert failed with return code {}",
+                    Common::ToUnderlying(ret));
   }
 
   if (ret == IPC_SUCCESS && issuer_handle_out)
@@ -1108,9 +1161,9 @@ ReturnCode ESDevice::VerifyContainer(VerifyContainerType type, VerifyMode mode,
   return ret;
 }
 
-ReturnCode ESDevice::VerifyContainer(VerifyContainerType type, VerifyMode mode,
-                                     const ES::CertReader& cert, const std::vector<u8>& cert_chain,
-                                     u32 certificate_iosc_handle)
+ReturnCode ESCore::VerifyContainer(VerifyContainerType type, VerifyMode mode,
+                                   const ES::CertReader& cert, const std::vector<u8>& cert_chain,
+                                   u32 certificate_iosc_handle)
 {
   IOSC::Handle issuer_handle;
   ReturnCode ret = VerifyContainer(type, mode, cert, cert_chain, &issuer_handle);

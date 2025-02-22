@@ -6,11 +6,11 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include <fmt/format.h>
 
@@ -18,38 +18,39 @@
 #include "Common/IOFile.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
+#include "Common/Unreachable.h"
+#include "Core/Core.h"
+#include "Core/Debugger/DebugInterface.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCAnalyst.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/PowerPC/SignatureDB/SignatureDB.h"
+#include "Core/System.h"
 
-PPCSymbolDB g_symbolDB;
-
-PPCSymbolDB::PPCSymbolDB() : debugger{&PowerPC::debug_interface}
-{
-}
+PPCSymbolDB::PPCSymbolDB() = default;
 
 PPCSymbolDB::~PPCSymbolDB() = default;
 
 // Adds the function to the list, unless it's already there
-Common::Symbol* PPCSymbolDB::AddFunction(u32 start_addr)
+Common::Symbol* PPCSymbolDB::AddFunction(const Core::CPUThreadGuard& guard, u32 start_addr)
 {
   // It's already in the list
-  if (m_functions.find(start_addr) != m_functions.end())
+  if (m_functions.contains(start_addr))
     return nullptr;
 
   Common::Symbol symbol;
-  if (!PPCAnalyst::AnalyzeFunction(start_addr, symbol))
+  if (!PPCAnalyst::AnalyzeFunction(guard, start_addr, symbol))
     return nullptr;
 
-  m_functions[start_addr] = std::move(symbol);
-  Common::Symbol* ptr = &m_functions[start_addr];
+  const auto insert = m_functions.emplace(start_addr, std::move(symbol));
+  Common::Symbol* ptr = &insert.first->second;
   ptr->type = Common::Symbol::Type::Function;
   m_checksum_to_function[ptr->hash].insert(ptr);
   return ptr;
 }
 
-void PPCSymbolDB::AddKnownSymbol(u32 startAddr, u32 size, const std::string& name,
+void PPCSymbolDB::AddKnownSymbol(const Core::CPUThreadGuard& guard, u32 startAddr, u32 size,
+                                 const std::string& name, const std::string& object_name,
                                  Common::Symbol::Type type)
 {
   auto iter = m_functions.find(startAddr);
@@ -58,34 +59,35 @@ void PPCSymbolDB::AddKnownSymbol(u32 startAddr, u32 size, const std::string& nam
     // already got it, let's just update name, checksum & size to be sure.
     Common::Symbol* tempfunc = &iter->second;
     tempfunc->Rename(name);
-    tempfunc->hash = HashSignatureDB::ComputeCodeChecksum(startAddr, startAddr + size - 4);
+    tempfunc->object_name = object_name;
+    tempfunc->hash = HashSignatureDB::ComputeCodeChecksum(guard, startAddr, startAddr + size - 4);
     tempfunc->type = type;
     tempfunc->size = size;
   }
   else
   {
     // new symbol. run analyze.
-    Common::Symbol tf;
-    tf.Rename(name);
-    tf.type = type;
-    tf.address = startAddr;
-    if (tf.type == Common::Symbol::Type::Function)
+    auto& new_symbol = m_functions.emplace(startAddr, name).first->second;
+    new_symbol.object_name = object_name;
+    new_symbol.type = type;
+    new_symbol.address = startAddr;
+
+    if (new_symbol.type == Common::Symbol::Type::Function)
     {
-      PPCAnalyst::AnalyzeFunction(startAddr, tf, size);
+      PPCAnalyst::AnalyzeFunction(guard, startAddr, new_symbol, size);
       // Do not truncate symbol when a size is expected
-      if (size != 0 && tf.size != size)
+      if (size != 0 && new_symbol.size != size)
       {
         WARN_LOG_FMT(SYMBOLS, "Analysed symbol ({}) size mismatch, {} expected but {} computed",
-                     name, size, tf.size);
-        tf.size = size;
+                     name, size, new_symbol.size);
+        new_symbol.size = size;
       }
-      m_checksum_to_function[tf.hash].insert(&m_functions[startAddr]);
+      m_checksum_to_function[new_symbol.hash].insert(&new_symbol);
     }
     else
     {
-      tf.size = size;
+      new_symbol.size = size;
     }
-    m_functions[startAddr] = tf;
   }
 }
 
@@ -110,13 +112,11 @@ Common::Symbol* PPCSymbolDB::GetSymbolFromAddr(u32 addr)
   return nullptr;
 }
 
-std::string PPCSymbolDB::GetDescription(u32 addr)
+std::string_view PPCSymbolDB::GetDescription(u32 addr)
 {
-  Common::Symbol* symbol = GetSymbolFromAddr(addr);
-  if (symbol)
+  if (const Common::Symbol* const symbol = GetSymbolFromAddr(addr))
     return symbol->name;
-  else
-    return " --- ";
+  return " --- ";
 }
 
 void PPCSymbolDB::FillInCallers()
@@ -224,7 +224,7 @@ void PPCSymbolDB::LogFunctionCall(u32 addr)
 // This one can load both leftover map files on game discs (like Zelda), and mapfiles
 // produced by SaveSymbolMap below.
 // bad=true means carefully load map files that might not be from exactly the right version
-bool PPCSymbolDB::LoadMap(const std::string& filename, bool bad)
+bool PPCSymbolDB::LoadMap(const Core::CPUThreadGuard& guard, const std::string& filename, bool bad)
 {
   File::IOFile f(filename, "r");
   if (!f)
@@ -252,7 +252,7 @@ bool PPCSymbolDB::LoadMap(const std::string& filename, bool bad)
       continue;
 
     // Support CodeWarrior and Dolphin map
-    if (StringEndsWith(line, " section layout\n") || strcmp(temp, ".text") == 0 ||
+    if (StripWhitespace(line).ends_with(" section layout") || strcmp(temp, ".text") == 0 ||
         strcmp(temp, ".init") == 0)
     {
       section_name = temp;
@@ -284,7 +284,7 @@ bool PPCSymbolDB::LoadMap(const std::string& filename, bool bad)
     //    3] _stack_addr found as linker generated symbol
     // ...
     //           10] EXILock(func, global) found in exi.a EXIBios.c
-    if (StringEndsWith(temp, "]"))
+    if (std::string_view{temp}.ends_with(']'))
       continue;
 
     // TODO - Handle/Write a parser for:
@@ -311,7 +311,7 @@ bool PPCSymbolDB::LoadMap(const std::string& filename, bool bad)
         continue;
       column_count = 2;
 
-      // Three columns format:
+      // Three columns format (with optional alignment):
       //  Starting        Virtual
       //  address  Size   address
       //  -----------------------
@@ -320,7 +320,7 @@ bool PPCSymbolDB::LoadMap(const std::string& filename, bool bad)
       else
         iss.str("");
 
-      // Four columns format:
+      // Four columns format (with optional alignment):
       //  Starting        Virtual  File
       //  address  Size   address  offset
       //  ---------------------------------
@@ -328,105 +328,117 @@ bool PPCSymbolDB::LoadMap(const std::string& filename, bool bad)
         column_count = 4;
     }
 
-    u32 address, vaddress, size, offset, alignment;
-    char name[512], container[512];
-    if (column_count == 4)
-    {
-      // sometimes there is no alignment value, and sometimes it is because it is an entry of
-      // something else
-      if (length > 37 && line[37] == ' ')
+    u32 address;
+    u32 vaddress;
+    u32 size = 0;
+    u32 offset = 0;
+    u32 alignment = 0;
+    char name[512]{};
+    static constexpr char ENTRY_OF_STRING[] = " (entry of ";
+    static constexpr std::string_view ENTRY_OF_VIEW(ENTRY_OF_STRING);
+    auto parse_entry_of = [](char* name) {
+      if (char* s1 = strstr(name, ENTRY_OF_STRING); s1 != nullptr)
       {
-        alignment = 0;
-        sscanf(line, "%08x %08x %08x %08x %511s", &address, &size, &vaddress, &offset, name);
-        char* s = strstr(line, "(entry of ");
-        if (s)
+        char container[512];
+        char* ptr = s1 + ENTRY_OF_VIEW.size();
+        sscanf(ptr, "%511s", container);
+        // Skip sections, those start with a dot, e.g. (entry of .text)
+        if (char* s2 = strchr(container, ')'); s2 != nullptr && *container != '.')
         {
-          sscanf(s + 10, "%511s", container);
-          char* s2 = (strchr(container, ')'));
-          if (s2 && container[0] != '.')
-          {
-            s2[0] = '\0';
-            strcat(container, "::");
-            strcat(container, name);
-            strcpy(name, container);
-          }
+          ptr += strlen(container);
+          // Preserve data after the entry part, usually it contains object names
+          strcpy(s1, ptr);
+          *s2 = '\0';
+          strcat(container, "::");
+          strcat(container, name);
+          strcpy(name, container);
         }
       }
-      else
-      {
-        sscanf(line, "%08x %08x %08x %08x %i %511s", &address, &size, &vaddress, &offset,
-               &alignment, name);
-      }
-    }
-    else if (column_count == 3)
+    };
+    auto was_alignment = [](const char* name) {
+      return *name == ' ' || (*name >= '0' && *name <= '9');
+    };
+    auto parse_alignment = [](char* name, u32* alignment) {
+      const std::string buffer(StripWhitespace(name));
+      return sscanf(buffer.c_str(), "%i %511[^\r\n]", alignment, name);
+    };
+    switch (column_count)
     {
+    case 4:
+      // sometimes there is no alignment value, and sometimes it is because it is an entry of
+      // something else
+      sscanf(line, "%08x %08x %08x %08x %511[^\r\n]", &address, &size, &vaddress, &offset, name);
+      if (was_alignment(name))
+        parse_alignment(name, &alignment);
+      // The `else` statement was omitted to handle symbol already saved in Dolphin symbol map
+      // since it doesn't omit the alignment on save for such case.
+      parse_entry_of(name);
+      break;
+    case 3:
       // some entries in the table have a function name followed by " (entry of " followed by a
       // container name, followed by ")"
       // instead of a space followed by a number followed by a space followed by a name
-      if (length > 27 && line[27] != ' ' && strstr(line, "(entry of "))
-      {
-        alignment = 0;
-        sscanf(line, "%08x %08x %08x %511s", &address, &size, &vaddress, name);
-        char* s = strstr(line, "(entry of ");
-        if (s)
-        {
-          sscanf(s + 10, "%511s", container);
-          char* s2 = (strchr(container, ')'));
-          if (s2 && container[0] != '.')
-          {
-            s2[0] = '\0';
-            strcat(container, "::");
-            strcat(container, name);
-            strcpy(name, container);
-          }
-        }
-      }
-      else
-      {
-        sscanf(line, "%08x %08x %08x %i %511s", &address, &size, &vaddress, &alignment, name);
-      }
-    }
-    else if (column_count == 2)
-    {
-      sscanf(line, "%08x %511s", &address, name);
+      sscanf(line, "%08x %08x %08x %511[^\r\n]", &address, &size, &vaddress, name);
+      if (was_alignment(name))
+        parse_alignment(name, &alignment);
+      // The `else` statement was omitted to handle symbol already saved in Dolphin symbol map
+      // since it doesn't omit the alignment on save for such case.
+      parse_entry_of(name);
+      break;
+    case 2:
+      sscanf(line, "%08x %511[^\r\n]", &address, name);
       vaddress = address;
-      size = 0;
-    }
-    else
-    {
+      break;
+    default:
+      // Should never happen
+      Common::Unreachable();
       break;
     }
-    const char* namepos = strstr(line, name);
-    if (namepos != nullptr)  // would be odd if not :P
-      strcpy(name, namepos);
-    name[strlen(name) - 1] = 0;
-    if (name[strlen(name) - 1] == '\r')
-      name[strlen(name) - 1] = 0;
+
+    // Split the current name string into separate parts, and get the object name
+    // if it exists.
+    const std::vector<std::string> parts = SplitString(name, '\t');
+    const std::string name_string(StripWhitespace(parts.size() > 0 ? parts[0] : name));
+    const std::string object_filename_string =
+        parts.size() > 1 ? std::string(StripWhitespace(parts[1])) : "";
 
     // Check if this is a valid entry.
     if (strlen(name) > 0)
     {
-      // Can't compute the checksum if not in RAM
-      bool good = !bad && PowerPC::HostIsInstructionRAMAddress(vaddress) &&
-                  PowerPC::HostIsInstructionRAMAddress(vaddress + size - 4);
-      if (!good)
+      bool good;
+      const Common::Symbol::Type type = section_name == ".text" || section_name == ".init" ?
+                                            Common::Symbol::Type::Function :
+                                            Common::Symbol::Type::Data;
+
+      if (type == Common::Symbol::Type::Function)
       {
-        // check for BLR before function
-        PowerPC::TryReadInstResult read_result = PowerPC::TryReadInstruction(vaddress - 4);
-        if (read_result.valid && read_result.hex == 0x4e800020)
+        // Can't compute the checksum if not in RAM
+        good = !bad && PowerPC::MMU::HostIsInstructionRAMAddress(guard, vaddress) &&
+               PowerPC::MMU::HostIsInstructionRAMAddress(guard, vaddress + size - 4);
+        if (!good)
         {
-          // check for BLR at end of function
-          read_result = PowerPC::TryReadInstruction(vaddress + size - 4);
-          good = read_result.valid && read_result.hex == 0x4e800020;
+          // check for BLR before function
+          PowerPC::TryReadInstResult read_result =
+              guard.GetSystem().GetMMU().TryReadInstruction(vaddress - 4);
+          if (read_result.valid && read_result.hex == 0x4e800020)
+          {
+            // check for BLR at end of function
+            read_result = guard.GetSystem().GetMMU().TryReadInstruction(vaddress + size - 4);
+            good = read_result.valid && read_result.hex == 0x4e800020;
+          }
         }
       }
+      else
+      {
+        // Data type, can have any length.
+        good = !bad && PowerPC::MMU::HostIsRAMAddress(guard, vaddress) &&
+               PowerPC::MMU::HostIsRAMAddress(guard, vaddress + size - 1);
+      }
+
       if (good)
       {
         ++good_count;
-        if (section_name == ".text" || section_name == ".init")
-          AddKnownSymbol(vaddress, size, name, Common::Symbol::Type::Function);
-        else
-          AddKnownSymbol(vaddress, size, name, Common::Symbol::Type::Data);
+        AddKnownSymbol(guard, vaddress, size, name_string, object_filename_string, type);
       }
       else
       {
@@ -447,34 +459,40 @@ bool PPCSymbolDB::SaveSymbolMap(const std::string& filename) const
   if (!f)
     return false;
 
-  std::vector<const Common::Symbol*> function_symbols;
-  std::vector<const Common::Symbol*> data_symbols;
-
-  for (const auto& function : m_functions)
-  {
-    const Common::Symbol& symbol = function.second;
-    if (symbol.type == Common::Symbol::Type::Function)
-      function_symbols.push_back(&symbol);
-    else
-      data_symbols.push_back(&symbol);
-  }
-
   // Write .text section
+  auto function_symbols =
+      m_functions |
+      std::views::filter([](auto f) { return f.second.type == Common::Symbol::Type::Function; }) |
+      std::views::transform([](auto f) { return f.second; });
   f.WriteString(".text section layout\n");
   for (const auto& symbol : function_symbols)
   {
     // Write symbol address, size, virtual address, alignment, name
-    f.WriteString(fmt::format("{0:08x} {1:08x} {2:08x} {3} {4}\n", symbol->address, symbol->size,
-                              symbol->address, 0, symbol->name));
+    std::string line = fmt::format("{:08x} {:06x} {:08x} {} {}", symbol.address, symbol.size,
+                                   symbol.address, 0, symbol.name);
+    // Also write the object name if it exists
+    if (!symbol.object_name.empty())
+      line += fmt::format(" \t{0}", symbol.object_name);
+    line += "\n";
+    f.WriteString(line);
   }
 
   // Write .data section
+  auto data_symbols =
+      m_functions |
+      std::views::filter([](auto f) { return f.second.type == Common::Symbol::Type::Data; }) |
+      std::views::transform([](auto f) { return f.second; });
   f.WriteString("\n.data section layout\n");
   for (const auto& symbol : data_symbols)
   {
     // Write symbol address, size, virtual address, alignment, name
-    f.WriteString(fmt::format("{0:08x} {1:08x} {2:08x} {3} {4}\n", symbol->address, symbol->size,
-                              symbol->address, 0, symbol->name));
+    std::string line = fmt::format("{:08x} {:06x} {:08x} {} {}", symbol.address, symbol.size,
+                                   symbol.address, 0, symbol.name);
+    // Also write the object name if it exists
+    if (!symbol.object_name.empty())
+      line += fmt::format(" \t{0}", symbol.object_name);
+    line += "\n";
+    f.WriteString(line);
   }
 
   return true;
@@ -485,7 +503,7 @@ bool PPCSymbolDB::SaveSymbolMap(const std::string& filename) const
 // Notes:
 //  - Dolphin doesn't load back code maps
 //  - It's a custom code map format
-bool PPCSymbolDB::SaveCodeMap(const std::string& filename) const
+bool PPCSymbolDB::SaveCodeMap(const Core::CPUThreadGuard& guard, const std::string& filename) const
 {
   constexpr int SYMBOL_NAME_LIMIT = 30;
   File::IOFile f(filename, "w");
@@ -494,6 +512,8 @@ bool PPCSymbolDB::SaveCodeMap(const std::string& filename) const
 
   // Write ".text" at the top
   f.WriteString(".text\n");
+
+  const auto& ppc_debug_interface = guard.GetSystem().GetPowerPC().GetDebugInterface();
 
   u32 next_address = 0;
   for (const auto& function : m_functions)
@@ -515,7 +535,7 @@ bool PPCSymbolDB::SaveCodeMap(const std::string& filename) const
     // Write the code
     for (u32 address = symbol.address; address < next_address; address += 4)
     {
-      const std::string disasm = debugger->Disassemble(address);
+      const std::string disasm = ppc_debug_interface.Disassemble(&guard, address);
       f.WriteString(fmt::format("{0:08x} {1:<{2}.{3}} {4}\n", address, symbol.name,
                                 SYMBOL_NAME_LIMIT, SYMBOL_NAME_LIMIT, disasm));
     }

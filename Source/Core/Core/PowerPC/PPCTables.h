@@ -3,20 +3,15 @@
 
 #pragma once
 
-#include <array>
-#include <cstddef>
-
 #include "Common/CommonTypes.h"
 #include "Core/PowerPC/Gekko.h"
-#include "Core/PowerPC/Interpreter/Interpreter.h"
 
 // Flags that indicate what an instruction can do.
 enum InstructionFlags : u64
 {
   FL_SET_CR0 = (1ull << 0),  // Sets CR0.
   FL_SET_CR1 = (1ull << 1),  // Sets CR1.
-  FL_SET_CRn = (1ull << 2),  // Encoding decides which CR can be set.
-  FL_SET_CRx = FL_SET_CR0 | FL_SET_CR1 | FL_SET_CRn,
+  FL_SET_CRn = (1ull << 2),  // Sets a CR determined by the CRFD field.
   FL_SET_CA = (1ull << 3),   // Sets the carry flag.
   FL_READ_CA = (1ull << 4),  // Reads the carry flag.
   FL_RC_BIT = (1ull << 5),   // Sets the record bit.
@@ -41,18 +36,17 @@ enum InstructionFlags : u64
   FL_OUT_AD = FL_OUT_A | FL_OUT_D,
   FL_TIMER = (1ull << 15),            // Used only for mftb.
   FL_CHECKEXCEPTIONS = (1ull << 16),  // Used with rfi/rfid.
-  FL_EVIL =
-      (1ull << 17),  // Historically used to refer to instructions that messed up Super Monkey Ball.
-  FL_USE_FPU = (1ull << 18),     // Used to indicate a floating point instruction.
-  FL_LOADSTORE = (1ull << 19),   // Used to indicate a load/store instruction.
-  FL_SET_FPRF = (1ull << 20),    // Sets bits in the FPRF.
-  FL_READ_FPRF = (1ull << 21),   // Reads bits from the FPRF.
-  FL_SET_OE = (1ull << 22),      // Sets the overflow flag.
-  FL_IN_FLOAT_A = (1ull << 23),  // frA is used as an input.
-  FL_IN_FLOAT_B = (1ull << 24),  // frB is used as an input.
-  FL_IN_FLOAT_C = (1ull << 25),  // frC is used as an input.
-  FL_IN_FLOAT_S = (1ull << 26),  // frS is used as an input.
-  FL_IN_FLOAT_D = (1ull << 27),  // frD is used as an input.
+  FL_NO_REORDER = (1ull << 17),       // Instruction should not be reordered by our optimizations.
+  FL_USE_FPU = (1ull << 18),          // Used to indicate a floating point instruction.
+  FL_LOADSTORE = (1ull << 19),        // Used to indicate a load/store instruction.
+  FL_SET_FPRF = (1ull << 20),         // Sets bits in the FPRF.
+  FL_READ_FPRF = (1ull << 21),        // Reads bits from the FPRF.
+  FL_SET_OE = (1ull << 22),           // Sets the overflow flag.
+  FL_IN_FLOAT_A = (1ull << 23),       // frA is used as an input.
+  FL_IN_FLOAT_B = (1ull << 24),       // frB is used as an input.
+  FL_IN_FLOAT_C = (1ull << 25),       // frC is used as an input.
+  FL_IN_FLOAT_S = (1ull << 26),       // frS is used as an input.
+  FL_IN_FLOAT_D = (1ull << 27),       // frD is used as an input.
   FL_IN_FLOAT_AB = FL_IN_FLOAT_A | FL_IN_FLOAT_B,
   FL_IN_FLOAT_AC = FL_IN_FLOAT_A | FL_IN_FLOAT_C,
   FL_IN_FLOAT_ABC = FL_IN_FLOAT_A | FL_IN_FLOAT_B | FL_IN_FLOAT_C,
@@ -66,7 +60,13 @@ enum InstructionFlags : u64
   FL_IN_FLOAT_BC_BITEXACT = FL_IN_FLOAT_B_BITEXACT | FL_IN_FLOAT_C_BITEXACT,
   FL_PROGRAMEXCEPTION = (1ull << 32),  // May generate a program exception (not floating point).
   FL_FLOAT_EXCEPTION = (1ull << 33),   // May generate a program exception (floating point).
-  FL_FLOAT_DIV = (1ull << 34),  // May generate a program exception (FP) due to division by 0.
+  FL_FLOAT_DIV = (1ull << 34),    // May generate a program exception (FP) due to division by 0.
+  FL_SET_ALL_CR = (1ull << 35),   // Sets every CR.
+  FL_READ_CRn = (1ull << 36),     // Reads a CR determined by the CRFS field.
+  FL_READ_CR_BI = (1ull << 37),   // Reads a CR determined by the BI field.
+  FL_READ_ALL_CR = (1ull << 38),  // Reads every CR.
+  FL_SET_CRx = FL_SET_CR0 | FL_SET_CR1 | FL_SET_CRn | FL_SET_ALL_CR,
+  FL_READ_CRx = FL_READ_CRn | FL_READ_CR_BI | FL_READ_ALL_CR,
 };
 
 enum class OpType
@@ -93,36 +93,32 @@ enum class OpType
   Unknown,
 };
 
+struct GekkoOPStats
+{
+  u64 run_count;
+  u32 compile_count;
+  u32 last_use;
+};
+
 struct GekkoOPInfo
 {
   const char* opname;
   OpType type;
+  u32 num_cycles;
   u64 flags;
-  int numCycles;
-  u64 runCount;
-  int compileCount;
-  u32 lastUse;
+  // Mutable
+  GekkoOPStats* stats;
 };
-extern std::array<GekkoOPInfo*, 64> m_infoTable;
-extern std::array<GekkoOPInfo*, 1024> m_infoTable4;
-extern std::array<GekkoOPInfo*, 1024> m_infoTable19;
-extern std::array<GekkoOPInfo*, 1024> m_infoTable31;
-extern std::array<GekkoOPInfo*, 32> m_infoTable59;
-extern std::array<GekkoOPInfo*, 1024> m_infoTable63;
-
-extern std::array<GekkoOPInfo*, 512> m_allInstructions;
-extern size_t m_numInstructions;
 
 namespace PPCTables
 {
-GekkoOPInfo* GetOpInfo(UGeckoInstruction inst);
-Interpreter::Instruction GetInterpreterOp(UGeckoInstruction inst);
+const GekkoOPInfo* GetOpInfo(UGeckoInstruction inst, u32 pc);
 
-bool IsValidInstruction(UGeckoInstruction inst);
-bool UsesFPU(UGeckoInstruction inst);
+bool IsValidInstruction(UGeckoInstruction inst, u32 pc);
 
-void CountInstruction(UGeckoInstruction inst);
+void CountInstruction(UGeckoInstruction inst, u32 pc);
+void CountInstructionCompile(const GekkoOPInfo* info, u32 pc);
 void PrintInstructionRunCounts();
 void LogCompiledInstructions();
-const char* GetInstructionName(UGeckoInstruction inst);
+const char* GetInstructionName(UGeckoInstruction inst, u32 pc);
 }  // namespace PPCTables

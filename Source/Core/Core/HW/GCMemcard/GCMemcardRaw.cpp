@@ -30,6 +30,7 @@
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
 #include "Core/HW/GCMemcard/GCMemcard.h"
 #include "Core/HW/Sram.h"
+#include "Core/System.h"
 
 #define SIZE_TO_Mb (1024 * 8 * 16)
 #define MC_HDR_SIZE 0xA000
@@ -59,10 +60,11 @@ MemoryCard::MemoryCard(const std::string& filename, ExpansionInterface::Slot car
     m_memcard_data = std::make_unique<u8[]>(m_memory_card_size);
 
     // Fills in the first 5 blocks (MC_HDR_SIZE bytes)
-    const CardFlashId& flash_id = g_SRAM.settings_ex.flash_id[Memcard::SLOT_A];
+    auto& sram = Core::System::GetInstance().GetSRAM();
+    const CardFlashId& flash_id = sram.settings_ex.flash_id[Memcard::SLOT_A];
     const bool shift_jis = m_filename.find(".JAP.raw") != std::string::npos;
-    const u32 rtc_bias = g_SRAM.settings.rtc_bias;
-    const u32 sram_language = static_cast<u32>(g_SRAM.settings.language);
+    const u32 rtc_bias = sram.settings.rtc_bias;
+    const u32 sram_language = static_cast<u32>(sram.settings.language);
     const u64 format_time =
         Common::Timer::GetLocalTimeSinceJan1970() - ExpansionInterface::CEXIIPL::GC_EPOCH;
     Memcard::GCMemcard::Format(&m_memcard_data[0], flash_id, size_mbits, shift_jis, rtc_bias,
@@ -154,9 +156,8 @@ void MemoryCard::FlushThread()
     if (do_exit)
       return;
 
-    Core::DisplayMessage(fmt::format("Wrote memory card {} contents to {}",
-                                     m_card_slot == ExpansionInterface::Slot::A ? 'A' : 'B',
-                                     m_filename),
+    Core::DisplayMessage(fmt::format("Wrote to Memory Card {}",
+                                     m_card_slot == ExpansionInterface::Slot::A ? 'A' : 'B'),
                          4000);
   }
 }
@@ -168,7 +169,7 @@ void MemoryCard::MakeDirty()
 
 s32 MemoryCard::Read(u32 src_address, s32 length, u8* dest_address)
 {
-  if (!IsAddressInBounds(src_address))
+  if (!IsAddressInBounds(src_address, length))
   {
     PanicAlertFmtT("MemoryCard: Read called with invalid source address ({0:#x})", src_address);
     return -1;
@@ -180,7 +181,7 @@ s32 MemoryCard::Read(u32 src_address, s32 length, u8* dest_address)
 
 s32 MemoryCard::Write(u32 dest_address, s32 length, const u8* src_address)
 {
-  if (!IsAddressInBounds(dest_address))
+  if (!IsAddressInBounds(dest_address, length))
   {
     PanicAlertFmtT("MemoryCard: Write called with invalid destination address ({0:#x})",
                    dest_address);
@@ -197,7 +198,7 @@ s32 MemoryCard::Write(u32 dest_address, s32 length, const u8* src_address)
 
 void MemoryCard::ClearBlock(u32 address)
 {
-  if (address & (Memcard::BLOCK_SIZE - 1) || !IsAddressInBounds(address))
+  if (address & (Memcard::BLOCK_SIZE - 1) || !IsAddressInBounds(address, Memcard::BLOCK_SIZE))
   {
     PanicAlertFmtT("MemoryCard: ClearBlock called on invalid address ({0:#x})", address);
     return;

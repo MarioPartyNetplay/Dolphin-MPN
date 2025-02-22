@@ -422,7 +422,7 @@ public:
       if (data)
       {
         std::vector<u8> file_data_enc(Common::AlignUp(data->size(), BLOCK_SZ));
-        std::copy(data->cbegin(), data->cend(), file_data_enc.begin());
+        std::ranges::copy(*data, file_data_enc.begin());
         m_iosc.Encrypt(IOS::HLE::IOSC::HANDLE_SD_KEY, file_hdr.iv.data(), file_data_enc.data(),
                        file_data_enc.size(), file_data_enc.data(), IOS::PID_ES);
         if (!m_file.WriteBytes(file_data_enc.data(), file_data_enc.size()))
@@ -553,7 +553,7 @@ CopyResult Import(const std::string& data_bin_path, std::function<bool()> can_ov
     return CopyResult::CorruptedSource;
   }
 
-  if (!WiiUtils::EnsureTMDIsImported(*ios.GetFS(), *ios.GetES(), header->tid))
+  if (!WiiUtils::EnsureTMDIsImported(*ios.GetFS(), ios.GetESCore(), header->tid))
   {
     ERROR_LOG_FMT(CORE, "WiiSave::Import: Failed to find or import TMD for title {:16x}",
                   header->tid);
@@ -585,7 +585,7 @@ size_t ExportAll(std::string_view export_path)
 {
   IOS::HLE::Kernel ios;
   size_t exported_save_count = 0;
-  for (const u64 title : ios.GetES()->GetInstalledTitles())
+  for (const u64 title : ios.GetESCore().GetInstalledTitles())
   {
     if (Export(title, export_path, &ios) == CopyResult::Success)
       ++exported_save_count;

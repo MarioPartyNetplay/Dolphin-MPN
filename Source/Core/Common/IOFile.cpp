@@ -35,9 +35,10 @@ IOFile::IOFile(std::FILE* file) : m_file(file), m_good(true)
 {
 }
 
-IOFile::IOFile(const std::string& filename, const char openmode[]) : m_file(nullptr), m_good(true)
+IOFile::IOFile(const std::string& filename, const char openmode[], SharedAccess sh)
+    : m_file(nullptr), m_good(true)
 {
-  Open(filename, openmode);
+  Open(filename, openmode, sh);
 }
 
 IOFile::~IOFile()
@@ -62,12 +63,21 @@ void IOFile::Swap(IOFile& other) noexcept
   std::swap(m_good, other.m_good);
 }
 
-bool IOFile::Open(const std::string& filename, const char openmode[])
+bool IOFile::Open(const std::string& filename, const char openmode[],
+                  [[maybe_unused]] SharedAccess sh)
 {
   Close();
 
 #ifdef _WIN32
-  m_good = _tfopen_s(&m_file, UTF8ToTStr(filename).c_str(), UTF8ToTStr(openmode).c_str()) == 0;
+  if (sh == SharedAccess::Default)
+  {
+    m_good = _tfopen_s(&m_file, UTF8ToTStr(filename).c_str(), UTF8ToTStr(openmode).c_str()) == 0;
+  }
+  else if (sh == SharedAccess::Read)
+  {
+    m_file = _tfsopen(UTF8ToTStr(filename).c_str(), UTF8ToTStr(openmode).c_str(), SH_DENYWR);
+    m_good = m_file != nullptr;
+  }
 #else
 #ifdef ANDROID
   if (IsPathAndroidContent(filename))
@@ -89,6 +99,15 @@ bool IOFile::Close()
 
   m_file = nullptr;
   return m_good;
+}
+
+IOFile IOFile::Duplicate(const char openmode[]) const
+{
+#ifdef _WIN32
+  return IOFile(_fdopen(_dup(_fileno(m_file)), openmode));
+#else   // _WIN32
+  return IOFile(fdopen(dup(fileno(m_file)), openmode));
+#endif  // _WIN32
 }
 
 void IOFile::SetHandle(std::FILE* file)

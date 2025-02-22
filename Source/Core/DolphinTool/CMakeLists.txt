@@ -1,6 +1,7 @@
 add_executable(dolphin-tool
   ToolHeadlessPlatform.cpp
-  Command.h
+  ExtractCommand.cpp
+  ExtractCommand.h
   ConvertCommand.cpp
   ConvertCommand.h
   VerifyCommand.cpp
@@ -17,6 +18,7 @@ PRIVATE
   discio
   uicommon
   cpp-optparse
+  fmt::fmt
 )
 
 if(MSVC)
@@ -25,4 +27,4 @@ if(MSVC)
 endif()
 
 set(CPACK_PACKAGE_EXECUTABLES ${CPACK_PACKAGE_EXECUTABLES} dolphin-tool)
-install(TARGETS dolphin-tool RUNTIME DESTINATION ${bindir})
+install(TARGETS dolphin-tool RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -6,6 +6,7 @@
 #include "Common/Align.h"
 #include "Common/Assert.h"
 
+#include "VideoBackends/Metal/MTLGfx.h"
 #include "VideoBackends/Metal/MTLStateTracker.h"
 
 Metal::Texture::Texture(MRCOwned<id<MTLTexture>> tex, const TextureConfig& config)
@@ -50,8 +51,12 @@ void Metal::Texture::ResolveFromTexture(const AbstractTexture* src,
   g_state_tracker->ResolveTexture(src_tex, m_tex, layer, level);
 }
 
+// Use a temporary texture for large texture loads
+// (Since the main upload buffer doesn't shrink after it grows)
+static constexpr u32 STAGING_TEXTURE_UPLOAD_THRESHOLD = 1024 * 1024 * 4;
+
 void Metal::Texture::Load(u32 level, u32 width, u32 height, u32 row_length,  //
-                          const u8* buffer, size_t buffer_size)
+                          const u8* buffer, size_t buffer_size, u32 layer)
 {
   @autoreleasepool
   {
@@ -59,8 +64,23 @@ void Metal::Texture::Load(u32 level, u32 width, u32 height, u32 row_length,  //
     const u32 num_rows = Common::AlignUp(height, block_size) / block_size;
     const u32 source_pitch = CalculateStrideForFormat(m_config.format, row_length);
     const u32 upload_size = source_pitch * num_rows;
-    StateTracker::Map map = g_state_tracker->Allocate(StateTracker::UploadBuffer::TextureData,
-                                                      upload_size, StateTracker::AlignMask::Other);
+    MRCOwned<id<MTLBuffer>> tmp_buffer;
+    StateTracker::Map map;
+    if (upload_size > STAGING_TEXTURE_UPLOAD_THRESHOLD)
+    {
+      tmp_buffer = MRCTransfer([g_device
+          newBufferWithLength:upload_size
+                      options:MTLResourceStorageModeShared | MTLResourceCPUCacheModeWriteCombined]);
+      [tmp_buffer setLabel:@"Temp Texture Upload"];
+      map.gpu_buffer = tmp_buffer;
+      map.gpu_offset = 0;
+      map.cpu_buffer = [tmp_buffer contents];
+    }
+    else
+    {
+      map = g_state_tracker->AllocateForTextureUpload(upload_size);
+    }
+
     memcpy(map.cpu_buffer, buffer, upload_size);
     id<MTLBlitCommandEncoder> encoder = g_state_tracker->GetTextureUploadEncoder();
     [encoder copyFromBuffer:map.gpu_buffer
@@ -69,7 +89,7 @@ void Metal::Texture::Load(u32 level, u32 width, u32 height, u32 row_length,  //
         sourceBytesPerImage:upload_size
                  sourceSize:MTLSizeMake(width, height, 1)
                   toTexture:m_tex
-           destinationSlice:0
+           destinationSlice:layer
            destinationLevel:level
           destinationOrigin:MTLOriginMake(0, 0, 0)];
   }
@@ -163,18 +183,62 @@ void Metal::StagingTexture::Flush()
   {
     // Flush while we wait, since who knows how long we'll be sitting here
     g_state_tracker->FlushEncoders();
+    g_state_tracker->NotifyOfCPUGPUSync();
     [m_wait_buffer waitUntilCompleted];
   }
   m_wait_buffer = nullptr;
 }
 
-Metal::Framebuffer::Framebuffer(AbstractTexture* color, AbstractTexture* depth,  //
+static void InitDesc(id desc, AbstractTexture* tex)
+{
+  [desc setTexture:static_cast<Metal::Texture*>(tex)->GetMTLTexture()];
+  [desc setLoadAction:MTLLoadActionLoad];
+  [desc setStoreAction:MTLStoreActionStore];
+}
+
+static void InitStencilDesc(MTLRenderPassStencilAttachmentDescriptor* desc, AbstractTexture* tex)
+{
+  InitDesc(desc, tex);
+  [desc setClearStencil:0];
+}
+
+Metal::Framebuffer::Framebuffer(AbstractTexture* color, AbstractTexture* depth,
+                                std::vector<AbstractTexture*> additonal_color_textures,  //
                                 u32 width, u32 height, u32 layers, u32 samples)
-    : AbstractFramebuffer(color, depth,
+    : AbstractFramebuffer(color, depth, {},
                           color ? color->GetFormat() : AbstractTextureFormat::Undefined,  //
                           depth ? depth->GetFormat() : AbstractTextureFormat::Undefined,  //
-                          width, height, layers, samples)
+                          width, height, layers, samples),
+      m_additional_color_textures(std::move(additonal_color_textures))
 {
+  m_pass_descriptor = MRCTransfer([MTLRenderPassDescriptor new]);
+  MTLRenderPassDescriptor* desc = m_pass_descriptor;
+  if (color)
+    InitDesc(desc.colorAttachments[0], color);
+  if (depth)
+  {
+    InitDesc(desc.depthAttachment, depth);
+    if (Util::HasStencil(depth->GetFormat()))
+      InitStencilDesc(desc.stencilAttachment, depth);
+  }
+  for (size_t i = 0; i < m_additional_color_textures.size(); i++)
+    InitDesc(desc.colorAttachments[i + 1], m_additional_color_textures[i]);
 }
 
 Metal::Framebuffer::~Framebuffer() = default;
+
+void Metal::Framebuffer::ActualSetLoadAction(MTLLoadAction action)
+{
+  m_current_load_action = action;
+  AbstractTextureFormat depth_fmt = GetDepthFormat();
+  MTLRenderPassDescriptor* desc = m_pass_descriptor;
+  desc.colorAttachments[0].loadAction = action;
+  if (depth_fmt != AbstractTextureFormat::Undefined)
+  {
+    desc.depthAttachment.loadAction = action;
+    if (Util::HasStencil(depth_fmt))
+      desc.stencilAttachment.loadAction = action;
+  }
+  for (size_t i = 0; i < NumAdditionalColorTextures(); i++)
+    desc.colorAttachments[i + 1].loadAction = action;
+}

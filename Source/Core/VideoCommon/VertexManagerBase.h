@@ -9,12 +9,18 @@
 #include "Common/BitSet.h"
 #include "Common/CommonTypes.h"
 #include "Common/MathUtil.h"
+#include "VideoCommon/CPUCull.h"
 #include "VideoCommon/IndexGenerator.h"
 #include "VideoCommon/RenderState.h"
 #include "VideoCommon/ShaderCache.h"
+#include "VideoCommon/VideoEvents.h"
 
+struct CustomPixelShaderContents;
+class CustomShaderCache;
 class DataReader;
+class GeometryShaderManager;
 class NativeVertexFormat;
+class PixelShaderManager;
 class PointerWrap;
 struct PortableVertexDeclaration;
 
@@ -39,7 +45,7 @@ enum TexelBufferFormat : u32
 namespace OpcodeDecoder
 {
 enum class Primitive : u8;
-};
+}
 
 class VertexManagerBase
 {
@@ -73,6 +79,8 @@ private:
       {
         return normal_vertex_count + anamorphic_vertex_count + other_vertex_count;
       }
+
+      MathUtil::RunningMean<float> average_ratio;
     };
 
     ProjectionCounts perspective;
@@ -90,7 +98,7 @@ public:
   // Texel buffer will fit the maximum size of an encoded GX texture. 1024x1024, RGBA8 = 4MB.
   static constexpr u32 VERTEX_STREAM_BUFFER_SIZE = 48 * 1024 * 1024;
   static constexpr u32 INDEX_STREAM_BUFFER_SIZE = 8 * 1024 * 1024;
-  static constexpr u32 UNIFORM_STREAM_BUFFER_SIZE = 32 * 1024 * 1024;
+  static constexpr u32 UNIFORM_STREAM_BUFFER_SIZE = 64 * 1024 * 1024;
   static constexpr u32 TEXEL_STREAM_BUFFER_SIZE = 16 * 1024 * 1024;
 
   VertexManagerBase();
@@ -100,11 +108,18 @@ public:
 
   PrimitiveType GetCurrentPrimitiveType() const { return m_current_primitive_type; }
   void AddIndices(OpcodeDecoder::Primitive primitive, u32 num_vertices);
+  bool AreAllVerticesCulled(VertexLoaderBase* loader, OpcodeDecoder::Primitive primitive,
+                            const u8* src, u32 count);
   virtual DataReader PrepareForAdditionalData(OpcodeDecoder::Primitive primitive, u32 count,
                                               u32 stride, bool cullall);
+  /// Switch cullall off after a call to PrepareForAdditionalData with cullall true
+  /// Expects that you will add a nonzero number of primitives before the next flush
+  /// Returns whether cullall was changed (false if cullall was already off)
+  DataReader DisableCullAll(u32 stride);
   void FlushData(u32 count, u32 stride);
 
   void Flush();
+  bool HasSendableVertices() const { return !m_is_flushed && !m_cull_all; }
 
   void DoState(PointerWrap& p);
 
@@ -119,6 +134,7 @@ public:
     m_current_pipeline_object = nullptr;
     m_pipeline_config_changed = true;
   }
+  void NotifyCustomShaderCacheOfHostChange(const ShaderHostConfig& host_config);
 
   // Utility pipeline drawing (e.g. EFB copies, post-processing, UI).
   virtual void UploadUtilityUniforms(const void* uniforms, u32 uniforms_size);
@@ -139,6 +155,9 @@ public:
   virtual bool UploadTexelBuffer(const void* data, u32 data_size, TexelBufferFormat format,
                                  u32* out_offset, const void* palette_data, u32 palette_size,
                                  TexelBufferFormat palette_format, u32* out_palette_offset);
+
+  // Call if active config changes
+  void OnConfigChange();
 
   // CPU access tracking - call after a draw call is made.
   void OnDraw();
@@ -173,7 +192,7 @@ protected:
   u32 GetRemainingIndices(OpcodeDecoder::Primitive primitive) const;
 
   void CalculateZSlope(NativeVertexFormat* format);
-  void CalculateBinormals(NativeVertexFormat* format);
+  void CalculateNormals(NativeVertexFormat* format);
 
   BitSet32 UsedTextures() const;
 
@@ -198,13 +217,25 @@ protected:
   bool m_cull_all = false;
 
   IndexGenerator m_index_generator;
+  CPUCull m_cpu_cull;
 
 private:
   // Minimum number of draws per command buffer when attempting to preempt a readback operation.
   static constexpr u32 MINIMUM_DRAW_CALLS_PER_COMMAND_BUFFER_FOR_READBACK = 10;
 
+  void RenderDrawCall(PixelShaderManager& pixel_shader_manager,
+                      GeometryShaderManager& geometry_shader_manager,
+                      const CustomPixelShaderContents& custom_pixel_shader_contents,
+                      std::span<u8> custom_pixel_shader_uniforms, PrimitiveType primitive_type,
+                      const AbstractPipeline* current_pipeline);
   void UpdatePipelineConfig();
   void UpdatePipelineObject();
+
+  const AbstractPipeline*
+  GetCustomPipeline(const CustomPixelShaderContents& custom_pixel_shader_contents,
+                    const VideoCommon::GXPipelineUid& current_pipeline_config,
+                    const VideoCommon::GXUberPipelineUid& current_uber_pipeline_confi,
+                    const AbstractPipeline* current_pipeline) const;
 
   bool m_is_flushed = true;
   FlushStatistics m_flush_statistics = {};
@@ -216,6 +247,12 @@ private:
   std::vector<u32> m_cpu_accesses_this_frame;
   std::vector<u32> m_scheduled_command_buffer_kicks;
   bool m_allow_background_execution = true;
+
+  std::unique_ptr<CustomShaderCache> m_custom_shader_cache;
+  u64 m_ticks_elapsed = 0;
+
+  Common::EventHook m_frame_end_event;
+  Common::EventHook m_after_present_event;
 };
 
 extern std::unique_ptr<VertexManagerBase> g_vertex_manager;

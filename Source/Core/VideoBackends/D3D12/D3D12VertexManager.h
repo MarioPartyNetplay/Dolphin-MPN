@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+
 #include "VideoBackends/D3D12/D3D12StreamBuffer.h"
 #include "VideoBackends/D3D12/DescriptorHeapManager.h"
 #include "VideoCommon/VertexManagerBase.h"
@@ -46,6 +47,7 @@ protected:
   StreamBuffer m_uniform_stream_buffer;
   StreamBuffer m_texel_stream_buffer;
   std::array<DescriptorHandle, NUM_TEXEL_BUFFER_FORMATS> m_texel_buffer_views = {};
+  DescriptorHandle m_vertex_srv = {};
 };
 
 }  // namespace DX12

@@ -5,7 +5,6 @@
 
 #include <array>
 #include <cmath>
-#include <numeric>
 
 #include <fmt/format.h>
 
@@ -17,16 +16,17 @@
 
 #include "Common/MathUtil.h"
 
-#include "InputCommon/ControlReference/ControlReference.h"
+#include "Core/HW/WiimoteEmu/Camera.h"
+
 #include "InputCommon/ControllerEmu/Control/Control.h"
 #include "InputCommon/ControllerEmu/ControlGroup/Cursor.h"
 #include "InputCommon/ControllerEmu/ControlGroup/Force.h"
 #include "InputCommon/ControllerEmu/ControlGroup/MixedTriggers.h"
-#include "InputCommon/ControllerEmu/Setting/NumericSetting.h"
 #include "InputCommon/ControllerInterface/CoreDevice.h"
 
 #include "DolphinQt/Config/Mapping/MappingWidget.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
+#include "DolphinQt/Settings.h"
 
 namespace
 {
@@ -94,7 +94,7 @@ QColor MappingIndicator::GetCenterColor() const
 
 QColor MappingIndicator::GetDeadZoneColor() const
 {
-  QColor color = GetBBoxBrush().color().valueF() > 0.5 ? Qt::black : Qt::white;
+  QColor color = Settings::Instance().IsThemeDark() ? Qt::white : Qt::black;
   color.setAlphaF(0.25);
   return color;
 }
@@ -124,8 +124,39 @@ QColor MappingIndicator::GetAltTextColor() const
 
 void MappingIndicator::AdjustGateColor(QColor* color)
 {
-  if (GetBBoxBrush().color().valueF() < 0.5)
-    color->setHsvF(color->hueF(), color->saturationF(), 1 - color->valueF());
+  if (Settings::Instance().IsThemeDark())
+    color->setHsvF(color->hueF(), std::min(color->saturationF(), 0.5f), color->valueF() * 0.35f);
+}
+
+ButtonIndicator::ButtonIndicator(ControlReference* control_ref) : m_control_ref{control_ref}
+{
+  setSizePolicy(QSizePolicy::Policy::Fixed, QSizePolicy::Policy::Fixed);
+}
+
+QSize ButtonIndicator::sizeHint() const
+{
+  return QSize{INPUT_DOT_RADIUS + 2,
+               QFontMetrics(font()).boundingRect(QStringLiteral("[")).height()};
+}
+
+void ButtonIndicator::Draw()
+{
+  QPainter p(this);
+  p.setBrush(GetBBoxBrush());
+  p.setPen(GetBBoxPen());
+  p.drawRect(QRect{{0, 0}, size() - QSize{1, 1}});
+
+  const auto input_value = std::clamp(m_control_ref->GetState<ControlState>(), 0.0, 1.0);
+  const bool is_pressed = std::lround(input_value) != 0;
+  QSizeF value_size = size() - QSizeF{2, 2};
+  value_size.setHeight(value_size.height() * input_value);
+
+  p.translate(0, height());
+  p.scale(1, -1);
+
+  p.setPen(Qt::NoPen);
+  p.setBrush(is_pressed ? GetAdjustedInputColor() : GetRawInputColor());
+  p.drawRect(QRectF{{1, 1}, value_size});
 }
 
 SquareIndicator::SquareIndicator()
@@ -286,7 +317,14 @@ void GenerateFibonacciSphere(int point_count, F&& callback)
 
 void MappingIndicator::paintEvent(QPaintEvent*)
 {
+  constexpr float max_elapsed_seconds = 0.1f;
+
+  const auto now = Clock::now();
+  const float elapsed_seconds = std::chrono::duration_cast<DT_s>(now - m_last_update).count();
+  m_last_update = now;
+
   const auto lock = ControllerEmu::EmulatedController::GetStateLock();
+  Update(std::min(elapsed_seconds, max_elapsed_seconds));
   Draw();
 }
 
@@ -318,7 +356,7 @@ void SquareIndicator::TransformPainter(QPainter& p)
   p.setRenderHint(QPainter::Antialiasing, true);
   p.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-  p.translate(width() / 2, height() / 2);
+  p.translate(width() / 2.0, height() / 2.0);
   const auto scale = GetContentsScale();
   p.scale(scale, scale);
 }
@@ -410,10 +448,13 @@ void AnalogStickIndicator::Draw()
                       (adj_coord.x || adj_coord.y) ? std::make_optional(adj_coord) : std::nullopt);
 }
 
+void TiltIndicator::Update(float elapsed_seconds)
+{
+  WiimoteEmu::EmulateTilt(&m_motion_state, &m_group, elapsed_seconds);
+}
+
 void TiltIndicator::Draw()
 {
-  WiimoteEmu::EmulateTilt(&m_motion_state, &m_group, 1.f / INDICATOR_UPDATE_FREQ);
-
   auto adj_coord = Common::DVec2{-m_motion_state.angle.y, m_motion_state.angle.x} / MathUtil::PI;
 
   // Angle values after dividing by pi.
@@ -561,28 +602,53 @@ void SwingIndicator::DrawUnderGate(QPainter& p)
   }
 }
 
+void SwingIndicator::Update(float elapsed_seconds)
+{
+  WiimoteEmu::EmulateSwing(&m_motion_state, &m_swing_group, elapsed_seconds);
+}
+
 void SwingIndicator::Draw()
 {
-  auto& force = m_swing_group;
-  WiimoteEmu::EmulateSwing(&m_motion_state, &force, 1.f / INDICATOR_UPDATE_FREQ);
-
-  DrawReshapableInput(force, SWING_GATE_COLOR,
+  DrawReshapableInput(m_swing_group, SWING_GATE_COLOR,
                       Common::DVec2{-m_motion_state.position.x, m_motion_state.position.z});
+}
+
+void ShakeMappingIndicator::Update(float elapsed_seconds)
+{
+  WiimoteEmu::EmulateShake(&m_motion_state, &m_shake_group, elapsed_seconds);
+
+  for (auto& sample : m_position_samples)
+    sample.age += elapsed_seconds;
+
+  m_position_samples.erase(
+      std::ranges::find_if(m_position_samples,
+                           [](const ShakeSample& sample) { return sample.age > 1.f; }),
+      m_position_samples.end());
+
+  constexpr float MAX_DISTANCE = 0.5f;
+
+  m_position_samples.push_front(ShakeSample{m_motion_state.position / MAX_DISTANCE});
+
+  const bool any_non_zero_samples = std::ranges::any_of(
+      m_position_samples, [](const ShakeSample& s) { return s.state.LengthSquared() != 0.0; });
+
+  // Only start moving the line if there's non-zero data.
+  if (m_grid_line_position || any_non_zero_samples)
+  {
+    m_grid_line_position += elapsed_seconds;
+
+    if (m_grid_line_position > 1.f)
+    {
+      if (any_non_zero_samples)
+        m_grid_line_position = std::fmod(m_grid_line_position, 1.f);
+      else
+        m_grid_line_position = 0;
+    }
+  }
 }
 
 void ShakeMappingIndicator::Draw()
 {
-  constexpr std::size_t HISTORY_COUNT = INDICATOR_UPDATE_FREQ;
-
-  WiimoteEmu::EmulateShake(&m_motion_state, &m_shake_group, 1.f / INDICATOR_UPDATE_FREQ);
-
-  constexpr float MAX_DISTANCE = 0.5f;
-
-  m_position_samples.push_front(m_motion_state.position / MAX_DISTANCE);
-  // This also holds the current state so +1.
-  if (m_position_samples.size() > HISTORY_COUNT + 1)
-    m_position_samples.pop_back();
-
   QPainter p(this);
   DrawBoundingBox(p);
   TransformPainter(p);
@@ -607,15 +673,7 @@ void ShakeMappingIndicator::Draw()
     p.drawPoint(QPointF{-0.5 + c * 0.5, raw_coord.data[c]});
   }
 
-  // Grid line.
-  if (m_grid_line_position ||
-      std::any_of(m_position_samples.begin(), m_position_samples.end(),
-                  [](const Common::Vec3& v) { return v.LengthSquared() != 0.0; }))
-  {
-    // Only start moving the line if there's non-zero data.
-    m_grid_line_position = (m_grid_line_position + 1) % HISTORY_COUNT;
-  }
-  const double grid_line_x = 1.0 - m_grid_line_position * 2.0 / HISTORY_COUNT;
+  const double grid_line_x = 1.0 - m_grid_line_position * 2.0;
   p.setPen(QPen(GetRawInputColor(), 0));
   p.drawLine(QPointF{grid_line_x, -1.0}, QPointF{grid_line_x, 1.0});
 
@@ -626,12 +684,8 @@ void ShakeMappingIndicator::Draw()
   {
     QPolygonF polyline;
 
-    int i = 0;
     for (auto& sample : m_position_samples)
-    {
-      polyline.append(QPointF{1.0 - i * 2.0 / HISTORY_COUNT, sample.data[c]});
-      ++i;
-    }
+      polyline.append(QPointF{1.0 - sample.age * 2.0, sample.state.data[c]});
 
     p.setPen(QPen(component_colors[c], 0));
     p.drawPolyline(polyline);
@@ -689,7 +743,7 @@ void AccelerometerMappingIndicator::Draw()
   p.setBrush(Qt::NoBrush);
 
   p.resetTransform();
-  p.translate(width() / 2, height() / 2);
+  p.translate(width() / 2.0, height() / 2.0);
 
   // Red dot upright target.
   p.setPen(GetAdjustedInputColor());
@@ -714,6 +768,28 @@ void AccelerometerMappingIndicator::Draw()
                  fmt::format("{:.2f} g", state.Length() / WiimoteEmu::GRAVITY_ACCELERATION)));
 }
 
+void GyroMappingIndicator::Update(float elapsed_seconds)
+{
+  const auto gyro_state = m_gyro_group.GetState();
+  const auto angular_velocity = gyro_state.value_or(Common::Vec3{});
+  m_state *= WiimoteEmu::GetRotationFromGyroscope(angular_velocity * Common::Vec3(-1, +1, -1) *
+                                                  elapsed_seconds);
+  m_state = m_state.Normalized();
+
+  // Reset orientation when stable for a bit:
+  constexpr float STABLE_RESET_SECONDS = 1.f;
+  // Consider device stable when data (with deadzone applied) is zero.
+  const bool is_stable = !angular_velocity.LengthSquared();
+
+  if (!is_stable)
+    m_stable_time = 0;
+  else if (m_stable_time < STABLE_RESET_SECONDS)
+    m_stable_time += elapsed_seconds;
+
+  if (m_stable_time >= STABLE_RESET_SECONDS)
+    m_state = Common::Quaternion::Identity();
+}
+
 void GyroMappingIndicator::Draw()
 {
   const auto gyro_state = m_gyro_group.GetState();
@@ -722,22 +798,8 @@ void GyroMappingIndicator::Draw()
   const auto jitter = raw_gyro_state - m_previous_velocity;
   m_previous_velocity = raw_gyro_state;
 
-  m_state *= WiimoteEmu::GetRotationFromGyroscope(angular_velocity * Common::Vec3(-1, +1, -1) /
-                                                  INDICATOR_UPDATE_FREQ);
-  m_state = m_state.Normalized();
-
-  // Reset orientation when stable for a bit:
-  constexpr u32 STABLE_RESET_STEPS = INDICATOR_UPDATE_FREQ;
   // Consider device stable when data (with deadzone applied) is zero.
   const bool is_stable = !angular_velocity.LengthSquared();
-
-  if (!is_stable)
-    m_stable_steps = 0;
-  else if (m_stable_steps != STABLE_RESET_STEPS)
-    ++m_stable_steps;
-
-  if (STABLE_RESET_STEPS == m_stable_steps)
-    m_state = Common::Quaternion::Identity();
 
   // Use an empty rotation matrix if gyroscope data is not present.
   const auto rotation =
@@ -811,7 +873,7 @@ void GyroMappingIndicator::Draw()
   p.setBrush(Qt::NoBrush);
 
   p.resetTransform();
-  p.translate(width() / 2, height() / 2);
+  p.translate(width() / 2.0, height() / 2.0);
 
   // Red dot upright target.
   p.setPen(GetAdjustedInputColor());
@@ -821,6 +883,35 @@ void GyroMappingIndicator::Draw()
   // Blue dot target.
   p.setPen(GetCenterColor());
   p.drawEllipse(QPointF{}, INPUT_DOT_RADIUS, INPUT_DOT_RADIUS);
+}
+
+void IRPassthroughMappingIndicator::Draw()
+{
+  QPainter p(this);
+  DrawBoundingBox(p);
+  TransformPainter(p);
+
+  p.scale(1.0, -1.0);
+
+  auto pen = GetInputDotPen(m_ir_group.enabled ? GetAdjustedInputColor() : GetRawInputColor());
+
+  for (std::size_t i = 0; i != WiimoteEmu::CameraLogic::NUM_POINTS; ++i)
+  {
+    const auto size = m_ir_group.GetObjectSize(i);
+
+    const bool is_visible = size > 0;
+    if (!is_visible)
+      continue;
+
+    const auto point =
+        (QPointF{m_ir_group.GetObjectPositionX(i), m_ir_group.GetObjectPositionY(i)} -
+         QPointF{0.5, 0.5}) *
+        2.0;
+
+    pen.setWidth(size * NORMAL_INDICATOR_WIDTH / 2);
+    p.setPen(pen);
+    p.drawPoint(point);
+  }
 }
 
 void ReshapableInputIndicator::DrawCalibration(QPainter& p, Common::DVec2 point)
@@ -882,7 +973,7 @@ CalibrationWidget::CalibrationWidget(ControllerEmu::ReshapableInput& input,
   m_informative_timer = new QTimer(this);
   connect(m_informative_timer, &QTimer::timeout, this, [this] {
     // If the user has started moving we'll assume they know what they are doing.
-    if (*std::max_element(m_calibration_data.begin(), m_calibration_data.end()) > 0.5)
+    if (*std::ranges::max_element(m_calibration_data) > 0.5)
       return;
 
     ModalMessageBox::information(

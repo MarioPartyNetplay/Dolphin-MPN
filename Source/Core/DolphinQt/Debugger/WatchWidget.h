@@ -14,6 +14,12 @@ class QTableWidget;
 class QTableWidgetItem;
 class QToolBar;
 
+namespace Core
+{
+class CPUThreadGuard;
+class System;
+}  // namespace Core
+
 class WatchWidget : public QDockWidget
 {
   Q_OBJECT
@@ -43,13 +49,21 @@ private:
 
   void UpdateButtonsEnabled();
   void Update();
+  void SetEmptyRow(int row);
 
   void ShowContextMenu();
   void OnItemChanged(QTableWidgetItem* item);
-  void DeleteWatch(int row);
+  void LockWatchAddress(const Core::CPUThreadGuard& guard, u32 address);
+  void DeleteSelectedWatches();
+  void DeleteWatch(const Core::CPUThreadGuard& guard, int row);
+  void DeleteWatchAndUpdate(int row);
   void AddWatchBreakpoint(int row);
   void ShowInMemory(int row);
   void UpdateIcons();
+  void LockSelectedWatches();
+  void UnlockSelectedWatches();
+
+  Core::System& m_system;
 
   QAction* m_new;
   QAction* m_delete;
@@ -61,5 +75,12 @@ private:
 
   bool m_updating = false;
 
-  static constexpr int NUM_COLUMNS = 6;
+  static constexpr int NUM_COLUMNS = 7;
+  static constexpr int COLUMN_INDEX_LABEL = 0;
+  static constexpr int COLUMN_INDEX_ADDRESS = 1;
+  static constexpr int COLUMN_INDEX_HEX = 2;
+  static constexpr int COLUMN_INDEX_DECIMAL = 3;
+  static constexpr int COLUMN_INDEX_STRING = 4;
+  static constexpr int COLUMN_INDEX_FLOAT = 5;
+  static constexpr int COLUMN_INDEX_LOCK = 6;
 };

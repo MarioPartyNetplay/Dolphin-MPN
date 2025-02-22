@@ -25,7 +25,8 @@ enum class EXIDeviceType : int;
 class CEXIChannel
 {
 public:
-  explicit CEXIChannel(u32 channel_id, const Memcard::HeaderData& memcard_header_data);
+  explicit CEXIChannel(Core::System& system, u32 channel_id,
+                       const Memcard::HeaderData& memcard_header_data);
   ~CEXIChannel();
 
   // get device
@@ -44,7 +45,6 @@ public:
 
   bool IsCausingInterrupt();
   void DoState(PointerWrap& p);
-  void PauseAndLock(bool do_lock, bool resume_on_unlock);
 
   // This should only be used to transition interrupts from SP1 to Channel 2
   void SetEXIINT(bool exiint);
@@ -99,6 +99,8 @@ private:
       u32 : 26;
     };
   };
+
+  Core::System& m_system;
 
   // STATE_TO_SAVE
   UEXI_STATUS m_status;

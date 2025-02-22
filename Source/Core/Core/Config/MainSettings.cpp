@@ -10,6 +10,7 @@
 #include "AudioCommon/AudioCommon.h"
 #include "Common/Assert.h"
 #include "Common/CommonPaths.h"
+#include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
 #include "Common/EnumMap.h"
 #include "Common/FileUtil.h"
@@ -17,6 +18,7 @@
 #include "Common/MathUtil.h"
 #include "Common/StringUtil.h"
 #include "Common/Version.h"
+#include "Core/AchievementManager.h"
 #include "Core/Config/DefaultLocale.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/EXI/EXI_Device.h"
@@ -37,7 +39,11 @@ const Info<PowerPC::CPUCore> MAIN_CPU_CORE{{System::Main, "Core", "CPUCore"},
                                            PowerPC::DefaultCPUCore()};
 const Info<bool> MAIN_JIT_FOLLOW_BRANCH{{System::Main, "Core", "JITFollowBranch"}, true};
 const Info<bool> MAIN_FASTMEM{{System::Main, "Core", "Fastmem"}, true};
+const Info<bool> MAIN_FASTMEM_ARENA{{System::Main, "Core", "FastmemArena"}, true};
+const Info<bool> MAIN_LARGE_ENTRY_POINTS_MAP{{System::Main, "Core", "LargeEntryPointsMap"}, true};
+const Info<bool> MAIN_ACCURATE_CPU_CACHE{{System::Main, "Core", "AccurateCPUCache"}, false};
 const Info<bool> MAIN_DSP_HLE{{System::Main, "Core", "DSPHLE"}, true};
+const Info<int> MAIN_MAX_FALLBACK{{System::Main, "Core", "MaxFallback"}, 100};
 const Info<int> MAIN_TIMING_VARIANCE{{System::Main, "Core", "TimingVariance"}, 40};
 const Info<bool> MAIN_CPU_THREAD{{System::Main, "Core", "CPUThread"}, true};
 const Info<bool> MAIN_SYNC_ON_SKIP_IDLE{{System::Main, "Core", "SyncOnSkipIdle"}, true};
@@ -73,6 +79,18 @@ const Info<std::string>& GetInfoForAGPCartPath(ExpansionInterface::Slot slot)
       infos{
           &MAIN_AGP_CART_A_PATH,
           &MAIN_AGP_CART_B_PATH,
+      };
+  return *infos[slot];
+}
+const Info<std::string> MAIN_GCI_FOLDER_A_PATH{{System::Main, "Core", "GCIFolderAPath"}, ""};
+const Info<std::string> MAIN_GCI_FOLDER_B_PATH{{System::Main, "Core", "GCIFolderBPath"}, ""};
+const Info<std::string>& GetInfoForGCIPath(ExpansionInterface::Slot slot)
+{
+  ASSERT(ExpansionInterface::IsMemcardSlot(slot));
+  static constexpr Common::EnumMap<const Info<std::string>*, ExpansionInterface::MAX_MEMCARD_SLOT>
+      infos{
+          &MAIN_GCI_FOLDER_A_PATH,
+          &MAIN_GCI_FOLDER_B_PATH,
       };
   return *infos[slot];
 }
@@ -118,7 +136,11 @@ const Info<bool> MAIN_BBA_XLINK_CHAT_OSD{{System::Main, "Core", "BBA_XLINK_CHAT_
 
 // Schthack PSO Server - https://schtserv.com/
 const Info<std::string> MAIN_BBA_BUILTIN_DNS{{System::Main, "Core", "BBA_BUILTIN_DNS"},
-                                             "149.56.167.128"};
+                                             "3.18.217.27"};
+const Info<std::string> MAIN_BBA_TAPSERVER_DESTINATION{
+    {System::Main, "Core", "BBA_TAPSERVER_DESTINATION"}, "/tmp/dolphin-tap"};
+const Info<std::string> MAIN_MODEM_TAPSERVER_DESTINATION{
+    {System::Main, "Core", "MODEM_TAPSERVER_DESTINATION"}, "/tmp/dolphin-modem-tap"};
 const Info<std::string> MAIN_BBA_BUILTIN_IP{{System::Main, "Core", "BBA_BUILTIN_IP"}, ""};
 
 const Info<SerialInterface::SIDevices>& GetInfoForSIDevice(int channel)
@@ -161,6 +183,7 @@ const Info<bool>& GetInfoForSimulateKonga(int channel)
 const Info<bool> MAIN_WII_SD_CARD{{System::Main, "Core", "WiiSDCard"}, true};
 const Info<bool> MAIN_WII_SD_CARD_ENABLE_FOLDER_SYNC{
     {System::Main, "Core", "WiiSDCardEnableFolderSync"}, false};
+const Info<u64> MAIN_WII_SD_CARD_FILESIZE{{System::Main, "Core", "WiiSDCardFilesize"}, 0};
 const Info<bool> MAIN_WII_KEYBOARD{{System::Main, "Core", "WiiKeyboard"}, false};
 const Info<bool> MAIN_WIIMOTE_CONTINUOUS_SCANNING{
     {System::Main, "Core", "WiimoteContinuousScanning"}, false};
@@ -168,6 +191,7 @@ const Info<bool> MAIN_WIIMOTE_ENABLE_SPEAKER{{System::Main, "Core", "WiimoteEnab
 const Info<bool> MAIN_CONNECT_WIIMOTES_FOR_CONTROLLER_INTERFACE{
     {System::Main, "Core", "WiimoteControllerInterface"}, false};
 const Info<bool> MAIN_MMU{{System::Main, "Core", "MMU"}, false};
+const Info<bool> MAIN_PAUSE_ON_PANIC{{System::Main, "Core", "PauseOnPanic"}, false};
 const Info<int> MAIN_BB_DUMP_PORT{{System::Main, "Core", "BBDumpPort"}, -1};
 const Info<bool> MAIN_SYNC_GPU{{System::Main, "Core", "SyncGPU"}, false};
 const Info<int> MAIN_SYNC_GPU_MAX_DISTANCE{{System::Main, "Core", "SyncGpuMaxDistance"}, 200000};
@@ -188,7 +212,7 @@ const Info<bool> MAIN_RAM_OVERRIDE_ENABLE{{System::Main, "Core", "RAMOverrideEna
 const Info<u32> MAIN_MEM1_SIZE{{System::Main, "Core", "MEM1Size"}, Memory::MEM1_SIZE_RETAIL};
 const Info<u32> MAIN_MEM2_SIZE{{System::Main, "Core", "MEM2Size"}, Memory::MEM2_SIZE_RETAIL};
 const Info<std::string> MAIN_GFX_BACKEND{{System::Main, "Core", "GFXBackend"},
-                                         VideoBackendBase::GetDefaultBackendName()};
+                                         VideoBackendBase::GetDefaultBackendConfigName()};
 const Info<HSP::HSPDeviceType> MAIN_HSP_DEVICE{{System::Main, "Core", "HSPDevice"},
                                                HSP::HSPDeviceType::None};
 const Info<u32> MAIN_ARAM_EXPANSION_SIZE{{System::Main, "Core", "ARAMExpansionSize"}, 0x400000};
@@ -224,6 +248,7 @@ const Info<bool> MAIN_ALLOW_SD_WRITES{{System::Main, "Core", "WiiSDCardAllowWrit
 const Info<bool> MAIN_ENABLE_SAVESTATES{{System::Main, "Core", "EnableSaveStates"}, false};
 const Info<bool> MAIN_REAL_WII_REMOTE_REPEAT_REPORTS{
     {System::Main, "Core", "RealWiiRemoteRepeatReports"}, true};
+const Info<bool> MAIN_WII_WIILINK_ENABLE{{System::Main, "Core", "EnableWiiLink"}, false};
 
 // Empty means use the Dolphin default URL
 const Info<std::string> MAIN_WII_NUS_SHOP_URL{{System::Main, "Core", "WiiNusShopUrl"}, ""};
@@ -255,6 +280,8 @@ const Info<std::string> MAIN_AUDIO_BACKEND{{System::Main, "DSP", "Backend"},
                                            AudioCommon::GetDefaultSoundBackend()};
 const Info<int> MAIN_AUDIO_VOLUME{{System::Main, "DSP", "Volume"}, 100};
 const Info<bool> MAIN_AUDIO_MUTED{{System::Main, "DSP", "Muted"}, false};
+const Info<bool> MAIN_AUDIO_MUTE_ON_DISABLED_SPEED_LIMIT{
+    {System::Main, "DSP", "MuteOnDisabledSpeedLimit"}, false};
 #ifdef _WIN32
 const Info<std::string> MAIN_WASAPI_DEVICE{{System::Main, "DSP", "WASAPIDevice"}, "Default"};
 #endif
@@ -280,6 +307,9 @@ const Info<std::string> MAIN_WIRELESS_MAC{{System::Main, "General", "WirelessMac
 const Info<std::string> MAIN_GDB_SOCKET{{System::Main, "General", "GDBSocket"}, ""};
 const Info<int> MAIN_GDB_PORT{{System::Main, "General", "GDBPort"}, -1};
 const Info<int> MAIN_ISO_PATH_COUNT{{System::Main, "General", "ISOPaths"}, 0};
+const Info<std::string> MAIN_SKYLANDERS_PATH{{System::Main, "General", "SkylandersCollectionPath"},
+                                             ""};
+const Info<bool> MAIN_TIME_TRACKING{{System::Main, "General", "EnablePlayTimeTracking"}, true};
 
 static Info<std::string> MakeISOPathConfigInfo(size_t idx)
 {
@@ -371,7 +401,6 @@ const Info<ShowCursor> MAIN_SHOW_CURSOR{{System::Main, "Interface", "CursorVisib
                                         ShowCursor::OnMovement};
 const Info<bool> MAIN_LOCK_CURSOR{{System::Main, "Interface", "LockCursor"}, false};
 const Info<std::string> MAIN_INTERFACE_LANGUAGE{{System::Main, "Interface", "LanguageCode"}, ""};
-const Info<bool> MAIN_EXTENDED_FPS_INFO{{System::Main, "Interface", "ExtendedFPSInfo"}, false};
 const Info<bool> MAIN_SHOW_ACTIVE_TITLE{{System::Main, "Interface", "ShowActiveTitle"}, true};
 const Info<bool> MAIN_USE_BUILT_IN_TITLE_DATABASE{
     {System::Main, "Interface", "UseBuiltinTitleDatabase"}, true};
@@ -431,6 +460,8 @@ const Info<bool> MAIN_GAMELIST_COLUMN_BLOCK_SIZE{{System::Main, "GameList", "Col
                                                  false};
 const Info<bool> MAIN_GAMELIST_COLUMN_COMPRESSION{{System::Main, "GameList", "ColumnCompression"},
                                                   false};
+const Info<bool> MAIN_GAMELIST_COLUMN_TIME_PLAYED{{System::Main, "GameList", "ColumnTimePlayed"},
+                                                  true};
 const Info<bool> MAIN_GAMELIST_COLUMN_TAGS{{System::Main, "GameList", "ColumnTags"}, false};
 
 // Main.FifoPlayer
@@ -483,6 +514,8 @@ const Info<bool> MAIN_DEBUG_JIT_SYSTEM_REGISTERS_OFF{
 const Info<bool> MAIN_DEBUG_JIT_BRANCH_OFF{{System::Main, "Debug", "JitBranchOff"}, false};
 const Info<bool> MAIN_DEBUG_JIT_REGISTER_CACHE_OFF{{System::Main, "Debug", "JitRegisterCacheOff"},
                                                    false};
+const Info<bool> MAIN_DEBUG_JIT_ENABLE_PROFILING{{System::Main, "Debug", "JitEnableProfiling"},
+                                                 false};
 
 // Main.BluetoothPassthrough
 
@@ -536,6 +569,14 @@ void SetUSBDeviceWhitelist(const std::set<std::pair<u16, u16>>& devices)
   Config::SetBase(Config::MAIN_USB_PASSTHROUGH_DEVICES, SaveUSBWhitelistToString(devices));
 }
 
+// Main.EmulatedUSBDevices
+
+const Info<bool> MAIN_EMULATE_SKYLANDER_PORTAL{
+    {System::Main, "EmulatedUSBDevices", "EmulateSkylanderPortal"}, false};
+
+const Info<bool> MAIN_EMULATE_INFINITY_BASE{
+    {System::Main, "EmulatedUSBDevices", "EmulateInfinityBase"}, false};
+
 // The reason we need this function is because some memory card code
 // expects to get a non-NTSC-K region even if we're emulating an NTSC-K Wii.
 DiscIO::Region ToGameCubeRegion(DiscIO::Region region)
@@ -548,7 +589,7 @@ DiscIO::Region ToGameCubeRegion(DiscIO::Region region)
   return DiscIO::Region::NTSC_J;
 }
 
-const char* GetDirectoryForRegion(DiscIO::Region region)
+const char* GetDirectoryForRegion(DiscIO::Region region, RegionDirectoryStyle style)
 {
   if (region == DiscIO::Region::Unknown)
     region = ToGameCubeRegion(Config::Get(Config::MAIN_FALLBACK_REGION));
@@ -556,7 +597,7 @@ const char* GetDirectoryForRegion(DiscIO::Region region)
   switch (region)
   {
   case DiscIO::Region::NTSC_J:
-    return JAP_DIR;
+    return style == RegionDirectoryStyle::Legacy ? JAP_DIR : JPN_DIR;
 
   case DiscIO::Region::NTSC_U:
     return USA_DIR;
@@ -565,8 +606,9 @@ const char* GetDirectoryForRegion(DiscIO::Region region)
     return EUR_DIR;
 
   case DiscIO::Region::NTSC_K:
+    // See ToGameCubeRegion
     ASSERT_MSG(BOOT, false, "NTSC-K is not a valid GameCube region");
-    return JAP_DIR;  // See ToGameCubeRegion
+    return style == RegionDirectoryStyle::Legacy ? JAP_DIR : JPN_DIR;
 
   default:
     ASSERT_MSG(BOOT, false, "Default case should not be reached");
@@ -583,15 +625,15 @@ std::string GetBootROMPath(const std::string& region_directory)
   return path;
 }
 
-std::string GetMemcardPath(ExpansionInterface::Slot slot, DiscIO::Region region, u16 size_mb)
+std::string GetMemcardPath(ExpansionInterface::Slot slot, std::optional<DiscIO::Region> region,
+                           u16 size_mb)
 {
   return GetMemcardPath(Config::Get(GetInfoForMemcardPath(slot)), slot, region, size_mb);
 }
 
 std::string GetMemcardPath(std::string configured_filename, ExpansionInterface::Slot slot,
-                           DiscIO::Region region, u16 size_mb)
+                           std::optional<DiscIO::Region> region, u16 size_mb)
 {
-  const std::string region_dir = Config::GetDirectoryForRegion(Config::ToGameCubeRegion(region));
   const std::string blocks_string = size_mb < Memcard::MBIT_SIZE_MEMORY_CARD_2043 ?
                                         fmt::format(".{}", Memcard::MbitToFreeBlocks(size_mb)) :
                                         "";
@@ -600,8 +642,10 @@ std::string GetMemcardPath(std::string configured_filename, ExpansionInterface::
   {
     // Use default memcard path if there is no user defined one.
     const bool is_slot_a = slot == ExpansionInterface::Slot::A;
+    const std::string region_string = Config::GetDirectoryForRegion(
+        Config::ToGameCubeRegion(region ? *region : Config::Get(Config::MAIN_FALLBACK_REGION)));
     return fmt::format("{}{}.{}{}.raw", File::GetUserPath(D_GCUSER_IDX),
-                       is_slot_a ? GC_MEMCARDA : GC_MEMCARDB, region_dir, blocks_string);
+                       is_slot_a ? GC_MEMCARDA : GC_MEMCARDB, region_string, blocks_string);
   }
 
   // Custom path is expected to be stored in the form of
@@ -619,13 +663,104 @@ std::string GetMemcardPath(std::string configured_filename, ExpansionInterface::
   constexpr std::string_view us_region = "." USA_DIR;
   constexpr std::string_view jp_region = "." JAP_DIR;
   constexpr std::string_view eu_region = "." EUR_DIR;
-  if (StringEndsWith(name, us_region))
+  std::optional<DiscIO::Region> path_region = std::nullopt;
+  if (name.ends_with(us_region))
+  {
     name = name.substr(0, name.size() - us_region.size());
-  else if (StringEndsWith(name, jp_region))
+    path_region = DiscIO::Region::NTSC_U;
+  }
+  else if (name.ends_with(jp_region))
+  {
     name = name.substr(0, name.size() - jp_region.size());
-  else if (StringEndsWith(name, eu_region))
+    path_region = DiscIO::Region::NTSC_J;
+  }
+  else if (name.ends_with(eu_region))
+  {
     name = name.substr(0, name.size() - eu_region.size());
+    path_region = DiscIO::Region::PAL;
+  }
 
-  return fmt::format("{}{}.{}{}{}", dir, name, region_dir, blocks_string, ext);
+  const DiscIO::Region used_region =
+      region ? *region : (path_region ? *path_region : Config::Get(Config::MAIN_FALLBACK_REGION));
+  return fmt::format("{}{}.{}{}{}", dir, name,
+                     Config::GetDirectoryForRegion(Config::ToGameCubeRegion(used_region)),
+                     blocks_string, ext);
 }
+
+bool IsDefaultMemcardPathConfigured(ExpansionInterface::Slot slot)
+{
+  return Config::Get(GetInfoForMemcardPath(slot)).empty();
+}
+
+std::string GetGCIFolderPath(ExpansionInterface::Slot slot, std::optional<DiscIO::Region> region)
+{
+  return GetGCIFolderPath(Config::Get(GetInfoForGCIPath(slot)), slot, region);
+}
+
+std::string GetGCIFolderPath(std::string configured_folder, ExpansionInterface::Slot slot,
+                             std::optional<DiscIO::Region> region)
+{
+  if (configured_folder.empty())
+  {
+    const auto region_dir = Config::GetDirectoryForRegion(
+        Config::ToGameCubeRegion(region ? *region : Config::Get(Config::MAIN_FALLBACK_REGION)));
+    const bool is_slot_a = slot == ExpansionInterface::Slot::A;
+    return fmt::format("{}{}/Card {}", File::GetUserPath(D_GCUSER_IDX), region_dir,
+                       is_slot_a ? 'A' : 'B');
+  }
+
+  // Custom path is expected to be stored in the form of
+  // "/path/to/folder/{region_code}"
+  // with an arbitrary but supported region code.
+  // Try to extract and replace that region code.
+  // If there's no region code just insert one at the end.
+
+  UnifyPathSeparators(configured_folder);
+  while (configured_folder.ends_with('/'))
+    configured_folder.pop_back();
+
+  constexpr std::string_view us_region = "/" USA_DIR;
+  constexpr std::string_view jp_region = "/" JPN_DIR;
+  constexpr std::string_view eu_region = "/" EUR_DIR;
+  std::string_view base_path = configured_folder;
+  std::optional<DiscIO::Region> path_region = std::nullopt;
+  if (base_path.ends_with(us_region))
+  {
+    base_path = base_path.substr(0, base_path.size() - us_region.size());
+    path_region = DiscIO::Region::NTSC_U;
+  }
+  else if (base_path.ends_with(jp_region))
+  {
+    base_path = base_path.substr(0, base_path.size() - jp_region.size());
+    path_region = DiscIO::Region::NTSC_J;
+  }
+  else if (base_path.ends_with(eu_region))
+  {
+    base_path = base_path.substr(0, base_path.size() - eu_region.size());
+    path_region = DiscIO::Region::PAL;
+  }
+
+  const DiscIO::Region used_region =
+      region ? *region : (path_region ? *path_region : Config::Get(Config::MAIN_FALLBACK_REGION));
+  return fmt::format("{}/{}", base_path,
+                     Config::GetDirectoryForRegion(Config::ToGameCubeRegion(used_region),
+                                                   Config::RegionDirectoryStyle::Modern));
+}
+
+bool IsDefaultGCIFolderPathConfigured(ExpansionInterface::Slot slot)
+{
+  return Config::Get(GetInfoForGCIPath(slot)).empty();
+}
+
+bool AreCheatsEnabled()
+{
+  return Config::Get(::Config::MAIN_ENABLE_CHEATS);
+}
+
+bool IsDebuggingEnabled()
+{
+  return Config::Get(::Config::MAIN_ENABLE_DEBUGGING) &&
+         !AchievementManager::GetInstance().IsHardcoreModeActive();
+}
+
 }  // namespace Config

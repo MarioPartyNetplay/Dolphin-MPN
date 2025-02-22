@@ -4,18 +4,23 @@
 #include "DolphinQt/Config/GraphicsModListWidget.h"
 
 #include <QCheckBox>
+#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 
 #include <set>
 
+#include "Common/FileUtil.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/System.h"
 #include "DolphinQt/Config/GraphicsModWarningWidget.h"
+#include "DolphinQt/QtUtils/ClearLayoutRecursively.h"
 #include "DolphinQt/Settings.h"
 #include "UICommon/GameFile.h"
 #include "VideoCommon/GraphicsModSystem/Config/GraphicsMod.h"
@@ -24,7 +29,7 @@
 GraphicsModListWidget::GraphicsModListWidget(const UICommon::GameFile& game)
     : m_game_id(game.GetGameID()), m_mod_group(m_game_id)
 {
-  CalculateGameRunning(Core::GetState());
+  CalculateGameRunning(Core::GetState(Core::System::GetInstance()));
   if (m_loaded_game_is_running && g_Config.graphics_mod_config)
   {
     m_mod_group.SetChangeCount(g_Config.graphics_mod_config->GetChangeCount());
@@ -59,9 +64,10 @@ void GraphicsModListWidget::CreateWidgets()
   m_mod_list->setSelectionRectVisible(true);
   m_mod_list->setDragDropMode(QAbstractItemView::InternalMove);
 
+  m_open_directory_button = new QPushButton(tr("Open Directory..."));
   m_refresh = new QPushButton(tr("&Refresh List"));
   QHBoxLayout* hlayout = new QHBoxLayout;
-  hlayout->addStretch();
+  hlayout->addWidget(m_open_directory_button);
   hlayout->addWidget(m_refresh);
 
   left_v_layout->addWidget(m_mod_list);
@@ -99,6 +105,9 @@ void GraphicsModListWidget::ConnectWidgets()
   connect(m_mod_list->model(), &QAbstractItemModel::rowsMoved, this,
           &GraphicsModListWidget::SaveModList);
 
+  connect(m_open_directory_button, &QPushButton::clicked, this,
+          &GraphicsModListWidget::OpenGraphicsModDir);
+
   connect(m_refresh, &QPushButton::clicked, this, &GraphicsModListWidget::RefreshModList);
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this,
@@ -129,10 +138,9 @@ void GraphicsModListWidget::RefreshModList()
   for (const GraphicsModConfig& mod : m_mod_group.GetMods())
   {
     // If no group matches the mod's features, or if the mod has no features, skip it
-    if (std::none_of(mod.m_features.begin(), mod.m_features.end(),
-                     [&groups](const GraphicsModFeatureConfig& feature) {
-                       return groups.count(feature.m_group) == 1;
-                     }))
+    if (std::ranges::none_of(mod.m_features, [&groups](const GraphicsModFeatureConfig& feature) {
+          return groups.contains(feature.m_group);
+        }))
     {
       continue;
     }
@@ -177,7 +185,7 @@ void GraphicsModListWidget::ModItemChanged(QListWidgetItem* item)
   m_needs_save = true;
 }
 
-void GraphicsModListWidget::OnModChanged(std::optional<std::string> absolute_path)
+void GraphicsModListWidget::OnModChanged(const std::optional<std::string>& absolute_path)
 {
   ClearLayoutRecursively(m_mod_meta_layout);
 
@@ -185,12 +193,12 @@ void GraphicsModListWidget::OnModChanged(std::optional<std::string> absolute_pat
 
   if (!absolute_path)
   {
-    m_selected_mod_name->setText(QStringLiteral("No graphics mod selected"));
+    m_selected_mod_name->setText(tr("No graphics mod selected"));
     m_selected_mod_name->setAlignment(Qt::AlignCenter);
     return;
   }
 
-  GraphicsModConfig* mod = m_mod_group.GetMod(*absolute_path);
+  const GraphicsModConfig* mod = m_mod_group.GetMod(*absolute_path);
   if (!mod)
     return;
 
@@ -202,14 +210,14 @@ void GraphicsModListWidget::OnModChanged(std::optional<std::string> absolute_pat
 
   if (!mod->m_author.empty())
   {
-    auto* author_label = new QLabel(tr("By:  ") + QString::fromStdString(mod->m_author));
+    auto* author_label = new QLabel(tr("By: %1").arg(QString::fromStdString(mod->m_author)));
     m_mod_meta_layout->addWidget(author_label);
   }
 
   if (!mod->m_description.empty())
   {
     auto* description_label =
-        new QLabel(tr("Description:  ") + QString::fromStdString(mod->m_description));
+        new QLabel(tr("Description: %1").arg(QString::fromStdString(mod->m_description)));
     description_label->setWordWrap(true);
     m_mod_meta_layout->addWidget(description_label);
   }
@@ -233,31 +241,6 @@ void GraphicsModListWidget::SaveModList()
   m_needs_save = true;
 }
 
-void GraphicsModListWidget::ClearLayoutRecursively(QLayout* layout)
-{
-  while (QLayoutItem* child = layout->takeAt(0))
-  {
-    if (child == nullptr)
-      continue;
-
-    if (child->widget())
-    {
-      layout->removeWidget(child->widget());
-      delete child->widget();
-    }
-    else if (child->layout())
-    {
-      ClearLayoutRecursively(child->layout());
-      layout->removeItem(child);
-    }
-    else
-    {
-      layout->removeItem(child);
-    }
-    delete child;
-  }
-}
-
 void GraphicsModListWidget::SaveToDisk()
 {
   m_needs_save = false;
@@ -273,4 +256,10 @@ void GraphicsModListWidget::CalculateGameRunning(Core::State state)
 {
   m_loaded_game_is_running =
       state == Core::State::Running ? m_game_id == SConfig::GetInstance().GetGameID() : false;
+}
+
+void GraphicsModListWidget::OpenGraphicsModDir()
+{
+  QDesktopServices::openUrl(
+      QUrl::fromLocalFile(QString::fromStdString(File::GetUserPath(D_GRAPHICSMOD_IDX))));
 }

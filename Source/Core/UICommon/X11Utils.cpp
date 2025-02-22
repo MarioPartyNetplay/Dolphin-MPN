@@ -14,6 +14,7 @@
 
 #include <fmt/format.h>
 
+#include "Common/Contains.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
 #include "Core/Config/MainSettings.h"
@@ -43,24 +44,6 @@ bool ToggleFullscreen(Display* dpy, Window win)
   }
 
   return true;
-}
-
-void InhibitScreensaver(Window win, bool suspend)
-{
-  char id[11];
-  snprintf(id, sizeof(id), "0x%lx", win);
-
-  // Call xdg-screensaver
-  char* argv[4] = {(char*)"xdg-screensaver", (char*)(suspend ? "suspend" : "resume"), id, nullptr};
-  pid_t pid;
-  if (!posix_spawnp(&pid, "xdg-screensaver", nullptr, nullptr, argv, environ))
-  {
-    int status;
-    while (waitpid(pid, &status, 0) == -1)
-      ;
-
-    INFO_LOG_FMT(VIDEO, "Started xdg-screensaver (PID = {})", pid);
-  }
 }
 
 #ifdef HAVE_XRANDR
@@ -262,7 +245,7 @@ void XRRConfiguration::AddResolutions(std::vector<std::string>& resos)
                                        std::string(screenResources->modes[k].name) +
                                        (interlaced ? "i" : "");
             // Only add unique resolutions
-            if (std::find(resos.begin(), resos.end(), strRes) == resos.end())
+            if (!Common::Contains(resos, strRes))
             {
               resos.push_back(strRes);
             }

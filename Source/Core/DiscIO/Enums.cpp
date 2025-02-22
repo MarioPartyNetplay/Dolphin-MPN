@@ -111,6 +111,32 @@ std::string GetName(Language language, bool translate)
   return translate ? Common::GetStringT(name.c_str()) : name;
 }
 
+std::string GetName(Region region, bool translate)
+{
+  std::string name;
+
+  switch (region)
+  {
+  case DiscIO::Region::NTSC_J:
+    name = _trans("NTSC-J");
+    break;
+  case DiscIO::Region::NTSC_U:
+    name = _trans("NTSC-U");
+    break;
+  case DiscIO::Region::PAL:
+    name = _trans("PAL");
+    break;
+  case DiscIO::Region::NTSC_K:
+    name = _trans("NTSC-K");
+    break;
+  default:
+    name = _trans("Unknown");
+    break;
+  }
+
+  return translate ? Common::GetStringT(name.c_str()) : name;
+}
+
 bool IsDisc(Platform volume_type)
 {
   return volume_type == Platform::GameCubeDisc || volume_type == Platform::WiiDisc;
@@ -362,7 +388,7 @@ Region GetSysMenuRegion(u16 title_version)
   }
 }
 
-std::string GetSysMenuVersionString(u16 title_version)
+std::string GetSysMenuVersionString(u16 title_version, bool is_vwii)
 {
   std::string version;
   char region_letter = '\0';
@@ -386,52 +412,74 @@ std::string GetSysMenuVersionString(u16 title_version)
     break;
   }
 
-  switch (title_version & 0xff0)
+  if (is_vwii)
   {
-  case 32:
-    version = "1.0";
-    break;
-  case 96:
-  case 128:
-    version = "2.0";
-    break;
-  case 160:
-    version = "2.1";
-    break;
-  case 192:
-    version = "2.2";
-    break;
-  case 224:
-    version = "3.0";
-    break;
-  case 256:
-    version = "3.1";
-    break;
-  case 288:
-    version = "3.2";
-    break;
-  case 320:
-  case 352:
-    version = "3.3";
-    break;
-  case 384:
-    version = (region_letter != 'K' ? "3.4" : "3.5");
-    break;
-  case 416:
-    version = "4.0";
-    break;
-  case 448:
-    version = "4.1";
-    break;
-  case 480:
-    version = "4.2";
-    break;
-  case 512:
-    version = "4.3";
-    break;
-  default:
-    version = "?.?";
-    break;
+    // For vWii return the Wii U version which installed the menu
+    switch (title_version & 0xff0)
+    {
+    case 512:
+      version = "1.0.0";
+      break;
+    case 544:
+      version = "4.0.0";
+      break;
+    case 608:
+      version = "5.2.0";
+      break;
+    default:
+      version = "?.?.?";
+      break;
+    }
+  }
+  else
+  {
+    switch (title_version & 0xff0)
+    {
+    case 32:
+      version = "1.0";
+      break;
+    case 96:
+    case 128:
+      version = "2.0";
+      break;
+    case 160:
+      version = "2.1";
+      break;
+    case 192:
+      version = "2.2";
+      break;
+    case 224:
+      version = "3.0";
+      break;
+    case 256:
+      version = "3.1";
+      break;
+    case 288:
+      version = "3.2";
+      break;
+    case 320:
+    case 352:
+      version = "3.3";
+      break;
+    case 384:
+      version = (region_letter != 'K' ? "3.4" : "3.5");
+      break;
+    case 416:
+      version = "4.0";
+      break;
+    case 448:
+      version = "4.1";
+      break;
+    case 480:
+      version = "4.2";
+      break;
+    case 512:
+      version = "4.3";
+      break;
+    default:
+      version = "?.?";
+      break;
+    }
   }
 
   if (region_letter != '\0')

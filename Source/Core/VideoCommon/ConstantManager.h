@@ -17,7 +17,7 @@ enum class SrcBlendFactor : u32;
 enum class ZTexOp : u32;
 enum class LogicOp : u32;
 
-struct PixelShaderConstants
+struct alignas(16) PixelShaderConstants
 {
   std::array<int4, 4> colors;
   std::array<int4, 4> kcolors;
@@ -58,9 +58,11 @@ struct PixelShaderConstants
   // For shader_framebuffer_fetch logic ops:
   u32 logic_op_enable;  // bool
   LogicOp logic_op_mode;
+  // For custom shaders...
+  u32 time_ms;
 };
 
-struct VertexShaderConstants
+struct alignas(16) VertexShaderConstants
 {
   u32 components;           // .x
   u32 xfmem_dualTexInfo;    // .y
@@ -91,13 +93,30 @@ struct VertexShaderConstants
   // .x - texMtxInfo, .y - postMtxInfo, [0..1].z = color, [0..1].w = alpha
   std::array<uint4, 8> xfmem_pack1;
 
+  float4 cached_normal;
   float4 cached_tangent;
   float4 cached_binormal;
+  // For UberShader vertex loader
+  u32 vertex_stride;
+  std::array<u32, 3> vertex_offset_normals;
+  u32 vertex_offset_position;
+  u32 vertex_offset_posmtx;
+  std::array<u32, 2> vertex_offset_colors;
+  std::array<u32, 8> vertex_offset_texcoords;
 };
 
-struct GeometryShaderConstants
+enum class VSExpand : u32
+{
+  None = 0,
+  Point,
+  Line,
+};
+
+struct alignas(16) GeometryShaderConstants
 {
   float4 stereoparams;
   float4 lineptparams;
   int4 texoffset;
+  VSExpand vs_expand;  // Used by VS point/line expansion in ubershaders
+  u32 pad[3];
 };

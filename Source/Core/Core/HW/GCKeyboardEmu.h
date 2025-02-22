@@ -23,8 +23,6 @@ enum class KeyboardGroup
   Kb3x,
   Kb4x,
   Kb5x,
-
-  Options
 };
 
 class GCKeyboard : public ControllerEmu::EmulatedController
@@ -33,6 +31,7 @@ public:
   explicit GCKeyboard(unsigned int index);
   KeyboardStatus GetInput() const;
   std::string GetName() const override;
+  InputConfig* GetConfig() const override;
   ControllerEmu::ControlGroup* GetGroup(KeyboardGroup group);
   void LoadDefaults(const ControllerInterface& ciface) override;
 
@@ -43,7 +42,6 @@ private:
   ControllerEmu::Buttons* m_keys3x;
   ControllerEmu::Buttons* m_keys4x;
   ControllerEmu::Buttons* m_keys5x;
-  ControllerEmu::ControlGroup* m_options;
 
   const unsigned int m_index;
 };

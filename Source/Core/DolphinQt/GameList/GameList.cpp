@@ -22,6 +22,8 @@
 #include <cmath>
 #include <utility>
 
+#include <fmt/format.h>
+
 #include <QDesktopServices>
 #include <QDir>
 #include <QErrorMessage>
@@ -41,15 +43,16 @@
 #include <QUrl>
 
 #include "Common/CommonPaths.h"
+#include "Common/Contains.h"
 #include "Common/FileUtil.h"
 
 #include "Core/Config/MainSettings.h"
-#include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/HW/DVD/DVDInterface.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/EXI/EXI_Device.h"
 #include "Core/HW/WiiSave.h"
+#include "Core/System.h"
 #include "Core/WiiUtils.h"
 
 #include "DiscIO/Blob.h"
@@ -64,6 +67,7 @@
 #include "DolphinQt/QtUtils/DoubleClickEventFilter.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/ParallelProgressDialog.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/WiiUpdate.h"
@@ -119,8 +123,10 @@ GameList::GameList(QWidget* parent) : QStackedWidget(parent), m_model(this)
   m_prefer_list = Settings::Instance().GetPreferredView();
   ConsiderViewChange();
 
-  const auto* zoom_in = new QShortcut(QKeySequence::ZoomIn, this);
-  const auto* zoom_out = new QShortcut(QKeySequence::ZoomOut, this);
+  auto* zoom_in = new QShortcut(QKeySequence::ZoomIn, this);
+  auto* zoom_out = new QShortcut(QKeySequence::ZoomOut, this);
+  zoom_in->setContext(Qt::WidgetWithChildrenShortcut);
+  zoom_out->setContext(Qt::WidgetWithChildrenShortcut);
 
   connect(zoom_in, &QShortcut::activated, this, &GameList::ZoomIn);
   connect(zoom_out, &QShortcut::activated, this, &GameList::ZoomOut);
@@ -202,6 +208,7 @@ void GameList::MakeListView()
     SetResizeMode(Column::FileFormat, Mode::Fixed);
     SetResizeMode(Column::BlockSize, Mode::Fixed);
     SetResizeMode(Column::Compression, Mode::Fixed);
+    SetResizeMode(Column::TimePlayed, Mode::Interactive);
     SetResizeMode(Column::Tags, Mode::Interactive);
 
     // Cells have 3 pixels of padding, so the width of these needs to be image width + 6. Banners
@@ -267,6 +274,7 @@ void GameList::UpdateColumnVisibility()
   SetVisiblity(Column::FileFormat, Config::Get(Config::MAIN_GAMELIST_COLUMN_FILE_FORMAT));
   SetVisiblity(Column::BlockSize, Config::Get(Config::MAIN_GAMELIST_COLUMN_BLOCK_SIZE));
   SetVisiblity(Column::Compression, Config::Get(Config::MAIN_GAMELIST_COLUMN_COMPRESSION));
+  SetVisiblity(Column::TimePlayed, Config::Get(Config::MAIN_GAMELIST_COLUMN_TIME_PLAYED));
   SetVisiblity(Column::Tags, Config::Get(Config::MAIN_GAMELIST_COLUMN_TAGS));
 }
 
@@ -294,16 +302,14 @@ void GameList::MakeEmptyView()
   size_policy.setRetainSizeWhenHidden(true);
   m_empty->setSizePolicy(size_policy);
 
-  connect(&Settings::Instance(), &Settings::GameListRefreshRequested, this,
-          [this, refreshing_msg = refreshing_msg] {
-            m_empty->setText(refreshing_msg);
-            m_empty->setEnabled(false);
-          });
-  connect(&Settings::Instance(), &Settings::GameListRefreshCompleted, this,
-          [this, empty_msg = empty_msg] {
-            m_empty->setText(empty_msg);
-            m_empty->setEnabled(true);
-          });
+  connect(&Settings::Instance(), &Settings::GameListRefreshRequested, this, [this, refreshing_msg] {
+    m_empty->setText(refreshing_msg);
+    m_empty->setEnabled(false);
+  });
+  connect(&Settings::Instance(), &Settings::GameListRefreshCompleted, this, [this, empty_msg] {
+    m_empty->setText(empty_msg);
+    m_empty->setEnabled(true);
+  });
 }
 
 void GameList::resizeEvent(QResizeEvent* event)
@@ -365,22 +371,24 @@ void GameList::ShowContextMenu(const QPoint&)
 {
   if (!GetSelectedGame())
     return;
+  auto& system = Core::System::GetInstance();
 
   QMenu* menu = new QMenu(this);
+  menu->setAttribute(Qt::WA_DeleteOnClose, true);
 
   if (HasMultipleSelected())
   {
     const auto selected_games = GetSelectedGames();
 
-    if (std::all_of(selected_games.begin(), selected_games.end(),
-                    [](const auto& game) { return game->ShouldAllowConversion(); }))
+    if (std::ranges::all_of(selected_games,
+                            [](const auto& game) { return game->ShouldAllowConversion(); }))
     {
       menu->addAction(tr("Convert Selected Files..."), this, &GameList::ConvertFile);
       menu->addSeparator();
     }
 
-    if (std::all_of(selected_games.begin(), selected_games.end(),
-                    [](const auto& game) { return DiscIO::IsWii(game->GetPlatform()); }))
+    if (std::ranges::all_of(selected_games,
+                            [](const auto& game) { return DiscIO::IsWii(game->GetPlatform()); }))
     {
       menu->addAction(tr("Export Wii Saves"), this, &GameList::ExportWiiSave);
       menu->addSeparator();
@@ -416,8 +424,8 @@ void GameList::ShowContextMenu(const QPoint&)
       QAction* change_disc = menu->addAction(tr("Change &Disc"), this, &GameList::ChangeDisc);
 
       connect(&Settings::Instance(), &Settings::EmulationStateChanged, change_disc,
-              [change_disc] { change_disc->setEnabled(Core::IsRunning()); });
-      change_disc->setEnabled(Core::IsRunning());
+              [&system, change_disc] { change_disc->setEnabled(Core::IsRunning(system)); });
+      change_disc->setEnabled(Core::IsRunning(system));
 
       menu->addSeparator();
     }
@@ -431,7 +439,7 @@ void GameList::ShowContextMenu(const QPoint&)
                                                     // system menu, trigger a refresh.
                                                     Settings::Instance().NANDRefresh();
                                                   });
-      perform_disc_update->setEnabled(!Core::IsRunning() || !SConfig::GetInstance().bWii);
+      perform_disc_update->setEnabled(Core::IsUninitialized(system) || !system.IsWii());
     }
 
     if (!is_mod_descriptor && platform == DiscIO::Platform::WiiWAD)
@@ -444,10 +452,10 @@ void GameList::ShowContextMenu(const QPoint&)
 
       for (QAction* a : {wad_install_action, wad_uninstall_action})
       {
-        a->setEnabled(!Core::IsRunning());
+        a->setEnabled(Core::IsUninitialized(system));
         menu->addAction(a);
       }
-      if (!Core::IsRunning())
+      if (Core::IsUninitialized(system))
         wad_uninstall_action->setEnabled(WiiUtils::IsTitleInstalled(game->GetTitleID()));
 
       connect(&Settings::Instance(), &Settings::EmulationStateChanged, menu,
@@ -463,8 +471,14 @@ void GameList::ShowContextMenu(const QPoint&)
     if (!is_mod_descriptor &&
         (platform == DiscIO::Platform::WiiWAD || platform == DiscIO::Platform::WiiDisc))
     {
-      menu->addAction(tr("Open Wii &Save Folder"), this, &GameList::OpenWiiSaveFolder);
-      menu->addAction(tr("Export Wii Save"), this, &GameList::ExportWiiSave);
+      QAction* open_wii_save_folder =
+          menu->addAction(tr("Open Wii &Save Folder"), this, &GameList::OpenWiiSaveFolder);
+      QAction* export_wii_save =
+          menu->addAction(tr("Export Wii Save"), this, &GameList::ExportWiiSave);
+
+      open_wii_save_folder->setEnabled(Core::IsUninitialized(system));
+      export_wii_save->setEnabled(Core::IsUninitialized(system));
+
       menu->addSeparator();
     }
 
@@ -520,7 +534,7 @@ void GameList::ShowContextMenu(const QPoint&)
     connect(&Settings::Instance(), &Settings::EmulationStateChanged, menu, [=](Core::State state) {
       netplay_host->setEnabled(state == Core::State::Uninitialized);
     });
-    netplay_host->setEnabled(!Core::IsRunning());
+    netplay_host->setEnabled(Core::IsUninitialized(system));
 
     menu->addAction(netplay_host);
   }
@@ -535,14 +549,19 @@ void GameList::OpenProperties()
     return;
 
   PropertiesDialog* properties = new PropertiesDialog(this, *game);
-  // Since the properties dialog locks the game file, it's important to free it as soon as it's
-  // closed so that the file can be moved or deleted.
-  properties->setAttribute(Qt::WA_DeleteOnClose, true);
 
   connect(properties, &PropertiesDialog::OpenGeneralSettings, this, &GameList::OpenGeneralSettings);
   connect(properties, &PropertiesDialog::OpenGraphicsSettings, this,
           &GameList::OpenGraphicsSettings);
+  connect(properties, &PropertiesDialog::finished, this,
+          [properties]() { properties->deleteLater(); });
 
+#ifdef USE_RETRO_ACHIEVEMENTS
+  connect(properties, &PropertiesDialog::OpenAchievementSettings, this,
+          &GameList::OpenAchievementSettings);
+#endif  // USE_RETRO_ACHIEVEMENTS
+
+  SetQWidgetWindowDecorations(properties);
   properties->show();
 }
 
@@ -597,6 +616,7 @@ void GameList::ConvertFile()
     return;
 
   ConvertDialog dialog{std::move(games), this};
+  SetQWidgetWindowDecorations(&dialog);
   dialog.exec();
 }
 
@@ -614,6 +634,7 @@ void GameList::InstallWAD()
   result_dialog.setWindowTitle(success ? tr("Success") : tr("Failure"));
   result_dialog.setText(success ? tr("Successfully installed this title to the NAND.") :
                                   tr("Failed to install this title to the NAND."));
+  SetQWidgetWindowDecorations(&result_dialog);
   result_dialog.exec();
 }
 
@@ -631,6 +652,7 @@ void GameList::UninstallWAD()
                             "this title from the NAND without deleting its save data. Continue?"));
   warning_dialog.setStandardButtons(QMessageBox::No | QMessageBox::Yes);
 
+  SetQWidgetWindowDecorations(&warning_dialog);
   if (warning_dialog.exec() == QMessageBox::No)
     return;
 
@@ -642,6 +664,7 @@ void GameList::UninstallWAD()
   result_dialog.setWindowTitle(success ? tr("Success") : tr("Failure"));
   result_dialog.setText(success ? tr("Successfully removed this title from the NAND.") :
                                   tr("Failed to remove this title from the NAND."));
+  SetQWidgetWindowDecorations(&result_dialog);
   result_dialog.exec();
 }
 
@@ -691,7 +714,14 @@ void GameList::OpenWiiSaveFolder()
   if (!game)
     return;
 
-  QUrl url = QUrl::fromLocalFile(QString::fromStdString(game->GetWiiFSPath()));
+  const std::string path = game->GetWiiFSPath();
+  if (!File::Exists(path))
+  {
+    ModalMessageBox::information(this, tr("Information"), tr("No save data found."));
+    return;
+  }
+
+  const QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
   QDesktopServices::openUrl(url);
 }
 
@@ -714,16 +744,10 @@ void GameList::OpenGCSaveFolder()
     {
     case ExpansionInterface::EXIDeviceType::MemoryCardFolder:
     {
-      std::string path = StringFromFormat("%s/%s/%s", File::GetUserPath(D_GCUSER_IDX).c_str(),
-                                          Config::GetDirectoryForRegion(game->GetRegion()),
-                                          slot == Slot::A ? "Card A" : "Card B");
-
       std::string override_path = Config::Get(Config::GetInfoForGCIPathOverride(slot));
-
-      if (!override_path.empty())
-        path = override_path;
-
-      QDir dir(QString::fromStdString(path));
+      QDir dir(QString::fromStdString(override_path.empty() ?
+                                          Config::GetGCIFolderPath(slot, game->GetRegion()) :
+                                          override_path));
 
       if (!dir.entryList({QStringLiteral("%1-%2-*.gci")
                               .arg(QString::fromStdString(game->GetMakerID()))
@@ -782,15 +806,10 @@ bool GameList::AddShortcutToDesktop()
 
   std::string game_name = game->GetName(Core::TitleDatabase());
   // Sanitize the string by removing all characters that cannot be used in NTFS file names
-  game_name.erase(std::remove_if(game_name.begin(), game_name.end(),
-                                 [](char ch) {
-                                   static constexpr char illegal_characters[] = {
-                                       '<', '>', ':', '\"', '/', '\\', '|', '?', '*'};
-                                   return std::find(std::begin(illegal_characters),
-                                                    std::end(illegal_characters),
-                                                    ch) != std::end(illegal_characters);
-                                 }),
-                  game_name.end());
+  std::erase_if(game_name, [](char ch) {
+    static constexpr char illegal_characters[] = {'<', '>', ':', '\"', '/', '\\', '|', '?', '*'};
+    return Common::Contains(illegal_characters, ch);
+  });
 
   std::wstring desktop_path = std::wstring(desktop.get()) + UTF8ToTStr("\\" + game_name + ".lnk");
   auto persist_file = shell_link.try_query<IPersistFile>();
@@ -814,6 +833,7 @@ void GameList::DeleteFile()
   confirm_dialog.setInformativeText(tr("This cannot be undone!"));
   confirm_dialog.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
 
+  SetQWidgetWindowDecorations(&confirm_dialog);
   if (confirm_dialog.exec() == QMessageBox::Yes)
   {
     for (const auto& game : GetSelectedGames())
@@ -839,6 +859,7 @@ void GameList::DeleteFile()
                                              "delete the file or whether it's still in use."));
           error_dialog.setStandardButtons(QMessageBox::Retry | QMessageBox::Abort);
 
+          SetQWidgetWindowDecorations(&error_dialog);
           if (error_dialog.exec() == QMessageBox::Abort)
             break;
         }
@@ -856,7 +877,8 @@ void GameList::ChangeDisc()
   if (!game)
     return;
 
-  Core::RunAsCPUThread([file_path = game->GetFilePath()] { DVDInterface::ChangeDisc(file_path); });
+  auto& system = Core::System::GetInstance();
+  system.GetDVDInterface().ChangeDisc(Core::CPUThreadGuard{system}, game->GetFilePath());
 }
 
 QAbstractItemView* GameList::GetActiveView() const
@@ -985,6 +1007,7 @@ void GameList::OnColumnVisibilityToggled(const QString& row, bool visible)
       {tr("File Format"), Column::FileFormat},
       {tr("Block Size"), Column::BlockSize},
       {tr("Compression"), Column::Compression},
+      {tr("Time Played"), Column::TimePlayed},
       {tr("Tags"), Column::Tags},
   };
 

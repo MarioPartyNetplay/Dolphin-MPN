@@ -20,7 +20,7 @@ namespace IOS::HLE
 class USB_HIDv4 final : public USBHost
 {
 public:
-  USB_HIDv4(Kernel& ios, const std::string& device_name);
+  USB_HIDv4(EmulationKernel& ios, const std::string& device_name);
   ~USB_HIDv4() override;
 
   std::optional<IPCReply> IOCtl(const IOCtlRequest& request) override;
@@ -44,7 +44,8 @@ private:
   static constexpr u32 VERSION = 0x40001;
   static constexpr u8 HID_CLASS = 0x03;
 
-  bool m_devicechange_first_call = true;
+  bool m_has_pending_changes = true;
+  bool m_is_shut_down = false;
   std::mutex m_devicechange_hook_address_mutex;
   std::unique_ptr<IOCtlRequest> m_devicechange_hook_request;
 

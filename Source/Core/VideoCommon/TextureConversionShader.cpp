@@ -202,9 +202,9 @@ static void WriteSwizzler(ShaderCode& code, const EFBCopyParams& params, APIType
   const int blkH = TexDecoder_GetEFBCopyBlockHeightInTexels(params.copy_format);
   int samples = GetEncodedSampleCount(params.copy_format);
 
-  code.Write("  int x_block_position = (uv1.x >> {}) << {};\n", IntLog2(blkH * blkW / samples),
-             IntLog2(blkW));
-  code.Write("  int y_block_position = uv1.y << {};\n", IntLog2(blkH));
+  code.Write("  int x_block_position = (uv1.x >> {}) << {};\n",
+             MathUtil::IntLog2(blkH * blkW / samples), MathUtil::IntLog2(blkW));
+  code.Write("  int y_block_position = uv1.y << {};\n", MathUtil::IntLog2(blkH));
   if (samples == 1)
   {
     // With samples == 1, we write out pairs of blocks; one A8R8, one G8B8.
@@ -212,9 +212,10 @@ static void WriteSwizzler(ShaderCode& code, const EFBCopyParams& params, APIType
     samples = 2;
   }
   code.Write("  int offset_in_block = uv1.x & {};\n", (blkH * blkW / samples) - 1);
-  code.Write("  int y_offset_in_block = offset_in_block >> {};\n", IntLog2(blkW / samples));
+  code.Write("  int y_offset_in_block = offset_in_block >> {};\n",
+             MathUtil::IntLog2(blkW / samples));
   code.Write("  int x_offset_in_block = (offset_in_block & {}) << {};\n", (blkW / samples) - 1,
-             IntLog2(samples));
+             MathUtil::IntLog2(samples));
 
   code.Write("  sampleUv.x = x_block_position + x_offset_in_block;\n"
              "  sampleUv.y = y_block_position + y_offset_in_block;\n");
@@ -602,7 +603,7 @@ uint GetTiledTexelOffset(uint2 block_size, uint2 coords)
 {
   uint2 block = coords / block_size;
   uint2 offset = coords % block_size;
-  uint buffer_pos = 0;
+  uint buffer_pos = 0u;
   buffer_pos += block.y * u_src_row_stride;
   buffer_pos += block.x * (block_size.x * block_size.y);
   buffer_pos += offset.y * block_size.x;
@@ -672,7 +673,7 @@ static const std::map<TextureFormat, DecodingShaderInfo> s_decoding_shader_info{
         // the size of the buffer elements.
         uint2 block = coords.xy / 8u;
         uint2 offset = coords.xy % 8u;
-        uint buffer_pos = 0;
+        uint buffer_pos = 0u;
         buffer_pos += block.y * u_src_row_stride;
         buffer_pos += block.x * 32u;
         buffer_pos += offset.y * 4u;
@@ -810,7 +811,7 @@ static const std::map<TextureFormat, DecodingShaderInfo> s_decoding_shader_info{
         // for the entire block, then the GB channels afterwards.
         uint2 block = coords.xy / 4u;
         uint2 offset = coords.xy % 4u;
-        uint buffer_pos = 0;
+        uint buffer_pos = 0u;
 
         // Our buffer has 16-bit elements, so the offsets here are half what they would be in bytes.
         buffer_pos += block.y * u_src_row_stride;
@@ -874,7 +875,7 @@ static const std::map<TextureFormat, DecodingShaderInfo> s_decoding_shader_info{
           // Calculate tiled block coordinates.
           uint2 tile_block_coords = block_coords / 2u;
           uint2 subtile_block_coords = block_coords % 2u;
-          uint buffer_pos = 0;
+          uint buffer_pos = 0u;
           buffer_pos += tile_block_coords.y * u_src_row_stride;
           buffer_pos += tile_block_coords.x * 4u;
           buffer_pos += subtile_block_coords.y * 2u;
@@ -960,7 +961,7 @@ static const std::map<TextureFormat, DecodingShaderInfo> s_decoding_shader_info{
         // the size of the buffer elements.
         uint2 block = coords.xy / 8u;
         uint2 offset = coords.xy % 8u;
-        uint buffer_pos = 0;
+        uint buffer_pos = 0u;
         buffer_pos += block.y * u_src_row_stride;
         buffer_pos += block.x * 32u;
         buffer_pos += offset.y * 4u;
@@ -1088,7 +1089,7 @@ std::string GenerateDecodingShader(TextureFormat format, std::optional<TLUTForma
     ss << "#define TEXEL_BUFFER_FORMAT_R32G32 1\n";
     break;
   case NUM_TEXEL_BUFFER_FORMATS:
-    ASSERT(0);
+    ASSERT(false);
     break;
   }
 

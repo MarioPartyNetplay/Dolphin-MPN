@@ -5,6 +5,7 @@
 
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
+#include "Common/VariantUtil.h"
 #include "VideoCommon/TextureCacheBase.h"
 
 namespace
@@ -124,33 +125,78 @@ std::optional<std::string> ExtractTextureFilenameForConfig(const picojson::objec
     return std::nullopt;
   }
   std::string texture_info = texture_filename_iter->second.get<std::string>();
-  if (texture_info.find(EFB_DUMP_PREFIX) != std::string::npos)
-  {
-    const auto letter_c_pos = texture_info.find_first_of('n');
-    if (letter_c_pos == std::string::npos)
+
+  const auto handle_fb_texture =
+      [&texture_info](std::string_view type) -> std::optional<std::string> {
+    const auto letter_n_pos = texture_info.find("_n");
+    if (letter_n_pos == std::string::npos)
     {
-      ERROR_LOG_FMT(VIDEO, "Failed to load mod configuration file, value in 'texture_filename' "
-                           "is an efb without a count");
+      ERROR_LOG_FMT(VIDEO,
+                    "Failed to load mod configuration file, value in 'texture_filename' "
+                    "is {} without a count",
+                    type);
       return std::nullopt;
     }
-    texture_info =
-        texture_info.substr(letter_c_pos - 1, texture_info.find_first_of("_", letter_c_pos));
-  }
-  else if (texture_info.find(XFB_DUMP_PREFIX) != std::string::npos)
-  {
-    const auto letter_c_pos = texture_info.find_first_of('n');
-    if (letter_c_pos == std::string::npos)
-    {
-      ERROR_LOG_FMT(VIDEO, "Failed to load mod configuration file, value in 'texture_filename' "
-                           "is an xfb without a count");
-      return std::nullopt;
-    }
-    texture_info =
-        texture_info.substr(letter_c_pos - 1, texture_info.find_first_of("_", letter_c_pos));
-  }
+
+    const auto post_underscore = texture_info.find_first_of('_', letter_n_pos + 2);
+    if (post_underscore == std::string::npos)
+      return texture_info.erase(letter_n_pos, texture_info.size() - letter_n_pos);
+    else
+      return texture_info.erase(letter_n_pos, post_underscore - letter_n_pos);
+  };
+
+  if (texture_info.starts_with(EFB_DUMP_PREFIX))
+    return handle_fb_texture("an efb");
+  else if (texture_info.starts_with(XFB_DUMP_PREFIX))
+    return handle_fb_texture("a xfb");
   return texture_info;
 }
 }  // namespace
+
+void SerializeTargetToConfig(picojson::object& json_obj, const GraphicsTargetConfig& target)
+{
+  std::visit(overloaded{
+                 [&](const DrawStartedTextureTarget& the_target) {
+                   json_obj.emplace("type", "draw_started");
+                   json_obj.emplace("texture_filename", the_target.m_texture_info_string);
+                 },
+                 [&](const LoadTextureTarget& the_target) {
+                   json_obj.emplace("type", "load_texture");
+                   json_obj.emplace("texture_filename", the_target.m_texture_info_string);
+                 },
+                 [&](const CreateTextureTarget& the_target) {
+                   json_obj.emplace("type", "create_texture");
+                   json_obj.emplace("texture_filename", the_target.m_texture_info_string);
+                 },
+                 [&](const EFBTarget& the_target) {
+                   json_obj.emplace("type", "efb");
+                   json_obj.emplace("texture_filename",
+                                    fmt::format("{}_{}x{}_{}", EFB_DUMP_PREFIX, the_target.m_width,
+                                                the_target.m_height,
+                                                static_cast<int>(the_target.m_texture_format)));
+                 },
+                 [&](const XFBTarget& the_target) {
+                   json_obj.emplace("type", "xfb");
+                   json_obj.emplace("texture_filename",
+                                    fmt::format("{}_{}x{}_{}", XFB_DUMP_PREFIX, the_target.m_width,
+                                                the_target.m_height,
+                                                static_cast<int>(the_target.m_texture_format)));
+                 },
+                 [&](const ProjectionTarget& the_target) {
+                   const char* type_name = "3d";
+                   if (the_target.m_projection_type == ProjectionType::Orthographic)
+                     type_name = "2d";
+
+                   json_obj.emplace("type", type_name);
+
+                   if (the_target.m_texture_info_string)
+                   {
+                     json_obj.emplace("texture_filename", *the_target.m_texture_info_string);
+                   }
+                 },
+             },
+             target);
+}
 
 std::optional<GraphicsTargetConfig> DeserializeTargetFromConfig(const picojson::object& obj)
 {
@@ -184,6 +230,16 @@ std::optional<GraphicsTargetConfig> DeserializeTargetFromConfig(const picojson::
       return std::nullopt;
 
     LoadTextureTarget target;
+    target.m_texture_info_string = texture_info.value();
+    return target;
+  }
+  else if (type == "create_texture")
+  {
+    std::optional<std::string> texture_info = ExtractTextureFilenameForConfig(obj);
+    if (!texture_info.has_value())
+      return std::nullopt;
+
+    CreateTextureTarget target;
     target.m_texture_info_string = texture_info.value();
     return target;
   }

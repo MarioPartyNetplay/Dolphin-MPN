@@ -7,6 +7,7 @@
 #include <string>
 
 #include "VideoBackends/Vulkan/VulkanContext.h"
+#include "VideoCommon/DriverDetails.h"
 #include "VideoCommon/Spirv.h"
 
 namespace Vulkan::ShaderCompiler
@@ -58,8 +59,8 @@ static const char COMPUTE_SHADER_HEADER[] = R"(
   // All resources are packed into one descriptor set for compute.
   #define UBO_BINDING(packing, x) layout(packing, set = 0, binding = (x - 1))
   #define SAMPLER_BINDING(x) layout(set = 0, binding = (1 + x))
-  #define TEXEL_BUFFER_BINDING(x) layout(set = 0, binding = (3 + x))
-  #define IMAGE_BINDING(format, x) layout(format, set = 0, binding = (5 + x))
+  #define TEXEL_BUFFER_BINDING(x) layout(set = 0, binding = (9 + x))
+  #define IMAGE_BINDING(format, x) layout(format, set = 0, binding = (11 + x))
 
   // hlsl to glsl function translation
   #define API_VULKAN 1
@@ -79,11 +80,11 @@ static const char SUBGROUP_HELPER_HEADER[] = R"(
   #extension GL_KHR_shader_subgroup_basic : enable
   #extension GL_KHR_shader_subgroup_arithmetic : enable
   #extension GL_KHR_shader_subgroup_ballot : enable
+  #extension GL_KHR_shader_subgroup_shuffle : enable
 
   #define SUPPORTS_SUBGROUP_REDUCTION 1
-  #define CAN_USE_SUBGROUP_REDUCTION true
   #define IS_HELPER_INVOCATION gl_HelperInvocation
-  #define IS_FIRST_ACTIVE_INVOCATION (gl_SubgroupInvocationID == subgroupBallotFindLSB(subgroupBallot(!gl_HelperInvocation)))
+  #define IS_FIRST_ACTIVE_INVOCATION (subgroupElect())
   #define SUBGROUP_MIN(value) value = subgroupMin(value)
   #define SUBGROUP_MAX(value) value = subgroupMax(value)
 )";
@@ -98,6 +99,13 @@ static std::string GetShaderCode(std::string_view source, std::string_view heade
     full_source_code.append(header);
     if (g_vulkan_context->SupportsShaderSubgroupOperations())
       full_source_code.append(SUBGROUP_HELPER_HEADER, subgroup_helper_header_length);
+    if (DriverDetails::HasBug(DriverDetails::BUG_INVERTED_IS_HELPER))
+    {
+      full_source_code.append("#define gl_HelperInvocation !gl_HelperInvocation "
+                              "// Work around broken AMD Metal driver\n");
+    }
+    if (DriverDetails::HasBug(DriverDetails::BUG_BROKEN_SUBGROUP_OPS_WITH_DISCARD))
+      full_source_code.append("#define BROKEN_SUBGROUP_WITH_DISCARD 1\n");
     full_source_code.append(source);
   }
 

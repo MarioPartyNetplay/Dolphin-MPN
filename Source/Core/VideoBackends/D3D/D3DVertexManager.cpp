@@ -3,15 +3,17 @@
 
 #include "VideoBackends/D3D/D3DVertexManager.h"
 
-#include <d3d11.h>
+#include <d3d11_4.h>
 
 #include "Common/Align.h"
 #include "Common/Assert.h"
 #include "Common/CommonTypes.h"
 
+#include "Core/System.h"
+
 #include "VideoBackends/D3D/D3DBase.h"
 #include "VideoBackends/D3D/D3DBoundingBox.h"
-#include "VideoBackends/D3D/D3DRender.h"
+#include "VideoBackends/D3D/D3DGfx.h"
 #include "VideoBackends/D3D/D3DState.h"
 #include "VideoBackends/D3DCommon/D3DCommon.h"
 
@@ -260,28 +262,51 @@ void VertexManager::CommitBuffer(u32 num_vertices, u32 vertex_stride, u32 num_in
 
 void VertexManager::UploadUniforms()
 {
-  if (VertexShaderManager::dirty)
+  auto& system = Core::System::GetInstance();
+
+  auto& vertex_shader_manager = system.GetVertexShaderManager();
+  if (vertex_shader_manager.dirty)
   {
-    UpdateConstantBuffer(m_vertex_constant_buffer.Get(), &VertexShaderManager::constants,
+    UpdateConstantBuffer(m_vertex_constant_buffer.Get(), &vertex_shader_manager.constants,
                          sizeof(VertexShaderConstants));
-    VertexShaderManager::dirty = false;
+    vertex_shader_manager.dirty = false;
   }
-  if (GeometryShaderManager::dirty)
+
+  auto& geometry_shader_manager = system.GetGeometryShaderManager();
+  if (geometry_shader_manager.dirty)
   {
-    UpdateConstantBuffer(m_geometry_constant_buffer.Get(), &GeometryShaderManager::constants,
+    UpdateConstantBuffer(m_geometry_constant_buffer.Get(), &geometry_shader_manager.constants,
                          sizeof(GeometryShaderConstants));
-    GeometryShaderManager::dirty = false;
+    geometry_shader_manager.dirty = false;
   }
-  if (PixelShaderManager::dirty)
+
+  auto& pixel_shader_manager = system.GetPixelShaderManager();
+  if (pixel_shader_manager.dirty)
   {
-    UpdateConstantBuffer(m_pixel_constant_buffer.Get(), &PixelShaderManager::constants,
+    UpdateConstantBuffer(m_pixel_constant_buffer.Get(), &pixel_shader_manager.constants,
                          sizeof(PixelShaderConstants));
-    PixelShaderManager::dirty = false;
+    pixel_shader_manager.dirty = false;
+  }
+
+  if (pixel_shader_manager.custom_constants_dirty)
+  {
+    if (m_last_custom_pixel_buffer_size < pixel_shader_manager.custom_constants.size())
+    {
+      m_custom_pixel_constant_buffer =
+          AllocateConstantBuffer(static_cast<u32>(pixel_shader_manager.custom_constants.size()));
+    }
+    UpdateConstantBuffer(m_custom_pixel_constant_buffer.Get(),
+                         pixel_shader_manager.custom_constants.data(),
+                         static_cast<u32>(pixel_shader_manager.custom_constants.size()));
+    m_last_custom_pixel_buffer_size = pixel_shader_manager.custom_constants.size();
+    pixel_shader_manager.custom_constants_dirty = false;
   }
 
   D3D::stateman->SetPixelConstants(
       m_pixel_constant_buffer.Get(),
-      g_ActiveConfig.bEnablePixelLighting ? m_vertex_constant_buffer.Get() : nullptr);
+      g_ActiveConfig.bEnablePixelLighting ? m_vertex_constant_buffer.Get() : nullptr,
+      pixel_shader_manager.custom_constants.empty() ? nullptr :
+                                                      m_custom_pixel_constant_buffer.Get());
   D3D::stateman->SetVertexConstants(m_vertex_constant_buffer.Get());
   D3D::stateman->SetGeometryConstants(m_geometry_constant_buffer.Get());
 }

@@ -28,6 +28,7 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/System.h"
 
 #include "DiscIO/Enums.h"
 
@@ -98,20 +99,21 @@ void CEXIIPL::Descrambler(u8* data, u32 size)
   }
 }
 
-CEXIIPL::CEXIIPL()
+CEXIIPL::CEXIIPL(Core::System& system) : IEXIDevice(system)
 {
   // Fill the ROM
   m_rom = std::make_unique<u8[]>(ROM_SIZE);
 
   // Load whole ROM dump
   // Note: The Wii doesn't have a copy of the IPL, only fonts.
-  if (!SConfig::GetInstance().bWii && Config::Get(Config::SESSION_LOAD_IPL_DUMP) &&
+  if (!system.IsWii() && Config::Get(Config::SESSION_LOAD_IPL_DUMP) &&
       LoadFileToIPL(SConfig::GetInstance().m_strBootROM, 0))
   {
     // Descramble the encrypted section (contains BS1 and BS2)
     Descrambler(&m_rom[0x100], 0x1afe00);
-    // yay for null-terminated strings
-    const std::string_view name{reinterpret_cast<char*>(m_rom.get())};
+
+    const std::string_view name{reinterpret_cast<char*>(m_rom.get()),
+                                strnlen(reinterpret_cast<char*>(m_rom.get()), 0x100)};
     INFO_LOG_FMT(BOOT, "Loaded bootrom: {}", name);
   }
   else
@@ -129,28 +131,25 @@ CEXIIPL::CEXIIPL()
     LoadFontFile((File::GetSysDirectory() + GC_SYS_DIR + DIR_SEP + FONT_WINDOWS_1252), 0x1fcf00);
   }
 
+  auto& sram = system.GetSRAM();
+
   // Clear RTC
-  g_SRAM.rtc = 0;
+  sram.rtc = 0;
 
   // We Overwrite language selection here since it's possible on the GC to change the language as
   // you please
-  g_SRAM.settings.language = Config::Get(Config::MAIN_GC_LANGUAGE);
-  g_SRAM.settings.rtc_bias = 0;
-  FixSRAMChecksums();
+  sram.settings.language = Config::Get(Config::MAIN_GC_LANGUAGE);
+  sram.settings.rtc_bias = 0;
+  FixSRAMChecksums(&sram);
 }
 
-CEXIIPL::~CEXIIPL()
-{
-  // SRAM
-  if (!g_SRAM_netplay_initialized)
-  {
-    File::IOFile file(SConfig::GetInstance().m_strSRAM, "wb");
-    file.WriteArray(&g_SRAM, 1);
-  }
-}
+CEXIIPL::~CEXIIPL() = default;
+
 void CEXIIPL::DoState(PointerWrap& p)
 {
-  p.Do(g_SRAM);
+  auto& sram = m_system.GetSRAM();
+
+  p.Do(sram);
   p.Do(g_rtc_flags);
   p.Do(m_command);
   p.Do(m_command_bytes_received);
@@ -161,13 +160,15 @@ void CEXIIPL::DoState(PointerWrap& p)
 
 bool CEXIIPL::LoadFileToIPL(const std::string& filename, u32 offset)
 {
+  if (offset >= ROM_SIZE)
+    return false;
+
   File::IOFile stream(filename, "rb");
   if (!stream)
     return false;
 
-  u64 filesize = stream.GetSize();
-
-  if (!stream.ReadBytes(&m_rom[offset], filesize))
+  const u64 filesize = stream.GetSize();
+  if (!stream.ReadBytes(&m_rom[offset], std::min<u64>(filesize, ROM_SIZE - offset)))
     return false;
 
   m_fonts_loaded = true;
@@ -236,8 +237,11 @@ void CEXIIPL::LoadFontFile(const std::string& filename, u32 offset)
   INFO_LOG_FMT(BOOT, "Found IPL dump, loading {} font from {}",
                (offset == 0x1aff00) ? "Shift JIS" : "Windows-1252", ipl_rom_path);
 
-  stream.Seek(offset, File::SeekOrigin::Begin);
-  stream.ReadBytes(&m_rom[offset], fontsize);
+  if (!stream.Seek(offset, File::SeekOrigin::Begin) || !stream.ReadBytes(&m_rom[offset], fontsize))
+  {
+    WARN_LOG_FMT(BOOT, "Failed to read font from IPL dump.");
+    return;
+  }
 
   m_fonts_loaded = true;
 }
@@ -253,7 +257,8 @@ void CEXIIPL::SetCS(int cs)
 
 void CEXIIPL::UpdateRTC()
 {
-  g_SRAM.rtc = GetEmulatedTime(GC_EPOCH);
+  auto& sram = m_system.GetSRAM();
+  sram.rtc = GetEmulatedTime(m_system, GC_EPOCH);
 }
 
 bool CEXIIPL::IsPresent() const
@@ -291,10 +296,6 @@ void CEXIIPL::TransferByte(u8& data)
     DEBUG_LOG_FMT(EXPANSIONINTERFACE, "IPL-DEV data {} {:08x} {:02x}",
                   m_command.is_write() ? "write" : "read", address, data);
 
-#define IN_RANGE(x) (address >= x##_BASE && address < x##_BASE + x##_SIZE)
-#define DEV_ADDR(x) (address - x##_BASE)
-#define DEV_ADDR_CURSOR(x) (DEV_ADDR(x) + m_cursor++)
-
     auto UartFifoAccess = [&]() {
       if (m_command.is_write())
       {
@@ -318,7 +319,9 @@ void CEXIIPL::TransferByte(u8& data)
     {
       if (!m_command.is_write())
       {
-        u32 dev_addr = DEV_ADDR_CURSOR(ROM);
+        u32 dev_addr = address - ROM_BASE + m_cursor++;
+        // TODO: Is this address wrapping correct? Needs a hardware test
+        dev_addr %= ROM_SIZE;
         // Technically we should descramble here iff descrambling logic is enabled.
         // At the moment, we pre-decrypt the whole thing and
         // ignore the "enabled" bit - see CEXIIPL::CEXIIPL
@@ -341,17 +344,20 @@ void CEXIIPL::TransferByte(u8& data)
         }
       }
     }
-    else if (IN_RANGE(SRAM))
+    else if (address >= SRAM_BASE && address < SRAM_BASE + SRAM_SIZE)
     {
-      u32 dev_addr = DEV_ADDR_CURSOR(SRAM);
+      auto& sram = m_system.GetSRAM();
+      u32 dev_addr = address - SRAM_BASE + m_cursor++;
+      // TODO: Is this address wrapping correct? Needs a hardware test
+      dev_addr %= SRAM_SIZE;
       if (m_command.is_write())
-        g_SRAM[dev_addr] = data;
+        sram[dev_addr] = data;
       else
-        data = g_SRAM[dev_addr];
+        data = sram[dev_addr];
     }
-    else if (IN_RANGE(UART))
+    else if (address >= UART_BASE && address < UART_BASE + UART_SIZE)
     {
-      switch (DEV_ADDR(UART))
+      switch (address - UART_BASE)
       {
       case 0:
         // Seems to be 16byte fifo
@@ -365,16 +371,17 @@ void CEXIIPL::TransferByte(u8& data)
         break;
       }
     }
-    else if (IN_RANGE(WII_RTC) && DEV_ADDR(WII_RTC) == 0x20)
+    else if (address >= WII_RTC_BASE && address < WII_RTC_BASE + WII_RTC_SIZE &&
+             address - WII_RTC_BASE == 0x20)
     {
       if (m_command.is_write())
         g_rtc_flags.m_hex = data;
       else
         data = g_rtc_flags.m_hex;
     }
-    else if (IN_RANGE(EUART))
+    else if (address >= EUART_BASE && address < EUART_BASE + EUART_SIZE)
     {
-      switch (DEV_ADDR(EUART))
+      switch (address - EUART_BASE)
       {
       case 0:
         // Writes 0xf2 then 0xf3 on EUART init. Just need to return non-zero
@@ -389,35 +396,33 @@ void CEXIIPL::TransferByte(u8& data)
     {
       NOTICE_LOG_FMT(EXPANSIONINTERFACE, "IPL-DEV Accessing unknown device");
     }
-
-#undef DEV_ADDR_CURSOR
-#undef DEV_ADDR
-#undef IN_RANGE
   }
 }
 
-u32 CEXIIPL::GetEmulatedTime(u32 epoch)
+u32 CEXIIPL::GetEmulatedTime(Core::System& system, u32 epoch)
 {
   u64 ltime = 0;
 
-  if (Movie::IsMovieActive())
+  auto& movie = system.GetMovie();
+  if (movie.IsMovieActive())
   {
-    ltime = Movie::GetRecordingStartTime();
+    ltime = movie.GetRecordingStartTime();
 
     // let's keep time moving forward, regardless of what it starts at
-    ltime += CoreTiming::GetTicks() / SystemTimers::GetTicksPerSecond();
+    ltime += system.GetCoreTiming().GetTicks() / system.GetSystemTimers().GetTicksPerSecond();
   }
   else if (NetPlay::IsNetPlayRunning())
   {
     ltime = NetPlay_GetEmulatedTime();
 
     // let's keep time moving forward, regardless of what it starts at
-    ltime += CoreTiming::GetTicks() / SystemTimers::GetTicksPerSecond();
+    ltime += system.GetCoreTiming().GetTicks() / system.GetSystemTimers().GetTicksPerSecond();
   }
   else
   {
     ASSERT(!Core::WantsDeterminism());
-    ltime = Common::Timer::GetLocalTimeSinceJan1970() - SystemTimers::GetLocalTimeRTCOffset();
+    ltime = Common::Timer::GetLocalTimeSinceJan1970() -
+            system.GetSystemTimers().GetLocalTimeRTCOffset();
   }
 
   return static_cast<u32>(ltime) - epoch;

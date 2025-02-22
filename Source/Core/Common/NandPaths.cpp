@@ -5,12 +5,13 @@
 
 #include <algorithm>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include "Common/CommonTypes.h"
+#include "Common/Contains.h"
 #include "Common/FileUtil.h"
 #include "Common/StringUtil.h"
 
@@ -18,7 +19,7 @@ namespace Common
 {
 std::string RootUserPath(FromWhichRoot from)
 {
-  int idx = from == FROM_CONFIGURED_ROOT ? D_WIIROOT_IDX : D_SESSION_WIIROOT_IDX;
+  int idx = from == FromWhichRoot::Configured ? D_WIIROOT_IDX : D_SESSION_WIIROOT_IDX;
   std::string dir = File::GetUserPath(idx);
   dir.pop_back();  // remove trailing path separator
   return dir;
@@ -38,6 +39,12 @@ std::string GetImportTitlePath(u64 title_id, std::optional<FromWhichRoot> from)
 std::string GetTicketFileName(u64 title_id, std::optional<FromWhichRoot> from)
 {
   return fmt::format("{}/ticket/{:08x}/{:08x}.tik", RootUserPath(from),
+                     static_cast<u32>(title_id >> 32), static_cast<u32>(title_id));
+}
+
+std::string GetV1TicketFileName(u64 title_id, std::optional<FromWhichRoot> from)
+{
+  return fmt::format("{}/ticket/{:08x}/{:08x}.tv1", RootUserPath(from),
                      static_cast<u32>(title_id >> 32), static_cast<u32>(title_id));
 }
 
@@ -70,7 +77,7 @@ std::string GetMiiDatabasePath(std::optional<FromWhichRoot> from)
 bool IsTitlePath(const std::string& path, std::optional<FromWhichRoot> from, u64* title_id)
 {
   std::string expected_prefix = RootUserPath(from) + "/title/";
-  if (!StringBeginsWith(path, expected_prefix))
+  if (!path.starts_with(expected_prefix))
   {
     return false;
   }
@@ -84,7 +91,8 @@ bool IsTitlePath(const std::string& path, std::optional<FromWhichRoot> from, u64
   }
 
   u32 title_id_high, title_id_low;
-  if (!AsciiToHex(components[0], title_id_high) || !AsciiToHex(components[1], title_id_low))
+  if (Common::FromChars(components[0], title_id_high, 16).ec != std::errc{} ||
+      Common::FromChars(components[1], title_id_low, 16).ec != std::errc{})
   {
     return false;
   }
@@ -98,15 +106,14 @@ bool IsTitlePath(const std::string& path, std::optional<FromWhichRoot> from, u64
 
 static bool IsIllegalCharacter(char c)
 {
-  static const std::unordered_set<char> illegal_chars = {'\"', '*', '/',  ':', '<',
-                                                         '>',  '?', '\\', '|', '\x7f'};
-  return (c >= 0 && c <= 0x1F) || illegal_chars.find(c) != illegal_chars.end();
+  static constexpr char illegal_chars[] = {'\"', '*', '/', ':', '<', '>', '?', '\\', '|', '\x7f'};
+  return static_cast<unsigned char>(c) <= 0x1F || Common::Contains(illegal_chars, c);
 }
 
 std::string EscapeFileName(const std::string& filename)
 {
   // Prevent paths from containing special names like ., .., ..., ...., and so on
-  if (std::all_of(filename.begin(), filename.end(), [](char c) { return c == '.'; }))
+  if (std::ranges::all_of(filename, [](char c) { return c == '.'; }))
     return ReplaceAll(filename, ".", "__2e__");
 
   // Escape all double underscores since we will use double underscores for our escape sequences
@@ -135,7 +142,7 @@ std::string EscapePath(const std::string& path)
   for (const std::string& split_string : split_strings)
     escaped_split_strings.push_back(EscapeFileName(split_string));
 
-  return JoinStrings(escaped_split_strings, "/");
+  return fmt::to_string(fmt::join(escaped_split_strings, "/"));
 }
 
 std::string UnescapeFileName(const std::string& filename)
@@ -149,8 +156,11 @@ std::string UnescapeFileName(const std::string& filename)
   {
     u32 character;
     if (pos + 6 <= result.size() && result[pos + 4] == '_' && result[pos + 5] == '_')
-      if (AsciiToHex(result.substr(pos + 2, 2), character))
+      if (Common::FromChars(std::string_view{result}.substr(pos + 2, 2), character, 16).ec ==
+          std::errc{})
+      {
         result.replace(pos, 6, {static_cast<char>(character)});
+      }
 
     ++pos;
   }
@@ -160,8 +170,7 @@ std::string UnescapeFileName(const std::string& filename)
 
 bool IsFileNameSafe(const std::string_view filename)
 {
-  return !filename.empty() &&
-         !std::all_of(filename.begin(), filename.end(), [](char c) { return c == '.'; }) &&
-         std::none_of(filename.begin(), filename.end(), IsIllegalCharacter);
+  return !filename.empty() && !std::ranges::all_of(filename, [](char c) { return c == '.'; }) &&
+         std::ranges::none_of(filename, IsIllegalCharacter);
 }
 }  // namespace Common

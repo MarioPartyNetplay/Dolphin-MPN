@@ -9,6 +9,9 @@
 
 #include "Common/CommonTypes.h"
 #include "Common/Inline.h"
+
+#include "Core/HW/Wiimote.h"
+#include "Core/HW/WiimoteEmu/Extension/DesiredExtensionState.h"
 #include "Core/HW/WiimoteEmu/WiimoteEmu.h"
 
 #include "Common/Logging/Log.h"
@@ -34,6 +37,11 @@ std::string Extension::GetDisplayName() const
   return m_display_name;
 }
 
+InputConfig* Extension::GetConfig() const
+{
+  return ::Wiimote::GetConfig();
+}
+
 None::None() : Extension("None")
 {
 }
@@ -43,7 +51,12 @@ bool None::ReadDeviceDetectPin() const
   return false;
 }
 
-void None::Update()
+void None::BuildDesiredExtensionState(DesiredExtensionState* target_state)
+{
+  target_state->data.emplace<std::monostate>();
+}
+
+void None::Update(const DesiredExtensionState& target_state)
 {
   // Nothing needed.
 }

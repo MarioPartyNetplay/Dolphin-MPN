@@ -21,10 +21,11 @@
 #include "Core/HW/Memmap.h"
 #include "Core/IOS/Device.h"
 #include "Core/IOS/IOS.h"
+#include "Core/System.h"
 
 namespace IOS::HLE::USB
 {
-LibusbDevice::LibusbDevice(Kernel& ios, libusb_device* device,
+LibusbDevice::LibusbDevice(EmulationKernel& ios, libusb_device* device,
                            const libusb_device_descriptor& descriptor)
     : m_ios(ios), m_device(device)
 {
@@ -247,7 +248,11 @@ int LibusbDevice::SubmitTransfer(std::unique_ptr<CtrlMessage> cmd)
   auto buffer = std::make_unique<u8[]>(size);
   libusb_fill_control_setup(buffer.get(), cmd->request_type, cmd->request, cmd->value, cmd->index,
                             cmd->length);
-  Memory::CopyFromEmu(buffer.get() + LIBUSB_CONTROL_SETUP_SIZE, cmd->data_address, cmd->length);
+
+  auto& system = m_ios.GetSystem();
+  auto& memory = system.GetMemory();
+  memory.CopyFromEmu(buffer.get() + LIBUSB_CONTROL_SETUP_SIZE, cmd->data_address, cmd->length);
+
   libusb_transfer* transfer = libusb_alloc_transfer(0);
   transfer->flags |= LIBUSB_TRANSFER_FREE_TRANSFER;
   libusb_fill_control_transfer(transfer, m_handle, buffer.release(), CtrlTransferCallback, this, 0);
@@ -434,6 +439,9 @@ static int DoForEachInterface(const Configs& configs, u8 config_num, Function ac
 int LibusbDevice::ClaimAllInterfaces(u8 config_num) const
 {
   const int ret = DoForEachInterface(m_config_descriptors, config_num, [this](u8 i) {
+  // On macos detaching would fail without root or entitlement.
+  // We assume user is using GCAdapterDriver and therefore don't want to detach anything
+#if !defined(__APPLE__)
     const int ret2 = libusb_detach_kernel_driver(m_handle, i);
     if (ret2 < LIBUSB_SUCCESS && ret2 != LIBUSB_ERROR_NOT_FOUND &&
         ret2 != LIBUSB_ERROR_NOT_SUPPORTED)
@@ -442,6 +450,7 @@ int LibusbDevice::ClaimAllInterfaces(u8 config_num) const
                     LibusbUtils::ErrorWrap(ret2));
       return ret2;
     }
+#endif
     return libusb_claim_interface(m_handle, i);
   });
   if (ret < LIBUSB_SUCCESS)

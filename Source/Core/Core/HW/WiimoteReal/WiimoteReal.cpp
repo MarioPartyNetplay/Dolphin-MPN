@@ -19,7 +19,6 @@
 
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/WiimoteSettings.h"
-#include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/HW/Wiimote.h"
 #include "Core/HW/WiimoteCommon/DataReport.h"
@@ -28,6 +27,7 @@
 #include "Core/HW/WiimoteReal/IOLinux.h"
 #include "Core/HW/WiimoteReal/IOWin.h"
 #include "Core/HW/WiimoteReal/IOhidapi.h"
+#include "Core/System.h"
 
 #include "InputCommon/ControllerInterface/Wiimote/WiimoteController.h"
 #include "InputCommon/InputConfig.h"
@@ -129,6 +129,11 @@ void ProcessWiimotePool()
   {
     ciface::WiimoteController::ReleaseDevices();
   }
+}
+
+bool IsScannerReady()
+{
+  return s_wiimote_scanner.IsReady();
 }
 
 void AddWiimoteToPool(std::unique_ptr<Wiimote> wiimote)
@@ -414,6 +419,7 @@ bool Wiimote::IsBalanceBoard()
                      "Failed to read from 0xa400fe, assuming Wiimote is not a Balance Board.");
         return false;
       }
+      break;
     }
     default:
       break;
@@ -450,7 +456,23 @@ Report& Wiimote::ProcessReadQueue(bool repeat_last_data_report)
   return m_last_input_report;
 }
 
-void Wiimote::Update()
+u8 Wiimote::GetWiimoteDeviceIndex() const
+{
+  return m_bt_device_index;
+}
+
+void Wiimote::SetWiimoteDeviceIndex(u8 index)
+{
+  m_bt_device_index = index;
+}
+
+void Wiimote::PrepareInput(WiimoteEmu::DesiredWiimoteState* target_state,
+                           SensorBarState sensor_bar_state)
+{
+  // Nothing to do here on real Wiimotes.
+}
+
+void Wiimote::Update(const WiimoteEmu::DesiredWiimoteState& target_state)
 {
   // Wii remotes send input at 200hz once a Wii enables "sniff mode" on the connection.
   // PC bluetooth stacks do not enable sniff mode causing remotes to send input at only 100hz.
@@ -475,7 +497,7 @@ void Wiimote::Update()
                     u32(rpt.size() - REPORT_HID_HEADER_SIZE));
 }
 
-bool Wiimote::IsButtonPressed()
+ButtonData Wiimote::GetCurrentlyPressedButtons()
 {
   Report& rpt = m_last_input_report;
   if (rpt.size() >= 4)
@@ -489,10 +511,10 @@ bool Wiimote::IsButtonPressed()
       ButtonData buttons = {};
       builder->GetCoreData(&buttons);
 
-      return buttons.hex != 0;
+      return buttons;
     }
   }
-  return false;
+  return ButtonData{};
 }
 
 void Wiimote::Prepare()
@@ -591,8 +613,7 @@ void WiimoteScanner::SetScanMode(WiimoteScanMode scan_mode)
 bool WiimoteScanner::IsReady() const
 {
   std::lock_guard lg(m_backends_mutex);
-  return std::any_of(m_backends.begin(), m_backends.end(),
-                     [](const auto& backend) { return backend->IsReady(); });
+  return std::ranges::any_of(m_backends, &WiimoteScannerBackend::IsReady);
 }
 
 static void CheckForDisconnectedWiimotes()
@@ -698,11 +719,14 @@ void WiimoteScanner::ThreadFunc()
     // If we don't want Wiimotes in ControllerInterface, we may not need them at all.
     if (!Config::Get(Config::MAIN_CONNECT_WIIMOTES_FOR_CONTROLLER_INTERFACE))
     {
+      auto& system = Core::System::GetInstance();
       // We don't want any remotes in passthrough mode or running in GC mode.
-      const bool core_running = Core::GetState() != Core::State::Uninitialized;
+      const bool core_running = Core::GetState(system) != Core::State::Uninitialized;
       if (Config::Get(Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED) ||
-          (core_running && !SConfig::GetInstance().bWii))
+          (core_running && !system.IsWii()))
+      {
         continue;
+      }
 
       // We don't want any remotes if we already connected everything we need.
       if (0 == CalculateWantedWiimotes() && 0 == CalculateWantedBB())
@@ -740,7 +764,7 @@ void WiimoteScanner::ThreadFunc()
       }
     }
 
-    // Stop scanning if not in continous mode.
+    // Stop scanning if not in continuous mode.
     auto scan_mode = WiimoteScanMode::SCAN_ONCE;
     m_scan_mode.compare_exchange_strong(scan_mode, WiimoteScanMode::DO_NOT_SCAN);
   }
@@ -925,10 +949,11 @@ static bool TryToConnectWiimoteToSlot(std::unique_ptr<Wiimote>& wm, unsigned int
   led_report.leds = u8(1 << (i % WIIMOTE_BALANCE_BOARD));
   wm->QueueReport(led_report);
 
-  Core::RunAsCPUThread([i, &wm] {
+  {
+    const Core::CPUThreadGuard guard(Core::System::GetInstance());
     g_wiimotes[i] = std::move(wm);
     WiimoteCommon::UpdateSource(i);
-  });
+  }
 
   NOTICE_LOG_FMT(WIIMOTE, "Connected real wiimote to slot {}.", i + 1);
 
@@ -945,12 +970,11 @@ static void TryToConnectBalanceBoard(std::unique_ptr<Wiimote> wm)
 
 static void HandleWiimoteDisconnect(int index)
 {
-  Core::RunAsCPUThread([index] {
-    // The Wii Remote object must exist through the call to UpdateSource
-    // to prevent WiimoteDevice from having a dangling HIDWiimote pointer.
-    const auto temp_real_wiimote = std::move(g_wiimotes[index]);
-    WiimoteCommon::UpdateSource(index);
-  });
+  const Core::CPUThreadGuard guard(Core::System::GetInstance());
+  // The Wii Remote object must exist through the call to UpdateSource
+  // to prevent WiimoteDevice from having a dangling HIDWiimote pointer.
+  const auto temp_real_wiimote = std::move(g_wiimotes[index]);
+  WiimoteCommon::UpdateSource(index);
 }
 
 // This is called from the GUI thread
@@ -975,17 +999,18 @@ bool IsBalanceBoardName(const std::string& name)
 bool IsNewWiimote(const std::string& identifier)
 {
   std::lock_guard lk(s_known_ids_mutex);
-  return s_known_ids.count(identifier) == 0;
+  return !s_known_ids.contains(identifier);
 }
 
 void HandleWiimoteSourceChange(unsigned int index)
 {
   std::lock_guard wm_lk(g_wiimotes_mutex);
 
-  Core::RunAsCPUThread([index] {
+  {
+    const Core::CPUThreadGuard guard(Core::System::GetInstance());
     if (auto removed_wiimote = std::move(g_wiimotes[index]))
       AddWiimoteToPool(std::move(removed_wiimote));
-  });
+  }
   g_controller_interface.PlatformPopulateDevices([] { ProcessWiimotePool(); });
 }
 

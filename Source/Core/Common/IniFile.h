@@ -13,29 +13,8 @@
 #include "Common/CommonTypes.h"
 #include "Common/StringUtil.h"
 
-struct CaseInsensitiveStringCompare
+namespace Common
 {
-  // Allow heterogenous lookup.
-  using is_transparent = void;
-
-  bool operator()(std::string_view a, std::string_view b) const
-  {
-    return std::lexicographical_compare(
-        a.begin(), a.end(), b.begin(), b.end(),
-        [](char lhs, char rhs) { return Common::ToLower(lhs) < Common::ToLower(rhs); });
-  }
-
-  static bool IsEqual(std::string_view a, std::string_view b)
-  {
-    if (a.size() != b.size())
-      return false;
-
-    return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char lhs, char rhs) {
-      return Common::ToLower(lhs) == Common::ToLower(rhs);
-    });
-  }
-};
-
 class IniFile
 {
 public:
@@ -84,7 +63,7 @@ public:
     bool GetLines(std::vector<std::string>* lines, const bool remove_comments = true) const;
 
     bool operator<(const Section& other) const { return name < other.name; }
-    using SectionMap = std::map<std::string, std::string, CaseInsensitiveStringCompare>;
+    using SectionMap = std::map<std::string, std::string, CaseInsensitiveLess>;
 
     const std::string& GetName() const { return name; }
     const SectionMap& GetValues() const { return values; }
@@ -166,3 +145,4 @@ private:
 
   static const std::string& NULL_STRING;
 };
+}  // namespace Common

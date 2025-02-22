@@ -30,6 +30,7 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/Host.h"
 #include "Core/NetPlayProto.h"
+#include "Core/System.h"
 
 namespace HW::GBA
 {
@@ -148,7 +149,8 @@ static std::array<u8, 20> GetROMHash(VFile* rom)
   return digest;
 }
 
-Core::Core(int device_number) : m_device_number(device_number)
+Core::Core(::Core::System& system, int device_number)
+    : m_device_number(device_number), m_system(system)
 {
   mLogSetDefaultLogger(&s_stub_logger);
 }
@@ -304,7 +306,7 @@ CoreInfo Core::GetCoreInfo() const
   info.has_rom = !m_rom_path.empty();
   info.has_ereader =
       info.is_gba && static_cast<::GBA*>(m_core->board)->memory.hw.devices & HW_EREADER;
-  m_core->desiredVideoDimensions(m_core, &info.width, &info.height);
+  m_core->currentVideoSize(m_core, &info.width, &info.height);
   info.game_title = m_game_title;
   return info;
 }
@@ -391,7 +393,7 @@ void Core::SetSIODriver()
 void Core::SetVideoBuffer()
 {
   u32 width, height;
-  m_core->desiredVideoDimensions(m_core, &width, &height);
+  m_core->currentVideoSize(m_core, &width, &height);
   m_video_buffer.resize(width * height);
   m_core->setVideoBuffer(m_core, m_video_buffer.data(), width);
   if (auto host = m_host.lock())
@@ -403,7 +405,9 @@ void Core::SetSampleRates()
   m_core->setAudioBufferSize(m_core, SAMPLES);
   blip_set_rates(m_core->getAudioChannel(m_core, 0), m_core->frequency(m_core), SAMPLE_RATE);
   blip_set_rates(m_core->getAudioChannel(m_core, 1), m_core->frequency(m_core), SAMPLE_RATE);
-  g_sound_stream->GetMixer()->SetGBAInputSampleRateDivisors(
+
+  SoundStream* sound_stream = m_system.GetSoundStream();
+  sound_stream->GetMixer()->SetGBAInputSampleRateDivisors(
       m_device_number, Mixer::FIXED_SAMPLE_RATE_DIVIDEND / SAMPLE_RATE);
 }
 
@@ -436,7 +440,9 @@ void Core::SetAVStream()
     std::vector<s16> buffer(SAMPLES * 2);
     blip_read_samples(left, &buffer[0], SAMPLES, 1);
     blip_read_samples(right, &buffer[1], SAMPLES, 1);
-    g_sound_stream->GetMixer()->PushGBASamples(core->m_device_number, &buffer[0], SAMPLES);
+
+    SoundStream* sound_stream = core->m_system.GetSoundStream();
+    sound_stream->GetMixer()->PushGBASamples(core->m_device_number, &buffer[0], SAMPLES);
   };
   m_core->setAVStream(m_core, &m_stream);
 }
@@ -537,8 +543,7 @@ void Core::RunCommand(Command& command)
     {
       int recvd = GBASIOJOYSendCommand(
           &m_sio_driver, static_cast<GBASIOJOYCommand>(command.buffer[0]), &command.buffer[1]);
-      std::copy(command.buffer.begin() + 1, command.buffer.begin() + 1 + recvd,
-                std::back_inserter(m_response));
+      std::copy_n(command.buffer.begin() + 1, recvd, std::back_inserter(m_response));
     }
 
     if (m_thread && !m_response_ready)
@@ -561,7 +566,7 @@ void Core::RunUntil(u64 gc_ticks)
   if (static_cast<s64>(gc_ticks - m_last_gc_ticks) <= 0)
     return;
 
-  const u64 gc_frequency = SystemTimers::GetTicksPerSecond();
+  const u64 gc_frequency = m_system.GetSystemTimers().GetTicksPerSecond();
   const u32 core_frequency = GetCoreFrequency(m_core);
 
   mTimingSchedule(m_core->timing, &m_event,

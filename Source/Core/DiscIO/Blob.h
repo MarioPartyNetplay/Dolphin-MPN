@@ -41,6 +41,7 @@ enum class BlobType
   RVZ,
   MOD_DESCRIPTOR,
   NFS,
+  SPLIT_PLAIN,
 };
 
 // If you convert an ISO file to another format and then call GetDataSize on it, what is the result?
@@ -63,6 +64,7 @@ public:
   virtual ~BlobReader() {}
 
   virtual BlobType GetBlobType() const = 0;
+  virtual std::unique_ptr<BlobReader> CopyReader() const = 0;
 
   virtual u64 GetRawSize() const = 0;
   virtual u64 GetDataSize() const = 0;

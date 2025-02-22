@@ -32,7 +32,6 @@ struct Partition final
   constexpr Partition() = default;
   constexpr explicit Partition(u64 offset_) : offset(offset_) {}
   constexpr bool operator==(const Partition& other) const { return offset == other.offset; }
-  constexpr bool operator!=(const Partition& other) const { return !(*this == other); }
   constexpr bool operator<(const Partition& other) const { return offset < other.offset; }
   constexpr bool operator>(const Partition& other) const { return other < *this; }
   constexpr bool operator<=(const Partition& other) const { return !(*this < other); }
@@ -88,11 +87,6 @@ public:
   virtual std::vector<u64> GetContentOffsets() const { return {}; }
   virtual bool CheckContentIntegrity(const IOS::ES::Content& content,
                                      const std::vector<u8>& encrypted_data,
-                                     const IOS::ES::TicketReader& ticket) const
-  {
-    return false;
-  }
-  virtual bool CheckContentIntegrity(const IOS::ES::Content& content, u64 content_offset,
                                      const IOS::ES::TicketReader& ticket) const
   {
     return false;

@@ -9,17 +9,15 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Environment;
-import android.preference.PreferenceManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
-
-import org.dolphinemu.dolphinemu.NativeLibrary;
-import org.dolphinemu.dolphinemu.R;
-import org.dolphinemu.dolphinemu.activities.EmulationActivity;
+import androidx.preference.PreferenceManager;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -27,18 +25,28 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import org.dolphinemu.dolphinemu.NativeLibrary;
+import org.dolphinemu.dolphinemu.R;
+import org.dolphinemu.dolphinemu.features.settings.model.BooleanSetting;
+import org.dolphinemu.dolphinemu.features.settings.model.IntSetting;
+
 /**
- * A service that spawns its own thread in order to copy several binary and shader files
- * from the Dolphin APK to the external file system.
+ * A class that spawns its own thread in order perform initialization.
+ *
+ * The initialization steps include:
+ * - Extracting the Sys directory from the APK so it can be accessed using regular file APIs
+ * - Letting the native code know where on external storage it should place the User directory
+ * - Running the native code's init steps (which include things like populating the User directory)
  */
 public final class DirectoryInitialization
 {
   public static final String EXTRA_STATE = "directoryState";
-  private static final int WiimoteNewVersion = 5;  // Last changed in PR 8907
   private static final MutableLiveData<DirectoryInitializationState> directoryState =
           new MutableLiveData<>(DirectoryInitializationState.NOT_YET_INITIALIZED);
   private static volatile boolean areDirectoriesAvailable = false;
   private static String userPath;
+  private static String sysPath;
+  private static String driverPath;
   private static boolean isUsingLegacyUserDirectory = false;
 
   public enum DirectoryInitializationState
@@ -66,29 +74,26 @@ public final class DirectoryInitialization
 
     if (!setDolphinUserDirectory(context))
     {
-      Toast.makeText(context, R.string.external_storage_not_mounted, Toast.LENGTH_LONG).show();
-      System.exit(1);
+      ContextCompat.getMainExecutor(context).execute(() ->
+      {
+        Toast.makeText(context, R.string.external_storage_not_mounted, Toast.LENGTH_LONG).show();
+        System.exit(1);
+      });
+      return;
     }
 
-    initializeInternalStorage(context);
-    boolean wiimoteIniWritten = initializeExternalStorage(context);
+    extractSysDirectory(context);
     NativeLibrary.Initialize();
     NativeLibrary.ReportStartToAnalytics();
 
     areDirectoriesAvailable = true;
 
-    if (wiimoteIniWritten)
-    {
-      // This has to be done after calling NativeLibrary.Initialize(),
-      // as it relies on the config system
-      EmulationActivity.updateWiimoteNewIniPreferences(context);
-    }
+    checkThemeSettings(context);
 
     directoryState.postValue(DirectoryInitializationState.DOLPHIN_DIRECTORIES_INITIALIZED);
   }
 
-  @Nullable
-  private static File getLegacyUserDirectoryPath()
+  @Nullable private static File getLegacyUserDirectoryPath()
   {
     File externalPath = Environment.getExternalStorageDirectory();
     if (externalPath == null)
@@ -97,17 +102,21 @@ public final class DirectoryInitialization
     return new File(externalPath, "dolphin-emu");
   }
 
-  private static boolean setDolphinUserDirectory(Context context)
+  @Nullable public static File getUserDirectoryPath(Context context)
   {
     if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState()))
-      return false;
+      return null;
 
     isUsingLegacyUserDirectory =
             preferLegacyUserDirectory(context) && PermissionsHandler.hasWriteAccess(context);
 
-    File path = isUsingLegacyUserDirectory ?
-            getLegacyUserDirectoryPath() : context.getExternalFilesDir(null);
+    return isUsingLegacyUserDirectory ? getLegacyUserDirectoryPath() :
+            context.getExternalFilesDir(null);
+  }
 
+  private static boolean setDolphinUserDirectory(Context context)
+  {
+    File path = DirectoryInitialization.getUserDirectoryPath(context);
     if (path == null)
       return false;
 
@@ -118,7 +127,12 @@ public final class DirectoryInitialization
 
     File cacheDir = context.getExternalCacheDir();
     if (cacheDir == null)
-      return false;
+    {
+      // In some custom ROMs getExternalCacheDir might return null for some reasons. If that is the case, fallback to getCacheDir which seems to work just fine.
+      cacheDir = context.getCacheDir();
+      if (cacheDir == null)
+        return false;
+    }
 
     Log.debug("[DirectoryInitialization] Cache Dir: " + cacheDir.getPath());
     NativeLibrary.SetCacheDirectory(cacheDir.getPath());
@@ -126,7 +140,7 @@ public final class DirectoryInitialization
     return true;
   }
 
-  private static void initializeInternalStorage(Context context)
+  private static void extractSysDirectory(Context context)
   {
     File sysDirectory = new File(context.getFilesDir(), "Sys");
 
@@ -137,7 +151,7 @@ public final class DirectoryInitialization
       // There is no extracted Sys directory, or there is a Sys directory from another
       // version of Dolphin that might contain outdated files. Let's (re-)extract Sys.
       deleteDirectoryRecursively(sysDirectory);
-      copyAssetFolder("Sys", sysDirectory, true, context);
+      copyAssetFolder("Sys", sysDirectory, context);
 
       SharedPreferences.Editor editor = preferences.edit();
       editor.putString("sysDirectoryVersion", revision);
@@ -145,46 +159,21 @@ public final class DirectoryInitialization
     }
 
     // Let the native code know where the Sys directory is.
-    SetSysDirectory(sysDirectory.getPath());
-  }
+    sysPath = sysDirectory.getPath();
+    SetSysDirectory(sysPath);
 
-  // Returns whether the WiimoteNew.ini file was written to
-  private static boolean initializeExternalStorage(Context context)
-  {
-    // Create User directory structure and copy some NAND files from the extracted Sys directory.
-    CreateUserDirectories();
+    File driverDirectory = new File(context.getFilesDir(), "GPUDrivers");
+    driverDirectory.mkdirs();
+    File driverExtractedDir = new File(driverDirectory, "Extracted");
+    driverExtractedDir.mkdirs();
+    File driverTmpDir = new File(driverDirectory, "Tmp");
+    driverTmpDir.mkdirs();
+    File driverFileRedirectDir = new File(driverDirectory, "FileRedirect");
+    driverFileRedirectDir.mkdirs();
 
-    // GCPadNew.ini and WiimoteNew.ini must contain specific values in order for controller
-    // input to work as intended (they aren't user configurable), so we overwrite them just
-    // in case the user has tried to modify them manually.
-    //
-    // ...Except WiimoteNew.ini contains the user configurable settings for Wii Remote
-    // extensions in addition to all of its lines that aren't user configurable, so since we
-    // don't want to lose the selected extensions, we don't overwrite that file if it exists.
-    //
-    // TODO: Redo the Android controller system so that we don't have to extract these INIs.
-    String configDirectory = NativeLibrary.GetUserDirectory() + File.separator + "Config";
-    String profileDirectory =
-            NativeLibrary.GetUserDirectory() + File.separator + "Config/Profiles/Wiimote/";
-    createWiimoteProfileDirectory(profileDirectory);
-
-    copyAsset("GCPadNew.ini", new File(configDirectory, "GCPadNew.ini"), true, context);
-
-    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-    boolean overwriteWiimoteIni = prefs.getInt("WiimoteNewVersion", 0) != WiimoteNewVersion;
-    boolean wiimoteIniWritten = copyAsset("WiimoteNew.ini",
-            new File(configDirectory, "WiimoteNew.ini"), overwriteWiimoteIni, context);
-    if (overwriteWiimoteIni)
-    {
-      SharedPreferences.Editor sPrefsEditor = prefs.edit();
-      sPrefsEditor.putInt("WiimoteNewVersion", WiimoteNewVersion);
-      sPrefsEditor.apply();
-    }
-
-    copyAsset("WiimoteProfile.ini", new File(profileDirectory, "WiimoteProfile.ini"), true,
-            context);
-
-    return wiimoteIniWritten;
+    SetGpuDriverDirectories(driverDirectory.getPath(),
+            context.getApplicationInfo().nativeLibraryDir);
+    DirectoryInitialization.driverPath = driverExtractedDir.getAbsolutePath();
   }
 
   private static void deleteDirectoryRecursively(@NonNull final File file)
@@ -235,42 +224,56 @@ public final class DirectoryInitialization
     return userPath;
   }
 
-  public static File getGameListCache(Context context)
+  public static String getSysDirectory()
   {
-    return new File(context.getExternalCacheDir(), "gamelist.cache");
+    if (!areDirectoriesAvailable)
+    {
+      throw new IllegalStateException(
+              "DirectoryInitialization must run before accessing the Sys directory!");
+    }
+    return sysPath;
   }
 
-  private static boolean copyAsset(String asset, File output, Boolean overwrite, Context context)
+  public static String getExtractedDriverDirectory()
+  {
+    if (!areDirectoriesAvailable)
+    {
+      throw new IllegalStateException(
+              "DirectoryInitialization must run before accessing the driver directory!");
+    }
+    return driverPath;
+  }
+
+  public static File getGameListCache(Context context)
+  {
+    return new File(NativeLibrary.GetCacheDirectory(), "gamelist.cache");
+  }
+
+  private static boolean copyAsset(String asset, File output, Context context)
   {
     Log.verbose("[DirectoryInitialization] Copying File " + asset + " to " + output);
 
     try
     {
-      if (!output.exists() || overwrite)
+      try (InputStream in = context.getAssets().open(asset))
       {
-        try (InputStream in = context.getAssets().open(asset))
+        try (OutputStream out = new FileOutputStream(output))
         {
-          try (OutputStream out = new FileOutputStream(output))
-          {
-            copyFile(in, out);
-            return true;
-          }
+          copyFile(in, out);
+          return true;
         }
       }
     }
     catch (IOException e)
     {
-      Log.error("[DirectoryInitialization] Failed to copy asset file: " + asset +
-              e.getMessage());
+      Log.error("[DirectoryInitialization] Failed to copy asset file: " + asset + e.getMessage());
     }
     return false;
   }
 
-  private static void copyAssetFolder(String assetFolder, File outputFolder, Boolean overwrite,
-          Context context)
+  private static void copyAssetFolder(String assetFolder, File outputFolder, Context context)
   {
-    Log.verbose("[DirectoryInitialization] Copying Folder " + assetFolder + " to " +
-            outputFolder);
+    Log.verbose("[DirectoryInitialization] Copying Folder " + assetFolder + " to " + outputFolder);
 
     try
     {
@@ -293,10 +296,8 @@ public final class DirectoryInitialization
           }
           createdFolder = true;
         }
-        copyAssetFolder(assetFolder + File.separator + file, new File(outputFolder, file),
-                overwrite, context);
-        copyAsset(assetFolder + File.separator + file, new File(outputFolder, file), overwrite,
-                context);
+        copyAssetFolder(assetFolder + File.separator + file, new File(outputFolder, file), context);
+        copyAsset(assetFolder + File.separator + file, new File(outputFolder, file), context);
       }
     }
     catch (IOException e)
@@ -314,18 +315,6 @@ public final class DirectoryInitialization
     while ((read = in.read(buffer)) != -1)
     {
       out.write(buffer, 0, read);
-    }
-  }
-
-  private static void createWiimoteProfileDirectory(String directory)
-  {
-    File wiiPath = new File(directory);
-    if (!wiiPath.isDirectory())
-    {
-      if (!wiiPath.mkdirs())
-      {
-        Log.error("[DirectoryInitialization] Failed to create folder " + wiiPath.getAbsolutePath());
-      }
     }
   }
 
@@ -379,8 +368,8 @@ public final class DirectoryInitialization
   private static boolean preferLegacyUserDirectory(Context context)
   {
     return PermissionsHandler.isExternalStorageLegacy() &&
-            !PermissionsHandler.isWritePermissionDenied() &&
-            isExternalFilesDirEmpty(context) && legacyUserDirectoryExists();
+            !PermissionsHandler.isWritePermissionDenied() && isExternalFilesDirEmpty(context) &&
+            legacyUserDirectoryExists();
   }
 
   public static boolean isUsingLegacyUserDirectory()
@@ -397,7 +386,37 @@ public final class DirectoryInitialization
     return preferLegacyUserDirectory(context) && !PermissionsHandler.hasWriteAccess(context);
   }
 
-  private static native void CreateUserDirectories();
+  private static void checkThemeSettings(Context context)
+  {
+    SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+    if (IntSetting.MAIN_INTERFACE_THEME.getInt() !=
+            preferences.getInt(ThemeHelper.CURRENT_THEME, ThemeHelper.DEFAULT))
+    {
+      preferences.edit()
+              .putInt(ThemeHelper.CURRENT_THEME, IntSetting.MAIN_INTERFACE_THEME.getInt())
+              .apply();
+    }
+
+    if (IntSetting.MAIN_INTERFACE_THEME_MODE.getInt() !=
+            preferences.getInt(ThemeHelper.CURRENT_THEME_MODE,
+                    AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
+    {
+      preferences.edit()
+              .putInt(ThemeHelper.CURRENT_THEME_MODE, IntSetting.MAIN_INTERFACE_THEME_MODE.getInt())
+              .apply();
+    }
+
+    if (BooleanSetting.MAIN_USE_BLACK_BACKGROUNDS.getBoolean() !=
+            preferences.getBoolean(ThemeHelper.USE_BLACK_BACKGROUNDS, false))
+    {
+      preferences.edit()
+              .putBoolean(ThemeHelper.USE_BLACK_BACKGROUNDS,
+                      BooleanSetting.MAIN_USE_BLACK_BACKGROUNDS.getBoolean())
+              .apply();
+    }
+  }
 
   private static native void SetSysDirectory(String path);
+
+  private static native void SetGpuDriverDirectories(String path, String libPath);
 }

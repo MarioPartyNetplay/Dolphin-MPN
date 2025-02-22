@@ -22,6 +22,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include "Common/CommonFuncs.h"
 #include "Common/CommonPaths.h"
@@ -35,9 +36,6 @@
 constexpr u32 CODEPAGE_SHIFT_JIS = 932;
 constexpr u32 CODEPAGE_WINDOWS_1252 = 1252;
 #else
-#if defined(__NetBSD__)
-#define LIBICONV_PLUG
-#endif
 #include <errno.h>
 #include <iconv.h>
 #include <locale.h>
@@ -77,31 +75,12 @@ std::string HexDump(const u8* data, size_t size)
       if (row_start + i < size)
       {
         char c = static_cast<char>(data[row_start + i]);
-        out += IsPrintableCharacter(c) ? c : '.';
+        out += Common::IsPrintableCharacter(c) ? c : '.';
       }
     }
     out += "\n";
   }
   return out;
-}
-
-// faster than sscanf
-bool AsciiToHex(const std::string& _szValue, u32& result)
-{
-  // Set errno to a good state.
-  errno = 0;
-
-  char* endptr = nullptr;
-  const u32 value = strtoul(_szValue.c_str(), &endptr, 16);
-
-  if (!endptr || *endptr)
-    return false;
-
-  if (errno == ERANGE)
-    return false;
-
-  result = value;
-  return true;
 }
 
 bool CharArrayFromFormatV(char* out, int outsize, const char* format, va_list args)
@@ -255,8 +234,8 @@ std::string_view StripQuotes(std::string_view s)
 // Turns "\n\rhello" into "  hello".
 void ReplaceBreaksWithSpaces(std::string& str)
 {
-  std::replace(str.begin(), str.end(), '\r', ' ');
-  std::replace(str.begin(), str.end(), '\n', ' ');
+  std::ranges::replace(str, '\r', ' ');
+  std::ranges::replace(str, '\n', ' ');
 }
 
 void TruncateToCString(std::string* s)
@@ -389,21 +368,6 @@ std::vector<std::string> SplitString(const std::string& str, const char delim)
   return output;
 }
 
-std::string JoinStrings(const std::vector<std::string>& strings, const std::string& delimiter)
-{
-  // Check if we can return early, just for speed
-  if (strings.empty())
-    return "";
-
-  std::ostringstream res;
-  std::copy(strings.begin(), strings.end(),
-            std::ostream_iterator<std::string>(res, delimiter.c_str()));
-
-  // Drop the trailing delimiter.
-  std::string joined = res.str();
-  return joined.substr(0, joined.length() - delimiter.length());
-}
-
 std::string TabsToSpaces(int tab_size, std::string str)
 {
   const std::string spaces(tab_size, ' ');
@@ -431,31 +395,20 @@ std::string ReplaceAll(std::string result, std::string_view src, std::string_vie
   return result;
 }
 
-bool StringBeginsWith(std::string_view str, std::string_view begin)
-{
-  return str.size() >= begin.size() && std::equal(begin.begin(), begin.end(), str.begin());
-}
-
-bool StringEndsWith(std::string_view str, std::string_view end)
-{
-  return str.size() >= end.size() && std::equal(end.rbegin(), end.rend(), str.rbegin());
-}
-
 void StringPopBackIf(std::string* s, char c)
 {
   if (!s->empty() && s->back() == c)
     s->pop_back();
 }
 
-size_t StringUTF8CodePointCount(const std::string& str)
+size_t StringUTF8CodePointCount(std::string_view str)
 {
-  return str.size() -
-         std::count_if(str.begin(), str.end(), [](char c) -> bool { return (c & 0xC0) == 0x80; });
+  return str.size() - std::ranges::count_if(str, [](char c) -> bool { return (c & 0xC0) == 0x80; });
 }
 
 #ifdef _WIN32
 
-std::wstring CPToUTF16(u32 code_page, std::string_view input)
+static std::wstring CPToUTF16(u32 code_page, std::string_view input)
 {
   auto const size =
       MultiByteToWideChar(code_page, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
@@ -473,7 +426,7 @@ std::wstring CPToUTF16(u32 code_page, std::string_view input)
   return output;
 }
 
-std::string UTF16ToCP(u32 code_page, std::wstring_view input)
+static std::string UTF16ToCP(u32 code_page, std::wstring_view input)
 {
   if (input.empty())
     return {};
@@ -557,13 +510,8 @@ std::string CodeTo(const char* tocode, const char* fromcode, std::basic_string_v
     while (src_bytes != 0)
     {
       size_t const iconv_result =
-#if defined(__OpenBSD__) || defined(__NetBSD__)
-          iconv(conv_desc, reinterpret_cast<const char**>(&src_buffer), &src_bytes, &dst_buffer,
-                &dst_bytes);
-#else
           iconv(conv_desc, const_cast<char**>(reinterpret_cast<const char**>(&src_buffer)),
                 &src_bytes, &dst_buffer, &dst_bytes);
-#endif
       if ((size_t)-1 == iconv_result)
       {
         if (EILSEQ == errno || EINVAL == errno)
@@ -645,7 +593,6 @@ std::u16string UTF8ToUTF16(std::string_view input)
   return converter.from_bytes(input.data(), input.data() + input.size());
 }
 
-#ifdef HAS_STD_FILESYSTEM
 // This is a replacement for path::u8path, which is deprecated starting with C++20.
 std::filesystem::path StringToPath(std::string_view path)
 {
@@ -666,8 +613,9 @@ std::string PathToString(const std::filesystem::path& path)
   return path.native();
 #endif
 }
-#endif
 
+namespace Common
+{
 #ifdef _WIN32
 std::vector<std::string> CommandLineToUtf8Argv(const wchar_t* command_line)
 {
@@ -705,15 +653,30 @@ std::string GetEscapedHtml(std::string html)
   return html;
 }
 
-namespace Common
-{
 void ToLower(std::string* str)
 {
-  std::transform(str->begin(), str->end(), str->begin(), [](char c) { return Common::ToLower(c); });
+  std::ranges::transform(*str, str->begin(), static_cast<char (&)(char)>(Common::ToLower));
 }
 
 void ToUpper(std::string* str)
 {
-  std::transform(str->begin(), str->end(), str->begin(), [](char c) { return Common::ToUpper(c); });
+  std::ranges::transform(*str, str->begin(), static_cast<char (&)(char)>(Common::ToUpper));
+}
+
+bool CaseInsensitiveEquals(std::string_view a, std::string_view b)
+{
+  return std::ranges::equal(
+      a, b, [](char ca, char cb) { return Common::ToLower(ca) == Common::ToLower(cb); });
+}
+
+bool CaseInsensitiveLess::operator()(std::string_view a, std::string_view b) const
+{
+  return std::ranges::lexicographical_compare(
+      a, b, [](char ca, char cb) { return Common::ToLower(ca) < Common::ToLower(cb); });
+}
+
+std::string BytesToHexString(std::span<const u8> bytes)
+{
+  return fmt::format("{:02x}", fmt::join(bytes, ""));
 }
 }  // namespace Common

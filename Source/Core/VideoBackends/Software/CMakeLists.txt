@@ -2,8 +2,6 @@ add_library(videosoftware
   Clipper.cpp
   Clipper.h
   CopyRegion.h
-  DebugUtil.cpp
-  DebugUtil.h
   EfbCopy.cpp
   EfbCopy.h
   EfbInterface.cpp
@@ -16,6 +14,8 @@ add_library(videosoftware
   SWmain.cpp
   SWBoundingBox.cpp
   SWBoundingBox.h
+  SWGfx.cpp
+  SWGfx.h
   SWOGLWindow.cpp
   SWOGLWindow.h
   SWRenderer.cpp

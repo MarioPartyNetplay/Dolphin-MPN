@@ -3,13 +3,20 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
+#include <iosfwd>
 #include <map>
+#include <string_view>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "Common/BitSet.h"
 #include "Common/CommonTypes.h"
+#include "Common/Config/ConfigInfo.h"
 #include "Common/x64Emitter.h"
+#include "Core/CPUThreadConfigCallback.h"
 #include "Core/ConfigManager.h"
 #include "Core/MachineContext.h"
 #include "Core/PowerPC/CPUCoreBase.h"
@@ -17,13 +24,25 @@
 #include "Core/PowerPC/JitCommon/JitCache.h"
 #include "Core/PowerPC/PPCAnalyst.h"
 
+namespace Core
+{
+class BranchWatch;
+class System;
+}  // namespace Core
+namespace PowerPC
+{
+class MMU;
+struct PowerPCState;
+}  // namespace PowerPC
+class PPCSymbolDB;
+
 //#define JIT_LOG_GENERATED_CODE  // Enables logging of generated code
 //#define JIT_LOG_GPR             // Enables logging of the PPC general purpose regs
 //#define JIT_LOG_FPR             // Enables logging of the PPC floating point regs
 
 // Use these to control the instruction selection
 // #define INSTRUCTION_START FallBackToInterpreter(inst); return;
-// #define INSTRUCTION_START PPCTables::CountInstruction(inst);
+// #define INSTRUCTION_START PPCTables::CountInstruction(inst, m_ppc_state.pc);
 #define INSTRUCTION_START
 
 #define FALLBACK_IF(cond)                                                                          \
@@ -54,6 +73,12 @@ protected:
 #endif
   };
 
+  static constexpr size_t SAFE_STACK_SIZE = 256 * 1024;
+  static constexpr size_t MIN_UNSAFE_STACK_SIZE = 192 * 1024;
+  static constexpr size_t MIN_STACK_SIZE = SAFE_STACK_SIZE + MIN_UNSAFE_STACK_SIZE;
+  static constexpr size_t GUARD_SIZE = 64 * 1024;
+  static constexpr size_t GUARD_OFFSET = SAFE_STACK_SIZE - GUARD_SIZE;
+
   struct JitOptions
   {
     bool enableBlocklink;
@@ -64,15 +89,13 @@ protected:
     bool memcheck;
     bool fp_exceptions;
     bool div_by_zero_exceptions;
-    bool profile_blocks;
   };
   struct JitState
   {
     u32 compilerPC;
     u32 blockStart;
-    int instructionNumber;
     int instructionsLeft;
-    int downcountAmount;
+    u32 downcountAmount;
     u32 numLoadStoreInst;
     u32 numFloatingPointInst;
     // If this is set, we need to generate an exception handler for the fastmem load.
@@ -83,7 +106,8 @@ protected:
     Gen::FixupBranch exceptionHandler;
 
     bool assumeNoPairedQuantize;
-    std::map<u8, u32> constantGqr;
+    BitSet8 constantGqrValid;
+    std::array<u32, 8> constantGqr;
     bool firstFPInstructionFound;
     bool isLastInstruction;
     int skipInstructions;
@@ -112,7 +136,7 @@ protected:
   PPCAnalyst::CodeBuffer m_code_buffer;
   PPCAnalyst::PPCAnalyzer analyzer;
 
-  size_t m_registered_config_callback_id;
+  CPUThreadConfigCallback::ConfigChangedCallbackID m_registered_config_callback_id;
   bool bJITOff = false;
   bool bJITLoadStoreOff = false;
   bool bJITLoadStorelXzOff = false;
@@ -126,27 +150,54 @@ protected:
   bool bJITSystemRegistersOff = false;
   bool bJITBranchOff = false;
   bool bJITRegisterCacheOff = false;
+  bool m_enable_profiling = false;
   bool m_enable_debugging = false;
+  bool m_enable_branch_following = false;
   bool m_enable_float_exceptions = false;
   bool m_enable_div_by_zero_exceptions = false;
   bool m_low_dcbz_hack = false;
   bool m_fprf = false;
   bool m_accurate_nans = false;
   bool m_fastmem_enabled = false;
-  bool m_mmu_enabled = false;
+  bool m_accurate_cpu_cache_enabled = false;
 
+  bool m_enable_blr_optimization = false;
+  bool m_cleanup_after_stackfault = false;
+  u8* m_stack_guard = nullptr;
+
+  static const std::array<std::pair<bool JitBase::*, const Config::Info<bool>*>, 23> JIT_SETTINGS;
+
+  bool DoesConfigNeedRefresh() const;
   void RefreshConfig();
 
+  void InitFastmemArena();
+
+  void InitBLROptimization();
+  void ProtectStack();
+  void UnprotectStack();
+  void CleanUpAfterStackFault();
+
   bool CanMergeNextInstructions(int count) const;
+  bool HasConstantCarry() const
+  {
+#ifdef _M_ARM_64
+    return js.carryFlag == CarryFlag::ConstantTrue || js.carryFlag == CarryFlag::ConstantFalse;
+#else
+    return false;
+#endif
+  }
 
-  void UpdateMemoryAndExceptionOptions();
-
-  bool ShouldHandleFPExceptionForInstruction(const PPCAnalyst::CodeOp* op);
+  bool ShouldHandleFPExceptionForInstruction(const PPCAnalyst::CodeOp* op) const;
 
 public:
-  JitBase();
+  explicit JitBase(Core::System& system);
+  JitBase(const JitBase&) = delete;
+  JitBase(JitBase&&) = delete;
+  JitBase& operator=(const JitBase&) = delete;
+  JitBase& operator=(JitBase&&) = delete;
   ~JitBase() override;
 
+  bool IsProfilingEnabled() const { return m_enable_profiling; }
   bool IsDebuggingEnabled() const { return m_enable_debugging; }
 
   static const u8* Dispatch(JitBase& jit);
@@ -154,16 +205,31 @@ public:
 
   virtual void Jit(u32 em_address) = 0;
 
+  virtual void EraseSingleBlock(const JitBlock& block) = 0;
+
+  // Memory region name, free size, and fragmentation ratio
+  using MemoryStats = std::pair<std::string_view, std::pair<std::size_t, double>>;
+  virtual std::vector<MemoryStats> GetMemoryStats() const = 0;
+
+  virtual std::size_t DisassembleNearCode(const JitBlock& block, std::ostream& stream) const = 0;
+  virtual std::size_t DisassembleFarCode(const JitBlock& block, std::ostream& stream) const = 0;
+
   virtual const CommonAsmRoutinesBase* GetAsmRoutines() = 0;
 
   virtual bool HandleFault(uintptr_t access_address, SContext* ctx) = 0;
-  virtual bool HandleStackFault() { return false; }
+  bool HandleStackFault();
 
   static constexpr std::size_t code_buffer_size = 32000;
 
   // This should probably be removed from public:
   JitOptions jo{};
   JitState js{};
+
+  Core::System& m_system;
+  PowerPC::PowerPCState& m_ppc_state;
+  PowerPC::MMU& m_mmu;
+  Core::BranchWatch& m_branch_watch;
+  PPCSymbolDB& m_ppc_symbol_db;
 };
 
 void JitTrampoline(JitBase& jit, u32 em_address);

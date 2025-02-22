@@ -30,8 +30,7 @@ static bool IsValidUSBIDString(const std::string& string)
 {
   if (string.empty() || string.length() > 4)
     return false;
-  return std::all_of(string.begin(), string.end(),
-                     [](const auto character) { return std::isxdigit(character) != 0; });
+  return std::ranges::all_of(string, Common::IsXDigit);
 }
 
 USBDeviceAddToWhitelistDialog::USBDeviceAddToWhitelistDialog(QWidget* parent) : QDialog(parent)
@@ -91,6 +90,7 @@ void USBDeviceAddToWhitelistDialog::InitControls()
           &QPushButton::clicked);
   connect(m_refresh_devices_timer, &QTimer::timeout, this,
           &USBDeviceAddToWhitelistDialog::RefreshDeviceList);
+  RefreshDeviceList();
   m_refresh_devices_timer->start(1000);
 
   main_layout->addWidget(usb_inserted_devices_list);
@@ -112,7 +112,7 @@ void USBDeviceAddToWhitelistDialog::RefreshDeviceList()
   auto whitelist = Config::GetUSBDeviceWhitelist();
   for (const auto& device : current_devices)
   {
-    if (whitelist.count({device.first.first, device.first.second}) != 0)
+    if (whitelist.contains({device.first.first, device.first.second}))
       continue;
     usb_inserted_devices_list->addItem(QString::fromStdString(device.second));
   }
@@ -128,14 +128,16 @@ void USBDeviceAddToWhitelistDialog::AddUSBDeviceToWhitelist()
   const std::string pid_string(StripWhitespace(device_pid_textbox->text().toStdString()));
   if (!IsValidUSBIDString(vid_string))
   {
-    // i18n: Here, VID means Vendor ID (for a USB device).
-    ModalMessageBox::critical(this, tr("USB Whitelist Error"), tr("The entered VID is invalid."));
+    ModalMessageBox::critical(this, tr("USB Whitelist Error"),
+                              // i18n: Here, VID means Vendor ID (for a USB device).
+                              tr("The entered VID is invalid."));
     return;
   }
   if (!IsValidUSBIDString(pid_string))
   {
-    // i18n: Here, PID means Product ID (for a USB device).
-    ModalMessageBox::critical(this, tr("USB Whitelist Error"), tr("The entered PID is invalid."));
+    ModalMessageBox::critical(this, tr("USB Whitelist Error"),
+                              // i18n: Here, PID means Product ID (for a USB device).
+                              tr("The entered PID is invalid."));
     return;
   }
 

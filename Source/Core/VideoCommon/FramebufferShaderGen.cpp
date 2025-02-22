@@ -98,16 +98,16 @@ void EmitVertexMainDeclaration(ShaderCode& code, u32 num_tex_inputs, u32 num_col
   {
     for (u32 i = 0; i < num_tex_inputs; i++)
     {
-      const auto attribute = SHADER_TEXTURE0_ATTRIB + i;
-      code.Write("ATTRIBUTE_LOCATION({}) in float3 rawtex{};\n", attribute, i);
+      const auto attribute = ShaderAttrib::TexCoord0 + i;
+      code.Write("ATTRIBUTE_LOCATION({:s}) in float3 rawtex{};\n", attribute, i);
     }
     for (u32 i = 0; i < num_color_inputs; i++)
     {
-      const auto attribute = SHADER_COLOR0_ATTRIB + i;
-      code.Write("ATTRIBUTE_LOCATION({}) in float4 rawcolor{};\n", attribute, i);
+      const auto attribute = ShaderAttrib::Color0 + i;
+      code.Write("ATTRIBUTE_LOCATION({:s}) in float4 rawcolor{};\n", attribute, i);
     }
     if (position_input)
-      code.Write("ATTRIBUTE_LOCATION({}) in float4 rawpos;\n", SHADER_POSITION_ATTRIB);
+      code.Write("ATTRIBUTE_LOCATION({:s}) in float4 rawpos;\n", ShaderAttrib::Position);
 
     if (g_ActiveConfig.backend_info.bSupportsGeometryShaders)
     {
@@ -672,7 +672,7 @@ std::string GenerateImGuiVertexShader()
   return code.GetBuffer();
 }
 
-std::string GenerateImGuiPixelShader()
+std::string GenerateImGuiPixelShader(bool linear_space_output)
 {
   ShaderCode code;
   EmitSamplerDeclarations(code, 0, 1, false);
@@ -680,8 +680,13 @@ std::string GenerateImGuiPixelShader()
   code.Write("{{\n"
              "  ocol0 = ");
   EmitSampleTexture(code, 0, "float3(v_tex0.xy, 0.0)");
-  code.Write(" * v_col0;\n"
-             "}}\n");
+  // We approximate to gamma 2.2 instead of sRGB as it barely matters for this case.
+  // Note that if HDR is enabled, ideally we should multiply by
+  // the paper white brightness for readability.
+  if (linear_space_output)
+    code.Write(" * pow(v_col0, float4(2.2f, 2.2f, 2.2f, 1.0f));\n}}\n");
+  else
+    code.Write(" * v_col0;\n}}\n");
 
   return code.GetBuffer();
 }

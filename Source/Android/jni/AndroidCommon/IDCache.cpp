@@ -12,8 +12,8 @@ static JavaVM* s_java_vm;
 static jclass s_string_class;
 
 static jclass s_native_library_class;
+static jmethodID s_display_toast_msg;
 static jmethodID s_display_alert_msg;
-static jmethodID s_do_rumble;
 static jmethodID s_update_touch_pointer;
 static jmethodID s_on_title_changed;
 static jmethodID s_finish_emulation_activity;
@@ -33,11 +33,9 @@ static jclass s_linked_hash_map_class;
 static jmethodID s_linked_hash_map_init;
 static jmethodID s_linked_hash_map_put;
 
-static jclass s_ini_file_class;
-static jfieldID s_ini_file_pointer;
-static jclass s_ini_file_section_class;
-static jfieldID s_ini_file_section_pointer;
-static jmethodID s_ini_file_section_constructor;
+static jclass s_hash_map_class;
+static jmethodID s_hash_map_init;
+static jmethodID s_hash_map_put;
 
 static jclass s_compress_cb_class;
 static jmethodID s_compress_cb_run;
@@ -84,6 +82,36 @@ static jfieldID s_riivolution_patches_pointer;
 static jclass s_wii_update_cb_class;
 static jmethodID s_wii_update_cb_run;
 
+static jclass s_control_class;
+static jfieldID s_control_pointer;
+static jmethodID s_control_constructor;
+
+static jclass s_numeric_setting_class;
+static jfieldID s_numeric_setting_pointer;
+static jmethodID s_numeric_setting_constructor;
+
+static jclass s_control_group_class;
+static jfieldID s_control_group_pointer;
+static jmethodID s_control_group_constructor;
+
+static jclass s_control_reference_class;
+static jfieldID s_control_reference_pointer;
+static jmethodID s_control_reference_constructor;
+
+static jclass s_emulated_controller_class;
+static jfieldID s_emulated_controller_pointer;
+static jmethodID s_emulated_controller_constructor;
+
+static jclass s_core_device_class;
+static jfieldID s_core_device_pointer;
+static jmethodID s_core_device_constructor;
+
+static jclass s_core_device_control_class;
+static jfieldID s_core_device_control_pointer;
+static jmethodID s_core_device_control_constructor;
+
+static jmethodID s_runnable_run;
+
 namespace IDCache
 {
 JNIEnv* GetEnvForThread()
@@ -119,14 +147,14 @@ jclass GetNativeLibraryClass()
   return s_native_library_class;
 }
 
+jmethodID GetDisplayToastMsg()
+{
+  return s_display_toast_msg;
+}
+
 jmethodID GetDisplayAlertMsg()
 {
   return s_display_alert_msg;
-}
-
-jmethodID GetDoRumble()
-{
-  return s_do_rumble;
 }
 
 jmethodID GetUpdateTouchPointer()
@@ -199,29 +227,19 @@ jmethodID GetLinkedHashMapPut()
   return s_linked_hash_map_put;
 }
 
-jclass GetIniFileClass()
+jclass GetHashMapClass()
 {
-  return s_ini_file_class;
+  return s_hash_map_class;
 }
 
-jfieldID GetIniFilePointer()
+jmethodID GetHashMapInit()
 {
-  return s_ini_file_pointer;
+  return s_hash_map_init;
 }
 
-jclass GetIniFileSectionClass()
+jmethodID GetHashMapPut()
 {
-  return s_ini_file_section_class;
-}
-
-jfieldID GetIniFileSectionPointer()
-{
-  return s_ini_file_section_pointer;
-}
-
-jmethodID GetIniFileSectionConstructor()
-{
-  return s_ini_file_section_constructor;
+  return s_hash_map_put;
 }
 
 jclass GetCompressCallbackClass()
@@ -389,6 +407,116 @@ jmethodID GetWiiUpdateCallbackFunction()
   return s_wii_update_cb_run;
 }
 
+jclass GetControlClass()
+{
+  return s_control_class;
+}
+
+jfieldID GetControlPointer()
+{
+  return s_control_pointer;
+}
+
+jmethodID GetControlConstructor()
+{
+  return s_control_constructor;
+}
+
+jclass GetControlGroupClass()
+{
+  return s_control_group_class;
+}
+
+jfieldID GetControlGroupPointer()
+{
+  return s_control_group_pointer;
+}
+
+jmethodID GetControlGroupConstructor()
+{
+  return s_control_group_constructor;
+}
+
+jclass GetControlReferenceClass()
+{
+  return s_control_reference_class;
+}
+
+jfieldID GetControlReferencePointer()
+{
+  return s_control_reference_pointer;
+}
+
+jmethodID GetControlReferenceConstructor()
+{
+  return s_control_reference_constructor;
+}
+
+jclass GetEmulatedControllerClass()
+{
+  return s_emulated_controller_class;
+}
+
+jfieldID GetEmulatedControllerPointer()
+{
+  return s_emulated_controller_pointer;
+}
+
+jmethodID GetEmulatedControllerConstructor()
+{
+  return s_emulated_controller_constructor;
+}
+
+jclass GetNumericSettingClass()
+{
+  return s_numeric_setting_class;
+}
+
+jfieldID GetNumericSettingPointer()
+{
+  return s_numeric_setting_pointer;
+}
+
+jmethodID GetNumericSettingConstructor()
+{
+  return s_numeric_setting_constructor;
+}
+
+jclass GetCoreDeviceClass()
+{
+  return s_core_device_class;
+}
+
+jfieldID GetCoreDevicePointer()
+{
+  return s_core_device_pointer;
+}
+
+jmethodID GetCoreDeviceConstructor()
+{
+  return s_core_device_constructor;
+}
+
+jclass GetCoreDeviceControlClass()
+{
+  return s_core_device_control_class;
+}
+
+jfieldID GetCoreDeviceControlPointer()
+{
+  return s_core_device_control_pointer;
+}
+
+jmethodID GetCoreDeviceControlConstructor()
+{
+  return s_core_device_control_constructor;
+}
+
+jmethodID GetRunnableRun()
+{
+  return s_runnable_run;
+}
+
 }  // namespace IDCache
 
 extern "C" {
@@ -406,9 +534,10 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
 
   const jclass native_library_class = env->FindClass("org/dolphinemu/dolphinemu/NativeLibrary");
   s_native_library_class = reinterpret_cast<jclass>(env->NewGlobalRef(native_library_class));
+  s_display_toast_msg =
+      env->GetStaticMethodID(s_native_library_class, "displayToastMsg", "(Ljava/lang/String;Z)V");
   s_display_alert_msg = env->GetStaticMethodID(s_native_library_class, "displayAlertMsg",
                                                "(Ljava/lang/String;Ljava/lang/String;ZZZ)Z");
-  s_do_rumble = env->GetStaticMethodID(s_native_library_class, "rumble", "(ID)V");
   s_update_touch_pointer =
       env->GetStaticMethodID(s_native_library_class, "updateTouchPointer", "()V");
   s_on_title_changed = env->GetStaticMethodID(s_native_library_class, "onTitleChanged", "()V");
@@ -418,14 +547,14 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
 
   const jclass game_file_class = env->FindClass("org/dolphinemu/dolphinemu/model/GameFile");
   s_game_file_class = reinterpret_cast<jclass>(env->NewGlobalRef(game_file_class));
-  s_game_file_pointer = env->GetFieldID(game_file_class, "mPointer", "J");
+  s_game_file_pointer = env->GetFieldID(game_file_class, "pointer", "J");
   s_game_file_constructor = env->GetMethodID(game_file_class, "<init>", "(J)V");
   env->DeleteLocalRef(game_file_class);
 
   const jclass game_file_cache_class =
       env->FindClass("org/dolphinemu/dolphinemu/model/GameFileCache");
   s_game_file_cache_class = reinterpret_cast<jclass>(env->NewGlobalRef(game_file_cache_class));
-  s_game_file_cache_pointer = env->GetFieldID(game_file_cache_class, "mPointer", "J");
+  s_game_file_cache_pointer = env->GetFieldID(game_file_cache_class, "pointer", "J");
   env->DeleteLocalRef(game_file_cache_class);
 
   const jclass analytics_class = env->FindClass("org/dolphinemu/dolphinemu/utils/Analytics");
@@ -436,25 +565,19 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
                                                  "(Ljava/lang/String;)Ljava/lang/String;");
   env->DeleteLocalRef(analytics_class);
 
-  const jclass ini_file_class = env->FindClass("org/dolphinemu/dolphinemu/utils/IniFile");
-  s_ini_file_class = reinterpret_cast<jclass>(env->NewGlobalRef(ini_file_class));
-  s_ini_file_pointer = env->GetFieldID(ini_file_class, "mPointer", "J");
-  env->DeleteLocalRef(ini_file_class);
-
-  const jclass ini_file_section_class =
-      env->FindClass("org/dolphinemu/dolphinemu/utils/IniFile$Section");
-  s_ini_file_section_class = reinterpret_cast<jclass>(env->NewGlobalRef(ini_file_section_class));
-  s_ini_file_section_pointer = env->GetFieldID(ini_file_section_class, "mPointer", "J");
-  s_ini_file_section_constructor = env->GetMethodID(
-      ini_file_section_class, "<init>", "(Lorg/dolphinemu/dolphinemu/utils/IniFile;J)V");
-  env->DeleteLocalRef(ini_file_section_class);
-
-  const jclass map_class = env->FindClass("java/util/LinkedHashMap");
-  s_linked_hash_map_class = reinterpret_cast<jclass>(env->NewGlobalRef(map_class));
+  const jclass linked_hash_map_class = env->FindClass("java/util/LinkedHashMap");
+  s_linked_hash_map_class = reinterpret_cast<jclass>(env->NewGlobalRef(linked_hash_map_class));
   s_linked_hash_map_init = env->GetMethodID(s_linked_hash_map_class, "<init>", "(I)V");
   s_linked_hash_map_put = env->GetMethodID(
       s_linked_hash_map_class, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-  env->DeleteLocalRef(map_class);
+  env->DeleteLocalRef(linked_hash_map_class);
+
+  const jclass hash_map_class = env->FindClass("java/util/HashMap");
+  s_hash_map_class = reinterpret_cast<jclass>(env->NewGlobalRef(hash_map_class));
+  s_hash_map_init = env->GetMethodID(s_hash_map_class, "<init>", "(I)V");
+  s_hash_map_put = env->GetMethodID(s_hash_map_class, "put",
+                                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+  env->DeleteLocalRef(hash_map_class);
 
   const jclass compress_cb_class =
       env->FindClass("org/dolphinemu/dolphinemu/utils/CompressCallback");
@@ -500,7 +623,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
   const jclass ar_cheat_class =
       env->FindClass("org/dolphinemu/dolphinemu/features/cheats/model/ARCheat");
   s_ar_cheat_class = reinterpret_cast<jclass>(env->NewGlobalRef(ar_cheat_class));
-  s_ar_cheat_pointer = env->GetFieldID(ar_cheat_class, "mPointer", "J");
+  s_ar_cheat_pointer = env->GetFieldID(ar_cheat_class, "pointer", "J");
   s_ar_cheat_constructor = env->GetMethodID(ar_cheat_class, "<init>", "(J)V");
   env->DeleteLocalRef(ar_cheat_class);
 
@@ -514,7 +637,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
   const jclass patch_cheat_class =
       env->FindClass("org/dolphinemu/dolphinemu/features/cheats/model/PatchCheat");
   s_patch_cheat_class = reinterpret_cast<jclass>(env->NewGlobalRef(patch_cheat_class));
-  s_patch_cheat_pointer = env->GetFieldID(patch_cheat_class, "mPointer", "J");
+  s_patch_cheat_pointer = env->GetFieldID(patch_cheat_class, "pointer", "J");
   s_patch_cheat_constructor = env->GetMethodID(patch_cheat_class, "<init>", "(J)V");
   env->DeleteLocalRef(patch_cheat_class);
 
@@ -522,14 +645,14 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
       env->FindClass("org/dolphinemu/dolphinemu/features/cheats/model/GraphicsModGroup");
   s_graphics_mod_group_class =
       reinterpret_cast<jclass>(env->NewGlobalRef(graphics_mod_group_class));
-  s_graphics_mod_group_pointer = env->GetFieldID(graphics_mod_group_class, "mPointer", "J");
+  s_graphics_mod_group_pointer = env->GetFieldID(graphics_mod_group_class, "pointer", "J");
   s_graphics_mod_group_constructor = env->GetMethodID(graphics_mod_group_class, "<init>", "(J)V");
   env->DeleteLocalRef(graphics_mod_group_class);
 
   const jclass graphics_mod_class =
       env->FindClass("org/dolphinemu/dolphinemu/features/cheats/model/GraphicsMod");
   s_graphics_mod_class = reinterpret_cast<jclass>(env->NewGlobalRef(graphics_mod_class));
-  s_graphics_mod_pointer = env->GetFieldID(graphics_mod_class, "mPointer", "J");
+  s_graphics_mod_pointer = env->GetFieldID(graphics_mod_class, "pointer", "J");
   s_graphics_mod_constructor =
       env->GetMethodID(graphics_mod_class, "<init>",
                        "(JLorg/dolphinemu/dolphinemu/features/cheats/model/GraphicsModGroup;)V");
@@ -539,7 +662,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
       env->FindClass("org/dolphinemu/dolphinemu/features/riivolution/model/RiivolutionPatches");
   s_riivolution_patches_class =
       reinterpret_cast<jclass>(env->NewGlobalRef(riivolution_patches_class));
-  s_riivolution_patches_pointer = env->GetFieldID(riivolution_patches_class, "mPointer", "J");
+  s_riivolution_patches_pointer = env->GetFieldID(riivolution_patches_class, "pointer", "J");
   env->DeleteLocalRef(riivolution_patches_class);
 
   const jclass wii_update_cb_class =
@@ -547,6 +670,63 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
   s_wii_update_cb_class = reinterpret_cast<jclass>(env->NewGlobalRef(wii_update_cb_class));
   s_wii_update_cb_run = env->GetMethodID(s_wii_update_cb_class, "run", "(IIJ)Z");
   env->DeleteLocalRef(wii_update_cb_class);
+
+  const jclass control_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/input/model/controlleremu/Control");
+  s_control_class = reinterpret_cast<jclass>(env->NewGlobalRef(control_class));
+  s_control_pointer = env->GetFieldID(control_class, "pointer", "J");
+  s_control_constructor = env->GetMethodID(control_class, "<init>", "(J)V");
+  env->DeleteLocalRef(control_class);
+
+  const jclass control_group_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/input/model/controlleremu/ControlGroup");
+  s_control_group_class = reinterpret_cast<jclass>(env->NewGlobalRef(control_group_class));
+  s_control_group_pointer = env->GetFieldID(control_group_class, "pointer", "J");
+  s_control_group_constructor = env->GetMethodID(control_group_class, "<init>", "(J)V");
+  env->DeleteLocalRef(control_group_class);
+
+  const jclass control_reference_class = env->FindClass(
+      "org/dolphinemu/dolphinemu/features/input/model/controlleremu/ControlReference");
+  s_control_reference_class = reinterpret_cast<jclass>(env->NewGlobalRef(control_reference_class));
+  s_control_reference_pointer = env->GetFieldID(control_reference_class, "pointer", "J");
+  s_control_reference_constructor = env->GetMethodID(control_reference_class, "<init>", "(J)V");
+  env->DeleteLocalRef(control_reference_class);
+
+  const jclass emulated_controller_class = env->FindClass(
+      "org/dolphinemu/dolphinemu/features/input/model/controlleremu/EmulatedController");
+  s_emulated_controller_class =
+      reinterpret_cast<jclass>(env->NewGlobalRef(emulated_controller_class));
+  s_emulated_controller_pointer = env->GetFieldID(emulated_controller_class, "pointer", "J");
+  s_emulated_controller_constructor = env->GetMethodID(emulated_controller_class, "<init>", "(J)V");
+  env->DeleteLocalRef(emulated_controller_class);
+
+  const jclass numeric_setting_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/input/model/controlleremu/NumericSetting");
+  s_numeric_setting_class = reinterpret_cast<jclass>(env->NewGlobalRef(numeric_setting_class));
+  s_numeric_setting_pointer = env->GetFieldID(numeric_setting_class, "pointer", "J");
+  s_numeric_setting_constructor = env->GetMethodID(numeric_setting_class, "<init>", "(J)V");
+  env->DeleteLocalRef(numeric_setting_class);
+
+  const jclass core_device_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/input/model/CoreDevice");
+  s_core_device_class = reinterpret_cast<jclass>(env->NewGlobalRef(core_device_class));
+  s_core_device_pointer = env->GetFieldID(core_device_class, "pointer", "J");
+  s_core_device_constructor = env->GetMethodID(core_device_class, "<init>", "(J)V");
+  env->DeleteLocalRef(core_device_class);
+
+  const jclass core_device_control_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/input/model/CoreDevice$Control");
+  s_core_device_control_class =
+      reinterpret_cast<jclass>(env->NewGlobalRef(core_device_control_class));
+  s_core_device_control_pointer = env->GetFieldID(core_device_control_class, "pointer", "J");
+  s_core_device_control_constructor =
+      env->GetMethodID(core_device_control_class, "<init>",
+                       "(Lorg/dolphinemu/dolphinemu/features/input/model/CoreDevice;J)V");
+  env->DeleteLocalRef(core_device_control_class);
+
+  const jclass runnable_class = env->FindClass("java/lang/Runnable");
+  s_runnable_run = env->GetMethodID(runnable_class, "run", "()V");
+  env->DeleteLocalRef(runnable_class);
 
   return JNI_VERSION;
 }
@@ -562,8 +742,7 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved)
   env->DeleteGlobalRef(s_game_file_cache_class);
   env->DeleteGlobalRef(s_analytics_class);
   env->DeleteGlobalRef(s_linked_hash_map_class);
-  env->DeleteGlobalRef(s_ini_file_class);
-  env->DeleteGlobalRef(s_ini_file_section_class);
+  env->DeleteGlobalRef(s_hash_map_class);
   env->DeleteGlobalRef(s_compress_cb_class);
   env->DeleteGlobalRef(s_content_handler_class);
   env->DeleteGlobalRef(s_network_helper_class);
@@ -575,5 +754,12 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved)
   env->DeleteGlobalRef(s_graphics_mod_class);
   env->DeleteGlobalRef(s_riivolution_patches_class);
   env->DeleteGlobalRef(s_wii_update_cb_class);
+  env->DeleteGlobalRef(s_control_class);
+  env->DeleteGlobalRef(s_control_group_class);
+  env->DeleteGlobalRef(s_control_reference_class);
+  env->DeleteGlobalRef(s_emulated_controller_class);
+  env->DeleteGlobalRef(s_numeric_setting_class);
+  env->DeleteGlobalRef(s_core_device_class);
+  env->DeleteGlobalRef(s_core_device_control_class);
 }
 }

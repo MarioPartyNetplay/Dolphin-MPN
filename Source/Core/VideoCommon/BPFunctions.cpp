@@ -10,13 +10,16 @@
 #include "Common/Assert.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
+#include "Common/SmallVector.h"
 
 #include "VideoCommon/AbstractFramebuffer.h"
+#include "VideoCommon/AbstractGfx.h"
 #include "VideoCommon/BPMemory.h"
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/RenderBase.h"
 #include "VideoCommon/RenderState.h"
 #include "VideoCommon/VertexManagerBase.h"
+#include "VideoCommon/VertexShaderManager.h"
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 #include "VideoCommon/XFMemory.h"
@@ -74,26 +77,7 @@ bool ScissorResult::IsWorse(const ScissorRect& lhs, const ScissorRect& rhs) cons
 
 namespace
 {
-// Dynamically sized small array of ScissorRanges (used as an heap-less alternative to std::vector
-// to reduce allocation overhead)
-struct RangeList
-{
-  static constexpr u32 MAX_RANGES = 9;
-
-  u32 m_num_ranges = 0;
-  std::array<ScissorRange, MAX_RANGES> m_ranges{};
-
-  void AddRange(int offset, int start, int end)
-  {
-    DEBUG_ASSERT(m_num_ranges < MAX_RANGES);
-    m_ranges[m_num_ranges] = ScissorRange(offset, start, end);
-    m_num_ranges++;
-  }
-  auto begin() const { return m_ranges.begin(); }
-  auto end() const { return m_ranges.begin() + m_num_ranges; }
-
-  u32 size() { return m_num_ranges; }
-};
+using RangeList = Common::SmallVector<ScissorRange, 9>;
 
 static RangeList ComputeScissorRanges(int start, int end, int offset, int efb_dim)
 {
@@ -106,7 +90,7 @@ static RangeList ComputeScissorRanges(int start, int end, int offset, int efb_di
     int new_end = std::clamp(end - new_off + 1, 0, efb_dim);
     if (new_start < new_end)
     {
-      ranges.AddRange(new_off, new_start, new_end);
+      ranges.emplace_back(new_off, new_start, new_end);
     }
   }
 
@@ -157,17 +141,17 @@ ScissorResult::ScissorResult(const BPMemory& bpmemory, std::pair<float, float> v
   for (const auto& x_range : x_ranges)
   {
     DEBUG_ASSERT(x_range.start < x_range.end);
-    DEBUG_ASSERT(x_range.end <= EFB_WIDTH);
+    DEBUG_ASSERT(static_cast<u32>(x_range.end) <= EFB_WIDTH);
     for (const auto& y_range : y_ranges)
     {
       DEBUG_ASSERT(y_range.start < y_range.end);
-      DEBUG_ASSERT(y_range.end <= EFB_HEIGHT);
+      DEBUG_ASSERT(static_cast<u32>(y_range.end) <= EFB_HEIGHT);
       m_result.emplace_back(x_range, y_range);
     }
   }
 
   auto cmp = [&](const ScissorRect& lhs, const ScissorRect& rhs) { return IsWorse(lhs, rhs); };
-  std::sort(m_result.begin(), m_result.end(), cmp);
+  std::ranges::sort(m_result, cmp);
 }
 
 ScissorRect ScissorResult::Best() const
@@ -197,10 +181,9 @@ void SetScissorAndViewport()
 {
   auto native_rc = ComputeScissorRects().Best();
 
-  auto target_rc = g_renderer->ConvertEFBRectangle(native_rc.rect);
-  auto converted_rc =
-      g_renderer->ConvertFramebufferRectangle(target_rc, g_renderer->GetCurrentFramebuffer());
-  g_renderer->SetScissorRect(converted_rc);
+  auto target_rc = g_framebuffer_manager->ConvertEFBRectangle(native_rc.rect);
+  auto converted_rc = g_gfx->ConvertFramebufferRectangle(target_rc, g_gfx->GetCurrentFramebuffer());
+  g_gfx->SetScissorRect(converted_rc);
 
   float raw_x = (xfmem.viewport.xOrig - native_rc.x_off) - xfmem.viewport.wd;
   float raw_y = (xfmem.viewport.yOrig - native_rc.y_off) + xfmem.viewport.ht;
@@ -216,10 +199,10 @@ void SetScissorAndViewport()
     raw_height = std::round(raw_height);
   }
 
-  float x = g_renderer->EFBToScaledXf(raw_x);
-  float y = g_renderer->EFBToScaledYf(raw_y);
-  float width = g_renderer->EFBToScaledXf(raw_width);
-  float height = g_renderer->EFBToScaledYf(raw_height);
+  float x = g_framebuffer_manager->EFBToScaledXf(raw_x);
+  float y = g_framebuffer_manager->EFBToScaledYf(raw_y);
+  float width = g_framebuffer_manager->EFBToScaledXf(raw_width);
+  float height = g_framebuffer_manager->EFBToScaledYf(raw_height);
   float min_depth = (xfmem.viewport.farZ - xfmem.viewport.zRange) / 16777216.0f;
   float max_depth = xfmem.viewport.farZ / 16777216.0f;
   if (width < 0.f)
@@ -246,7 +229,7 @@ void SetScissorAndViewport()
     max_depth = std::clamp(max_depth, 0.0f, GX_MAX_DEPTH);
   }
 
-  if (g_renderer->UseVertexDepthRange())
+  if (VertexShaderManager::UseVertexDepthRange())
   {
     // We need to ensure depth values are clamped the maximum value supported by the console GPU.
     // Taking into account whether the depth range is inverted or not.
@@ -280,9 +263,9 @@ void SetScissorAndViewport()
 
   // Lower-left flip.
   if (g_ActiveConfig.backend_info.bUsesLowerLeftOrigin)
-    y = static_cast<float>(g_renderer->GetCurrentFramebuffer()->GetHeight()) - y - height;
+    y = static_cast<float>(g_gfx->GetCurrentFramebuffer()->GetHeight()) - y - height;
 
-  g_renderer->SetViewport(x, y, width, height, near_depth, far_depth);
+  g_gfx->SetViewport(x, y, width, height, near_depth, far_depth);
 }
 
 void SetDepthMode()
@@ -342,7 +325,7 @@ void ClearScreen(const MathUtil::Rectangle<int>& rc)
       color = RGBA8ToRGB565ToRGBA8(color);
       z = Z24ToZ16ToZ24(z);
     }
-    g_renderer->ClearScreen(rc, colorEnable, alphaEnable, zEnable, color, z);
+    g_framebuffer_manager->ClearEFB(rc, colorEnable, alphaEnable, zEnable, color, z);
   }
 }
 
@@ -364,9 +347,9 @@ void OnPixelFormatChange()
   if (!g_ActiveConfig.bEFBEmulateFormatChanges)
     return;
 
-  const auto old_format = g_renderer->GetPrevPixelFormat();
+  const auto old_format = g_framebuffer_manager->GetPrevPixelFormat();
   const auto new_format = bpmem.zcontrol.pixel_format;
-  g_renderer->StorePixelFormat(new_format);
+  g_framebuffer_manager->StorePixelFormat(new_format);
 
   DEBUG_LOG_FMT(VIDEO, "pixelfmt: pixel={}, zc={}", new_format, bpmem.zcontrol.zformat);
 
@@ -459,4 +442,4 @@ void SetInterlacingMode(const BPCmd& bp)
     break;
   }
 }
-};  // namespace BPFunctions
+}  // namespace BPFunctions

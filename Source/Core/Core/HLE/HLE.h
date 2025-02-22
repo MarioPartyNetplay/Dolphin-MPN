@@ -7,15 +7,28 @@
 
 #include "Common/CommonTypes.h"
 
+namespace Core
+{
+class CPUThreadGuard;
+class System;
+}  // namespace Core
+
+namespace PowerPC
+{
+enum class CoreMode;
+}
+
+class PPCSymbolDB;
+
 namespace HLE
 {
-using HookFunction = void (*)();
+using HookFunction = void (*)(const Core::CPUThreadGuard&);
 
 enum class HookType
 {
+  None,     // Do not hook the function
   Start,    // Hook the beginning of the function and execute the function afterwards
   Replace,  // Replace the function with the HLE version
-  None,     // Do not hook the function
 };
 
 enum class HookFlag
@@ -33,51 +46,38 @@ struct Hook
   HookFlag flags;
 };
 
-void PatchFixedFunctions();
-void PatchFunctions();
-void Clear();
-void Reload();
+struct TryReplaceFunctionResult
+{
+  HookType type = HookType::None;
+  u32 hook_index = 0;
 
-void Patch(u32 pc, std::string_view func_name);
-u32 UnPatch(std::string_view patch_name);
-u32 UnpatchRange(u32 start_addr, u32 end_addr);
-void Execute(u32 current_pc, u32 hook_index);
+  explicit operator bool() const { return type != HookType::None; }
+};
+
+void PatchFixedFunctions(Core::System& system);
+void PatchFunctions(Core::System& system);
+void Clear();
+void Reload(Core::System& system);
+
+void Patch(Core::System& system, u32 pc, std::string_view func_name);
+u32 UnPatch(Core::System& system, std::string_view patch_name);
+u32 UnpatchRange(Core::System& system, u32 start_addr, u32 end_addr);
+void Execute(const Core::CPUThreadGuard& guard, u32 current_pc, u32 hook_index);
+void ExecuteFromJIT(u32 current_pc, u32 hook_index, Core::System& system);
 
 // Returns the HLE hook index of the address
 u32 GetHookByAddress(u32 address);
 // Returns the HLE hook index if the address matches the function start
-u32 GetHookByFunctionAddress(u32 address);
+u32 GetHookByFunctionAddress(PPCSymbolDB& ppc_symbol_db, u32 address);
+const char* GetHookNameByIndex(u32 index);
 HookType GetHookTypeByIndex(u32 index);
 HookFlag GetHookFlagsByIndex(u32 index);
 
-bool IsEnabled(HookFlag flag);
+bool IsEnabled(HookFlag flag, PowerPC::CoreMode mode);
 
-// Performs the backend-independent preliminary checking before calling a
-// FunctionObject to do the actual replacing. Typically, this callback will
-// be in the backend itself, containing the backend-specific portions
-// required in replacing a function.
-//
-// fn may be any object that satisfies the FunctionObject concept in the C++
-// standard library. That is, any lambda, object with an overloaded function
-// call operator, or regular function pointer.
-//
-// fn must return a bool indicating whether or not function replacing occurred.
-// fn must also accept a parameter list of the form: fn(u32 function, HLE::HookType type).
-template <typename FunctionObject>
-bool ReplaceFunctionIfPossible(u32 address, FunctionObject fn)
-{
-  const u32 hook_index = GetHookByFunctionAddress(address);
-  if (hook_index == 0)
-    return false;
+// Performs the backend-independent preliminary checking for whether a function
+// can be HLEd. If it can be, the information needed for HLEing it is returned.
+TryReplaceFunctionResult TryReplaceFunction(PPCSymbolDB& ppc_symbol_db, u32 address,
+                                            PowerPC::CoreMode mode);
 
-  const HookType type = GetHookTypeByIndex(hook_index);
-  if (type != HookType::Start && type != HookType::Replace)
-    return false;
-
-  const HookFlag flags = GetHookFlagsByIndex(hook_index);
-  if (!IsEnabled(flags))
-    return false;
-
-  return fn(hook_index, type);
-}
 }  // namespace HLE

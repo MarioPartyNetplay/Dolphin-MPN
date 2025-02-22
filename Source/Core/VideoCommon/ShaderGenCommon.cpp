@@ -5,10 +5,12 @@
 
 #include <fmt/format.h>
 
+#include "Common/Assert.h"
 #include "Common/FileUtil.h"
 #include "Core/ConfigManager.h"
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
+#include "VideoCommon/XFMemory.h"
 
 ShaderHostConfig ShaderHostConfig::GetCurrent()
 {
@@ -41,8 +43,11 @@ ShaderHostConfig ShaderHostConfig::GetCurrent()
   bits.enable_validation_layer = g_ActiveConfig.bEnableValidationLayer;
   bits.manual_texture_sampling = !g_ActiveConfig.bFastTextureSampling;
   bits.manual_texture_sampling_custom_texture_sizes =
-      g_ActiveConfig.ManualTextureSamplingWithHiResTextures();
+      g_ActiveConfig.ManualTextureSamplingWithCustomTextureSizes();
   bits.backend_sampler_lod_bias = g_ActiveConfig.backend_info.bSupportsLodBiasInSampler;
+  bits.backend_dynamic_vertex_loader = g_ActiveConfig.backend_info.bSupportsDynamicVertexLoader;
+  bits.backend_vs_point_line_expand = g_ActiveConfig.UseVSForLinePointExpand();
+  bits.backend_gl_layer_in_fs = g_ActiveConfig.backend_info.bSupportsGLLayerInFS;
   return bits;
 }
 
@@ -96,7 +101,20 @@ std::string GetDiskShaderCacheFileName(APIType api_type, const char* type, bool 
 
 void WriteIsNanHeader(ShaderCode& out, APIType api_type)
 {
-  out.Write("#define dolphin_isnan(f) isnan(f)\n");
+  if (api_type == APIType::D3D)
+  {
+    out.Write("bool dolphin_isnan(float f) {{\n"
+              "  // Workaround for the HLSL compiler deciding that isnan can never be true and\n"
+              "  // optimising away the call, even though the value can actually be NaN\n"
+              "  // Just look for the bit pattern that indicates NaN instead\n"
+              "  return (floatBitsToInt(f) & 0x7FFFFFFF) > 0x7F800000;\n"
+              "}}\n\n");
+    // If isfinite is needed, (floatBitsToInt(f) & 0x7F800000) != 0x7F800000 can be used
+  }
+  else
+  {
+    out.Write("#define dolphin_isnan(f) isnan(f)\n");
+  }
 }
 
 void WriteBitfieldExtractHeader(ShaderCode& out, APIType api_type,
@@ -251,6 +269,78 @@ void AssignVSOutputMembers(ShaderCode& object, std::string_view a, std::string_v
   }
 }
 
+void GenerateLineOffset(ShaderCode& object, std::string_view indent0, std::string_view indent1,
+                        std::string_view pos_a, std::string_view pos_b, std::string_view sign)
+{
+  // GameCube/Wii's line drawing algorithm is a little quirky. It does not
+  // use the correct line caps. Instead, the line caps are vertical or
+  // horizontal depending the slope of the line.
+  object.Write("{indent0}float2 offset;\n"
+               "{indent0}float2 to = abs({pos_a}.xy / {pos_a}.w - {pos_b}.xy / {pos_b}.w);\n"
+               // FIXME: What does real hardware do when line is at a 45-degree angle?
+               // FIXME: Lines aren't drawn at the correct width. See Twilight Princess map.
+               "{indent0}if (" I_LINEPTPARAMS ".y * to.y > " I_LINEPTPARAMS ".x * to.x) {{\n"
+               // Line is more tall. Extend geometry left and right.
+               // Lerp LineWidth/2 from [0..VpWidth] to [-1..1]
+               "{indent1}offset = float2({sign}" I_LINEPTPARAMS ".z / " I_LINEPTPARAMS ".x, 0);\n"
+               "{indent0}}} else {{\n"
+               // Line is more wide. Extend geometry up and down.
+               // Lerp LineWidth/2 from [0..VpHeight] to [1..-1]
+               "{indent1}offset = float2(0, {sign}-" I_LINEPTPARAMS ".z / " I_LINEPTPARAMS ".y);\n"
+               "{indent0}}}\n",
+               fmt::arg("indent0", indent0), fmt::arg("indent1", indent1),  //
+               fmt::arg("pos_a", pos_a), fmt::arg("pos_b", pos_b), fmt::arg("sign", sign));
+}
+
+void GenerateVSLineExpansion(ShaderCode& object, std::string_view indent, u32 texgens)
+{
+  std::string indent1 = std::string(indent) + "  ";
+  object.Write("{0}other_pos = float4(dot(" I_PROJECTION "[0], other_pos), dot(" I_PROJECTION
+               "[1], other_pos), dot(" I_PROJECTION "[2], other_pos), dot(" I_PROJECTION
+               "[3], other_pos));\n"
+               "\n"
+               "{0}float expand_sign = is_right ? 1.0f : -1.0f;\n",
+               indent);
+  GenerateLineOffset(object, indent, indent1, "o.pos", "other_pos", "expand_sign * ");
+  object.Write("\n"
+               "{}o.pos.xy += offset * o.pos.w;\n",
+               indent);
+  if (texgens > 0)
+  {
+    object.Write("{}if ((" I_TEXOFFSET "[2] != 0) && is_right) {{\n", indent);
+    object.Write("{}  float texOffset = 1.0 / float(" I_TEXOFFSET "[2]);\n", indent);
+    for (u32 i = 0; i < texgens; i++)
+    {
+      object.Write("{}  if (((" I_TEXOFFSET "[0] >> {}) & 0x1) != 0)\n", indent, i);
+      object.Write("{}    o.tex{}.x += texOffset;\n", indent, i);
+    }
+    object.Write("{}}}\n", indent);
+  }
+}
+
+void GenerateVSPointExpansion(ShaderCode& object, std::string_view indent, u32 texgens)
+{
+  object.Write(
+      "{0}float2 expand_sign = float2(is_right ? 1.0f : -1.0f, is_bottom ? -1.0f : 1.0f);\n"
+      "{0}float2 offset = expand_sign * " I_LINEPTPARAMS ".ww / " I_LINEPTPARAMS ".xy;\n"
+      "{0}o.pos.xy += offset * o.pos.w;\n",
+      indent);
+  if (texgens > 0)
+  {
+    object.Write("{0}if (" I_TEXOFFSET "[3] != 0) {{\n"
+                 "{0}  float texOffsetMagnitude = 1.0f / float(" I_TEXOFFSET "[3]);\n"
+                 "{0}  float2 texOffset = float2(is_right ? texOffsetMagnitude : 0.0f, "
+                 "is_bottom ? texOffsetMagnitude : 0.0f);",
+                 indent);
+    for (u32 i = 0; i < texgens; i++)
+    {
+      object.Write("{}  if (((" I_TEXOFFSET "[1] >> {}) & 0x1) != 0)\n", indent, i);
+      object.Write("{}    o.tex{}.xy += texOffset;\n", indent, i);
+    }
+    object.Write("{}}}\n", indent);
+  }
+}
+
 const char* GetInterpolationQualifier(bool msaa, bool ssaa, bool in_glsl_interface_block, bool in)
 {
   if (!msaa)
@@ -272,4 +362,96 @@ const char* GetInterpolationQualifier(bool msaa, bool ssaa, bool in_glsl_interfa
     else
       return "sample";
   }
+}
+
+void WriteCustomShaderStructDef(ShaderCode* out, u32 numtexgens)
+{
+  // Bump this when there are breaking changes to the API
+  out->Write("#define CUSTOM_SHADER_API_VERSION 1;\n");
+
+  // CUSTOM_SHADER_LIGHTING_ATTENUATION_TYPE "enum" values
+  out->Write("const uint CUSTOM_SHADER_LIGHTING_ATTENUATION_TYPE_NONE = {}u;\n",
+             static_cast<u32>(AttenuationFunc::None));
+  out->Write("const uint CUSTOM_SHADER_LIGHTING_ATTENUATION_TYPE_POINT = {}u;\n",
+             static_cast<u32>(AttenuationFunc::Spec));
+  out->Write("const uint CUSTOM_SHADER_LIGHTING_ATTENUATION_TYPE_DIR = {}u;\n",
+             static_cast<u32>(AttenuationFunc::Dir));
+  out->Write("const uint CUSTOM_SHADER_LIGHTING_ATTENUATION_TYPE_SPOT = {}u;\n",
+             static_cast<u32>(AttenuationFunc::Spot));
+
+  out->Write("struct CustomShaderOutput\n");
+  out->Write("{{\n");
+  out->Write("\tfloat4 main_rt;\n");
+  out->Write("}};\n\n");
+
+  out->Write("struct CustomShaderLightData\n");
+  out->Write("{{\n");
+  out->Write("\tfloat3 position;\n");
+  out->Write("\tfloat3 direction;\n");
+  out->Write("\tfloat3 color;\n");
+  out->Write("\tuint attenuation_type;\n");
+  out->Write("\tfloat4 cosatt;\n");
+  out->Write("\tfloat4 distatt;\n");
+  out->Write("}};\n\n");
+
+  // CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE "enum" values
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_PREV = 0u;\n");
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_COLOR = 1u;\n");
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_TEX = 2u;\n");
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_RAS = 3u;\n");
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_KONST = 4u;\n");
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_NUMERIC = 5u;\n");
+  out->Write("const uint CUSTOM_SHADER_TEV_STAGE_INPUT_TYPE_UNUSED = 6u;\n");
+
+  out->Write("struct CustomShaderTevStageInputColor\n");
+  out->Write("{{\n");
+  out->Write("\tuint input_type;\n");
+  out->Write("\tfloat3 value;\n");
+  out->Write("}};\n\n");
+
+  out->Write("struct CustomShaderTevStageInputAlpha\n");
+  out->Write("{{\n");
+  out->Write("\tuint input_type;\n");
+  out->Write("\tfloat value;\n");
+  out->Write("}};\n\n");
+
+  out->Write("struct CustomShaderTevStage\n");
+  out->Write("{{\n");
+  out->Write("\tCustomShaderTevStageInputColor[4] input_color;\n");
+  out->Write("\tCustomShaderTevStageInputAlpha[4] input_alpha;\n");
+  out->Write("\tuint texmap;\n");
+  out->Write("\tfloat4 output_color;\n");
+  out->Write("}};\n\n");
+
+  // Custom structure for data we pass to custom shader hooks
+  out->Write("struct CustomShaderData\n");
+  out->Write("{{\n");
+  out->Write("\tfloat3 position;\n");
+  out->Write("\tfloat3 normal;\n");
+  if (numtexgens == 0)
+  {
+    // Cheat so shaders compile
+    out->Write("\tfloat3[1] texcoord;\n");
+  }
+  else
+  {
+    out->Write("\tfloat3[{}] texcoord;\n", numtexgens);
+  }
+  out->Write("\tuint texcoord_count;\n");
+  out->Write("\tuint[8] texmap_to_texcoord_index;\n");
+  out->Write("\tCustomShaderLightData[8] lights_chan0_color;\n");
+  out->Write("\tCustomShaderLightData[8] lights_chan0_alpha;\n");
+  out->Write("\tCustomShaderLightData[8] lights_chan1_color;\n");
+  out->Write("\tCustomShaderLightData[8] lights_chan1_alpha;\n");
+  out->Write("\tfloat4[2] ambient_lighting;\n");
+  out->Write("\tfloat4[2] base_material;\n");
+  out->Write("\tuint light_chan0_color_count;\n");
+  out->Write("\tuint light_chan0_alpha_count;\n");
+  out->Write("\tuint light_chan1_color_count;\n");
+  out->Write("\tuint light_chan1_alpha_count;\n");
+  out->Write("\tCustomShaderTevStage[16] tev_stages;\n");
+  out->Write("\tuint tev_stage_count;\n");
+  out->Write("\tfloat4 final_color;\n");
+  out->Write("\tuint time_ms;\n");
+  out->Write("}};\n\n");
 }

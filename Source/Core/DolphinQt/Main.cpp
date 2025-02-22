@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifdef _WIN32
+#include <cstdio>
 #include <string>
 #include <vector>
 
 #include <Windows.h>
-#include <cstdio>
+#endif
+
+#ifdef __linux__
+#include <cstdlib>
 #endif
 
 #include <OptionParser.h>
@@ -24,11 +28,13 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
 #include "Core/DolphinAnalytics.h"
+#include "Core/System.h"
 
 #include "DolphinQt/Host.h"
 #include "DolphinQt/MainWindow.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/Translation.h"
@@ -46,7 +52,7 @@ static bool QtMsgAlertHandler(const char* caption, const char* text, bool yes_no
   std::optional<bool> r = RunOnObject(QApplication::instance(), [&] {
     // If we were called from the CPU/GPU thread, set us as the CPU/GPU thread.
     // This information is used in order to avoid deadlocks when calling e.g.
-    // Host::SetRenderFocus or Core::RunAsCPUThread. (Host::SetRenderFocus
+    // Host::SetRenderFocus or Core::CPUThreadGuard. (Host::SetRenderFocus
     // can get called automatically when a dialog steals the focus.)
 
     Common::ScopeGuard cpu_scope_guard(&Core::UndeclareAsCPUThread);
@@ -86,13 +92,14 @@ static bool QtMsgAlertHandler(const char* caption, const char* text, bool yes_no
       return QMessageBox::NoIcon;
     }());
 
+    SetQWidgetWindowDecorations(&message_box);
     const int button = message_box.exec();
     if (button == QMessageBox::Yes)
       return true;
 
     if (button == QMessageBox::Ignore)
     {
-      Common::SetEnableAlert(false);
+      Config::SetCurrent(Config::MAIN_USE_PANIC_HANDLERS, false);
       return true;
     }
 
@@ -119,7 +126,7 @@ int main(int argc, char* argv[])
   }
 #endif
 
-  Host::GetInstance()->DeclareAsHostThread();
+  Core::DeclareAsHostThread();
 
 #ifdef __APPLE__
   // On macOS, a command line option matching the format "-psn_X_XXXXXX" is passed when
@@ -133,28 +140,26 @@ int main(int argc, char* argv[])
   }
 #endif
 
-  auto parser = CommandLineParse::CreateParser(CommandLineParse::ParserOptions::IncludeGUIOptions);
-  const optparse::Values& options = CommandLineParse::ParseArguments(parser.get(), argc, argv);
-  const std::vector<std::string> args = parser->args();
-
-  // setHighDpiScaleFactorRoundingPolicy was added in 5.14, but default behavior changed in 6.0
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-  // Set to the previous default behavior
-  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::Round);
-#else
-  QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-  QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#ifdef __linux__
+  // Qt 6.3+ has a bug which causes mouse inputs to not be registered in our XInput2 code.
+  // If we define QT_XCB_NO_XI2, Qt's xcb platform plugin no longer initializes its XInput
+  // code, which makes mouse inputs work again.
+  // For more information: https://bugs.dolphin-emu.org/issues/12913
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 3, 0))
+  setenv("QT_XCB_NO_XI2", "1", true);
+#endif
 #endif
 
   QCoreApplication::setOrganizationName(QStringLiteral("Dolphin Emulator"));
   QCoreApplication::setOrganizationDomain(QStringLiteral("dolphin-emu.org"));
   QCoreApplication::setApplicationName(QStringLiteral("dolphin-emu"));
 
-#ifdef _WIN32
-  QApplication app(__argc, __argv);
-#else
+  // QApplication will parse arguments and remove any it recognizes as targeting Qt
   QApplication app(argc, argv);
-#endif
+
+  auto parser = CommandLineParse::CreateParser(CommandLineParse::ParserOptions::IncludeGUIOptions);
+  const optparse::Values& options = CommandLineParse::ParseArguments(parser.get(), argc, argv);
+  const std::vector<std::string> args = parser->args();
 
 #ifdef _WIN32
   FreeConsole();
@@ -175,7 +180,7 @@ int main(int argc, char* argv[])
   // Whenever the event loop is about to go to sleep, dispatch the jobs
   // queued in the Core first.
   QObject::connect(QAbstractEventDispatcher::instance(), &QAbstractEventDispatcher::aboutToBlock,
-                   &app, &Core::HostDispatchJobs);
+                   &app, [] { Core::HostDispatchJobs(Core::System::GetInstance()); });
 
   std::optional<std::string> save_state_path;
   if (options.is_set("save_state"))
@@ -241,11 +246,11 @@ int main(int argc, char* argv[])
   {
     DolphinAnalytics::Instance().ReportDolphinStart("qt");
 
-    MainWindow win{std::move(boot), static_cast<const char*>(options.get("movie"))};
-    Settings::Instance().SetCurrentUserStyle(Settings::Instance().GetCurrentUserStyle());
-    if (options.is_set("debugger"))
-      Settings::Instance().SetDebugModeEnabled(true);
-    win.Show();
+    Settings::Instance().InitDefaultPalette();
+    Settings::Instance().ApplyStyle();
+
+    MainWindow win{Core::System::GetInstance(), std::move(boot),
+                   static_cast<const char*>(options.get("movie"))};
 
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
     if (!Config::Get(Config::MAIN_ANALYTICS_PERMISSION_ASKED))
@@ -268,6 +273,7 @@ int main(int argc, char* argv[])
                       "This authorization can be revoked at any time through Dolphin's "
                       "settings."));
 
+      SetQWidgetWindowDecorations(&analytics_prompt);
       const int answer = analytics_prompt.exec();
 
       Config::SetBase(Config::MAIN_ANALYTICS_PERMISSION_ASKED, true);
@@ -287,7 +293,7 @@ int main(int argc, char* argv[])
     retval = app.exec();
   }
 
-  Core::Shutdown();
+  Core::Shutdown(Core::System::GetInstance());
   UICommon::Shutdown();
   Host::GetInstance()->deleteLater();
 
@@ -297,7 +303,7 @@ int main(int argc, char* argv[])
 #ifdef _WIN32
 int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int)
 {
-  std::vector<std::string> args = CommandLineToUtf8Argv(GetCommandLineW());
+  std::vector<std::string> args = Common::CommandLineToUtf8Argv(GetCommandLineW());
   const int argc = static_cast<int>(args.size());
   std::vector<char*> argv(args.size());
   for (size_t i = 0; i < args.size(); ++i)

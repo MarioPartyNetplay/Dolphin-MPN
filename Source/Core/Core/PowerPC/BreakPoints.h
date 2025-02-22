@@ -4,23 +4,25 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "Common/CommonTypes.h"
+#include "Core/PowerPC/Expression.h"
 
-namespace Common
+namespace Core
 {
-class DebugInterface;
+class System;
 }
 
 struct TBreakPoint
 {
   u32 address = 0;
   bool is_enabled = false;
-  bool is_temporary = false;
   bool log_on_hit = false;
   bool break_on_hit = false;
+  std::optional<Expression> condition;
 };
 
 struct TMemCheck
@@ -39,15 +41,23 @@ struct TMemCheck
 
   u32 num_hits = 0;
 
+  std::optional<Expression> condition;
+
   // returns whether to break
-  bool Action(Common::DebugInterface* debug_interface, u64 value, u32 addr, bool write, size_t size,
-              u32 pc);
+  bool Action(Core::System& system, u64 value, u32 addr, bool write, size_t size, u32 pc);
 };
 
 // Code breakpoints.
 class BreakPoints
 {
 public:
+  explicit BreakPoints(Core::System& system);
+  BreakPoints(const BreakPoints& other) = delete;
+  BreakPoints(BreakPoints&& other) = delete;
+  BreakPoints& operator=(const BreakPoints& other) = delete;
+  BreakPoints& operator=(BreakPoints&& other) = delete;
+  ~BreakPoints();
+
   using TBreakPoints = std::vector<TBreakPoint>;
   using TBreakPointsStr = std::vector<std::string>;
 
@@ -55,34 +65,49 @@ public:
   TBreakPointsStr GetStrings() const;
   void AddFromStrings(const TBreakPointsStr& bp_strings);
 
-  // is address breakpoint
   bool IsAddressBreakPoint(u32 address) const;
   bool IsBreakPointEnable(u32 adresss) const;
-  bool IsTempBreakPoint(u32 address) const;
-  bool IsBreakPointBreakOnHit(u32 address) const;
-  bool IsBreakPointLogOnHit(u32 address) const;
+  // Get the breakpoint in this address (for most purposes)
+  const TBreakPoint* GetBreakpoint(u32 address) const;
+  // Get the breakpoint in this address (ignore temporary breakpoint, e.g. for editing purposes)
+  const TBreakPoint* GetRegularBreakpoint(u32 address) const;
 
-  // Add BreakPoint
-  void Add(u32 address, bool temp, bool break_on_hit, bool log_on_hit);
-  void Add(u32 address, bool temp = false);
-  void Add(const TBreakPoint& bp);
+  // Add BreakPoint. If one already exists on the same address, replace it.
+  void Add(u32 address, bool break_on_hit, bool log_on_hit, std::optional<Expression> condition);
+  void Add(u32 address);
+  void Add(TBreakPoint bp);
+  // Add temporary breakpoint (e.g., Step Over, Run to Here)
+  // It can be on the same address of a regular breakpoint (it will have priority in this case)
+  // It's cleared whenever the emulation is paused for any reason
+  // (CPUManager::SetStateLocked(State::Paused))
+  // TODO: Should it somehow force to resume emulation when called?
+  void SetTemporary(u32 address);
 
-  // Modify Breakpoint
   bool ToggleBreakPoint(u32 address);
+  bool ToggleEnable(u32 address);
 
-  // Remove Breakpoint
-  void Remove(u32 address);
+  // Remove Breakpoint. Returns whether it was removed.
+  bool Remove(u32 address);
   void Clear();
-  void ClearAllTemporary();
+  void ClearTemporary();
 
 private:
   TBreakPoints m_breakpoints;
+  std::optional<TBreakPoint> m_temp_breakpoint;
+  Core::System& m_system;
 };
 
 // Memory breakpoints
 class MemChecks
 {
 public:
+  explicit MemChecks(Core::System& system);
+  MemChecks(const MemChecks& other) = delete;
+  MemChecks(MemChecks&& other) = delete;
+  MemChecks& operator=(const MemChecks& other) = delete;
+  MemChecks& operator=(MemChecks&& other) = delete;
+  ~MemChecks();
+
   using TMemChecks = std::vector<TMemCheck>;
   using TMemChecksStr = std::vector<std::string>;
 
@@ -90,18 +115,20 @@ public:
   TMemChecksStr GetStrings() const;
   void AddFromStrings(const TMemChecksStr& mc_strings);
 
-  void Add(const TMemCheck& memory_check);
+  void Add(TMemCheck memory_check, bool update = true);
 
-  bool ToggleBreakPoint(u32 address);
+  bool ToggleEnable(u32 address);
 
-  // memory breakpoint
   TMemCheck* GetMemCheck(u32 address, size_t size = 1);
   bool OverlapsMemcheck(u32 address, u32 length) const;
-  void Remove(u32 address);
+  bool Remove(u32 address, bool update = true);
 
+  void Update();
   void Clear();
   bool HasAny() const { return !m_mem_checks.empty(); }
 
 private:
   TMemChecks m_mem_checks;
+  Core::System& m_system;
+  bool m_mem_breakpoints_set = false;
 };

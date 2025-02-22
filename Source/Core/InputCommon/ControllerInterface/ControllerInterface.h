@@ -12,6 +12,7 @@
 #include "Common/Matrix.h"
 #include "Common/WindowSystemInfo.h"
 #include "InputCommon/ControllerInterface/CoreDevice.h"
+#include "InputCommon/ControllerInterface/InputBackend.h"
 
 // enable disable sources
 #ifdef _WIN32
@@ -32,6 +33,9 @@
 #define CIFACE_USE_DUALSHOCKUDPCLIENT
 #if defined(HAVE_SDL2)
 #define CIFACE_USE_SDL
+#endif
+#if defined(HAVE_HIDAPI)
+#define CIFACE_USE_STEAMDECK
 #endif
 
 namespace ciface
@@ -118,12 +122,13 @@ public:
   static void SetCurrentInputChannel(ciface::InputChannel);
   static ciface::InputChannel GetCurrentInputChannel();
 
+  WindowSystemInfo GetWindowSystemInfo() const;
+
 private:
   void ClearDevices();
 
   std::list<std::function<void()>> m_devices_changed_callbacks;
   mutable std::recursive_mutex m_devices_population_mutex;
-  mutable std::mutex m_pre_population_mutex;
   mutable std::mutex m_callbacks_mutex;
   std::atomic<bool> m_is_init;
   // This is now always protected by m_devices_population_mutex, so
@@ -133,6 +138,8 @@ private:
   WindowSystemInfo m_wsi;
   std::atomic<float> m_aspect_ratio_adjustment = 1;
   std::atomic<bool> m_requested_mouse_centering = false;
+
+  std::vector<std::unique_ptr<ciface::InputBackend>> m_input_backends;
 };
 
 namespace ciface

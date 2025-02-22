@@ -15,12 +15,9 @@ namespace Common
 {
 // A type that allows lookup of values associated with an enum as the key.
 // Designed for enums whose numeric values start at 0 and increment continuously with few gaps.
-template <typename V, auto last_member, typename = decltype(last_member)>
+template <typename V, auto last_member>
 class EnumMap final
 {
-  // The third template argument is needed to avoid compile errors from ambiguity with multiple
-  // enums with the same number of members in GCC prior to 8.  See https://godbolt.org/z/xcKaW1seW
-  // and https://godbolt.org/z/hz7Yqq1P5
   using T = decltype(last_member);
   static_assert(std::is_enum_v<T>);
   static constexpr size_t s_size = static_cast<size_t>(last_member) + 1;
@@ -58,7 +55,7 @@ public:
   constexpr V& operator[](BitField<position, bits, T, StorageType> key)
   {
     static_assert(1 << bits == s_size, "Unsafe indexing into EnumMap (may go out of bounds)");
-    return m_array[static_cast<std::size_t>(key.value())];
+    return m_array[static_cast<std::size_t>(key.Value())];
   }
 
   constexpr bool InBounds(T key) const { return static_cast<std::size_t>(key) < s_size; }

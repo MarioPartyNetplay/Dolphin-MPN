@@ -160,34 +160,43 @@ JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_utils_WiiUtils_isSystemMenuInstalled(JNIEnv* env, jclass)
 {
   IOS::HLE::Kernel ios;
-  const auto tmd = ios.GetES()->FindInstalledTMD(Titles::SYSTEM_MENU);
+  const auto tmd = ios.GetESCore().FindInstalledTMD(Titles::SYSTEM_MENU);
 
   return tmd.IsValid();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_utils_WiiUtils_isSystemMenuvWii(JNIEnv* env, jclass)
+{
+  IOS::HLE::Kernel ios;
+  const auto tmd = ios.GetESCore().FindInstalledTMD(Titles::SYSTEM_MENU);
+
+  return tmd.IsvWii();
 }
 
 JNIEXPORT jstring JNICALL
 Java_org_dolphinemu_dolphinemu_utils_WiiUtils_getSystemMenuVersion(JNIEnv* env, jclass)
 {
   IOS::HLE::Kernel ios;
-  const auto tmd = ios.GetES()->FindInstalledTMD(Titles::SYSTEM_MENU);
+  const auto tmd = ios.GetESCore().FindInstalledTMD(Titles::SYSTEM_MENU);
 
   if (!tmd.IsValid())
   {
     return ToJString(env, "");
   }
 
-  return ToJString(env, DiscIO::GetSysMenuVersionString(tmd.GetTitleVersion()));
+  return ToJString(env, DiscIO::GetSysMenuVersionString(tmd.GetTitleVersion(), tmd.IsvWii()));
 }
 
 JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_utils_WiiUtils_syncSdFolderToSdImage(JNIEnv* env, jclass)
 {
-  return static_cast<jboolean>(Common::SyncSDFolderToSDImage(false));
+  return static_cast<jboolean>(Common::SyncSDFolderToSDImage([]() { return false; }, false));
 }
 
 JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_utils_WiiUtils_syncSdImageToSdFolder(JNIEnv* env, jclass)
 {
-  return static_cast<jboolean>(Common::SyncSDImageToSDFolder());
+  return static_cast<jboolean>(Common::SyncSDImageToSDFolder([]() { return false; }));
 }
 }

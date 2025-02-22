@@ -20,10 +20,10 @@ public:
 
   static PerfQuery* GetInstance() { return static_cast<PerfQuery*>(g_perf_query.get()); }
 
-  bool Initialize();
+  bool Initialize() override;
 
-  void EnableQuery(PerfQueryGroup type) override;
-  void DisableQuery(PerfQueryGroup type) override;
+  void EnableQuery(PerfQueryGroup group) override;
+  void DisableQuery(PerfQueryGroup group) override;
   void ResetQuery() override;
   u32 GetQueryResult(PerfQueryType type) override;
   void FlushResults() override;
@@ -40,7 +40,7 @@ private:
   struct ActiveQuery
   {
     u64 fence_counter;
-    PerfQueryType query_type;
+    PerfQueryGroup query_group;
     bool has_value;
   };
 

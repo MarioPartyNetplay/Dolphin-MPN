@@ -17,7 +17,7 @@ namespace Common
 // having to prefix them with gen-> or something similar.
 // Example implementation:
 // class JIT : public CodeBlock<ARMXEmitter> {}
-template <class T>
+template <class T, bool executable = true>
 class CodeBlock : public T
 {
 private:
@@ -53,7 +53,10 @@ public:
   {
     region_size = size;
     total_region_size = size;
-    region = static_cast<u8*>(Common::AllocateExecutableMemory(total_region_size));
+    if constexpr (executable)
+      region = static_cast<u8*>(Common::AllocateExecutableMemory(total_region_size));
+    else
+      region = static_cast<u8*>(Common::AllocateMemoryPages(total_region_size));
     T::SetCodePtr(region, region + size);
   }
 
@@ -82,9 +85,18 @@ public:
   }
 
   bool IsInSpace(const u8* ptr) const { return ptr >= region && ptr < (region + region_size); }
-  // Cannot currently be undone. Will write protect the entire code region.
-  // Start over if you need to change the code (call FreeCodeSpace(), AllocCodeSpace()).
-  void WriteProtect() { Common::WriteProtectMemory(region, region_size, true); }
+  bool IsInSpaceOrChildSpace(const u8* ptr) const
+  {
+    return ptr >= region && ptr < (region + total_region_size);
+  }
+  void WriteProtect(bool allow_execute)
+  {
+    Common::WriteProtectMemory(region, region_size, allow_execute);
+  }
+  void UnWriteProtect(bool allow_execute)
+  {
+    Common::UnWriteProtectMemory(region, region_size, allow_execute);
+  }
   void ResetCodePtr() { T::SetCodePtr(region, region + region_size); }
   size_t GetSpaceLeft() const
   {
@@ -101,7 +113,7 @@ public:
   bool HasChildren() const { return region_size != total_region_size; }
   u8* AllocChildCodeSpace(size_t child_size)
   {
-    ASSERT_MSG(DYNA_REC, child_size < GetSpaceLeft(), "Insufficient space for child allocation.");
+    ASSERT_MSG(DYNA_REC, child_size <= GetSpaceLeft(), "Insufficient space for child allocation.");
     u8* child_region = region + region_size - child_size;
     region_size -= child_size;
     ResetCodePtr();

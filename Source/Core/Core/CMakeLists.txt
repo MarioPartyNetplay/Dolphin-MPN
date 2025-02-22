@@ -1,8 +1,11 @@
 add_library(core
+  AchievementManager.cpp
+  AchievementManager.h
   ActionReplay.cpp
   ActionReplay.h
   ARDecrypt.cpp
   ARDecrypt.h
+  Boot/AncastTypes.h
   Boot/Boot_BS2Emu.cpp
   Boot/Boot_WiiWAD.cpp
   Boot/Boot.cpp
@@ -20,6 +23,8 @@ add_library(core
   CheatSearch.cpp
   CheatSearch.h
   CommonTitles.h
+  Config/AchievementSettings.cpp
+  Config/AchievementSettings.h
   Config/DefaultLocale.cpp
   Config/DefaultLocale.h
   Config/FreeLookSettings.cpp
@@ -54,6 +59,13 @@ add_library(core
   Core.h
   CoreTiming.cpp
   CoreTiming.h
+  CPUThreadConfigCallback.cpp
+  CPUThreadConfigCallback.h
+  Debugger/BranchWatch.cpp
+  Debugger/BranchWatch.h
+  Debugger/CodeTrace.cpp
+  Debugger/CodeTrace.h
+  Debugger/DebugInterface.h
   Debugger/Debugger_SymbolMap.cpp
   Debugger/Debugger_SymbolMap.h
   Debugger/Dump.cpp
@@ -177,6 +189,12 @@ add_library(core
   HW/DVD/DVDThread.h
   HW/DVD/FileMonitor.cpp
   HW/DVD/FileMonitor.h
+  HW/EXI/BBA/TAPServerConnection.cpp
+  HW/EXI/BBA/TAPServerBBA.cpp
+  HW/EXI/BBA/XLINK_KAI_BBA.cpp
+  HW/EXI/BBA/BuiltIn.cpp
+  HW/EXI/BBA/BuiltIn.h
+  HW/EXI/Modem/TAPServerModem.cpp
   HW/EXI/EXI_Channel.cpp
   HW/EXI/EXI_Channel.h
   HW/EXI/EXI_Device.cpp
@@ -195,8 +213,8 @@ add_library(core
   HW/EXI/EXI_DeviceIPL.h
   HW/EXI/EXI_DeviceMemoryCard.cpp
   HW/EXI/EXI_DeviceMemoryCard.h
-  HW/EXI/EXI_DeviceMic.cpp
-  HW/EXI/EXI_DeviceMic.h
+  HW/EXI/EXI_DeviceModem.cpp
+  HW/EXI/EXI_DeviceModem.h
   HW/EXI/EXI.cpp
   HW/EXI/EXI.h
   HW/GBAPad.cpp
@@ -279,6 +297,8 @@ add_library(core
   HW/WiimoteCommon/WiimoteReport.h
   HW/WiimoteEmu/Camera.cpp
   HW/WiimoteEmu/Camera.h
+  HW/WiimoteEmu/DesiredWiimoteState.cpp
+  HW/WiimoteEmu/DesiredWiimoteState.h
   HW/WiimoteEmu/Dynamics.cpp
   HW/WiimoteEmu/Dynamics.h
   HW/WiimoteEmu/EmuSubroutines.cpp
@@ -286,6 +306,7 @@ add_library(core
   HW/WiimoteEmu/Encryption.h
   HW/WiimoteEmu/Extension/Classic.cpp
   HW/WiimoteEmu/Extension/Classic.h
+  HW/WiimoteEmu/Extension/DesiredExtensionState.h
   HW/WiimoteEmu/Extension/DrawsomeTablet.cpp
   HW/WiimoteEmu/Extension/DrawsomeTablet.h
   HW/WiimoteEmu/Extension/Drums.cpp
@@ -296,6 +317,8 @@ add_library(core
   HW/WiimoteEmu/Extension/Guitar.h
   HW/WiimoteEmu/Extension/Nunchuk.cpp
   HW/WiimoteEmu/Extension/Nunchuk.h
+  HW/WiimoteEmu/Extension/Shinkansen.cpp
+  HW/WiimoteEmu/Extension/Shinkansen.h
   HW/WiimoteEmu/Extension/TaTaCon.cpp
   HW/WiimoteEmu/Extension/TaTaCon.h
   HW/WiimoteEmu/Extension/Turntable.cpp
@@ -321,6 +344,10 @@ add_library(core
   IOS/Device.h
   IOS/DeviceStub.cpp
   IOS/DeviceStub.h
+  IOS/Crypto/AesDevice.cpp
+  IOS/Crypto/AesDevice.h
+  IOS/Crypto/Sha.cpp
+  IOS/Crypto/Sha.h
   IOS/DI/DI.cpp
   IOS/DI/DI.h
   IOS/DolphinDevice.cpp
@@ -358,6 +385,16 @@ add_library(core
   IOS/Network/KD/NetKDTime.h
   IOS/Network/KD/NWC24Config.cpp
   IOS/Network/KD/NWC24Config.h
+  IOS/Network/KD/NWC24DL.cpp
+  IOS/Network/KD/NWC24DL.h
+  IOS/Network/KD/VFF/VFFUtil.cpp
+  IOS/Network/KD/VFF/VFFUtil.h
+  IOS/Network/KD/WC24File.h
+  IOS/Network/KD/Mail/MailCommon.h
+  IOS/Network/KD/Mail/WC24FriendList.cpp
+  IOS/Network/KD/Mail/WC24FriendList.h
+  IOS/Network/KD/Mail/WC24Send.cpp
+  IOS/Network/KD/Mail/WC24Send.h
   IOS/Network/MACUtils.cpp
   IOS/Network/MACUtils.h
   IOS/Network/NCD/Manage.cpp
@@ -388,6 +425,14 @@ add_library(core
   IOS/USB/Bluetooth/WiimoteHIDAttr.h
   IOS/USB/Common.cpp
   IOS/USB/Common.h
+  IOS/USB/Emulated/Infinity.cpp
+  IOS/USB/Emulated/Infinity.h
+  IOS/USB/Emulated/Skylanders/Skylander.cpp
+  IOS/USB/Emulated/Skylanders/Skylander.h
+  IOS/USB/Emulated/Skylanders/SkylanderCrypto.cpp
+  IOS/USB/Emulated/Skylanders/SkylanderCrypto.h
+  IOS/USB/Emulated/Skylanders/SkylanderFigure.cpp
+  IOS/USB/Emulated/Skylanders/SkylanderFigure.h
   IOS/USB/Host.cpp
   IOS/USB/Host.h
   IOS/USB/OH0/OH0.cpp
@@ -432,12 +477,17 @@ add_library(core
   PatchEngine.h
   PowerPC/BreakPoints.cpp
   PowerPC/BreakPoints.h
+  PowerPC/CachedInterpreter/CachedInterpreter_Disassembler.cpp
   PowerPC/CachedInterpreter/CachedInterpreter.cpp
   PowerPC/CachedInterpreter/CachedInterpreter.h
-  PowerPC/CachedInterpreter/InterpreterBlockCache.cpp
-  PowerPC/CachedInterpreter/InterpreterBlockCache.h
+  PowerPC/CachedInterpreter/CachedInterpreterBlockCache.cpp
+  PowerPC/CachedInterpreter/CachedInterpreterBlockCache.h
+  PowerPC/CachedInterpreter/CachedInterpreterEmitter.cpp
+  PowerPC/CachedInterpreter/CachedInterpreterEmitter.h
   PowerPC/ConditionRegister.cpp
   PowerPC/ConditionRegister.h
+  PowerPC/Expression.cpp
+  PowerPC/Expression.h
   PowerPC/Interpreter/ExceptionUtils.h
   PowerPC/Interpreter/Interpreter_Branch.cpp
   PowerPC/Interpreter/Interpreter_FloatingPoint.cpp
@@ -474,7 +524,6 @@ add_library(core
   PowerPC/PPCSymbolDB.h
   PowerPC/PPCTables.cpp
   PowerPC/PPCTables.h
-  PowerPC/Profiler.h
   PowerPC/SignatureDB/CSVSignatureDB.cpp
   PowerPC/SignatureDB/CSVSignatureDB.h
   PowerPC/SignatureDB/DSYSignatureDB.cpp
@@ -490,15 +539,19 @@ add_library(core
   SysConf.h
   System.cpp
   System.h
+  TimePlayed.cpp
+  TimePlayed.h
   TitleDatabase.cpp
   TitleDatabase.h
+  WC24PatchEngine.cpp
+  WC24PatchEngine.h
   WiiRoot.cpp
   WiiRoot.h
   WiiUtils.cpp
   WiiUtils.h
 )
 
-if(_M_X86)
+if(_M_X86_64)
   target_sources(core PRIVATE
     DSP/Jit/x64/DSPEmitter.cpp
     DSP/Jit/x64/DSPEmitter.h
@@ -579,29 +632,25 @@ target_link_libraries(core
 PUBLIC
   audiocommon
   common
-  cubeb
   discio
-  enet
+  enet::enet
+  expr
   inputcommon
-  ${MBEDTLS_LIBRARIES}
+  MbedTLS::mbedtls
   pugixml
   RangeSet::RangeSet
   sfml-network
-  sfml-system
   videonull
   videoogl
   videosoftware
 
 PRIVATE
+  FatFs
   fmt::fmt
-  ${LZO}
+  LZO::LZO
+  LZ4::LZ4
   ZLIB::ZLIB
 )
-
-if ((DEFINED CMAKE_ANDROID_ARCH_ABI AND CMAKE_ANDROID_ARCH_ABI MATCHES "x86|x86_64") OR
-    (NOT DEFINED CMAKE_ANDROID_ARCH_ABI AND _M_X86))
-  target_link_libraries(core PRIVATE bdisasm)
-endif()
 
 if (APPLE)
   target_link_libraries(core
@@ -618,9 +667,16 @@ elseif (ANDROID)
   )
 endif()
 
-if(LIBUSB_FOUND)
-  # Using shared LibUSB
-  target_link_libraries(core PUBLIC ${LIBUSB_LIBRARIES})
+if(ENABLE_CUBEB)
+  target_link_libraries(core PUBLIC cubeb)
+  target_sources(core PRIVATE
+    HW/EXI/EXI_DeviceMic.cpp
+    HW/EXI/EXI_DeviceMic.h
+  )
+endif()
+
+if(TARGET LibUSB::LibUSB)
+  target_link_libraries(core PUBLIC LibUSB::LibUSB)
   target_sources(core PRIVATE
     IOS/USB/LibusbDevice.cpp
     IOS/USB/LibusbDevice.h
@@ -652,9 +708,6 @@ if(WIN32)
   target_sources(core PRIVATE
     HW/EXI/BBA/TAP_Win32.cpp
     HW/EXI/BBA/TAP_Win32.h
-    HW/EXI/BBA/XLINK_KAI_BBA.cpp
-    HW/EXI/BBA/BuiltIn.cpp
-    HW/EXI/BBA/BuiltIn.h
     HW/WiimoteReal/IOWin.cpp
     HW/WiimoteReal/IOWin.h
   )
@@ -668,18 +721,11 @@ if(WIN32)
 elseif(APPLE)
   target_sources(core PRIVATE
     HW/EXI/BBA/TAP_Apple.cpp
-    HW/EXI/BBA/TAPServer_Apple.cpp
-    HW/EXI/BBA/XLINK_KAI_BBA.cpp
-    HW/EXI/BBA/BuiltIn.cpp
-    HW/EXI/BBA/BuiltIn.h
   )
   target_link_libraries(core PUBLIC ${IOB_LIBRARY})
 elseif(UNIX)
   target_sources(core PRIVATE
     HW/EXI/BBA/TAP_Unix.cpp
-    HW/EXI/BBA/XLINK_KAI_BBA.cpp
-    HW/EXI/BBA/BuiltIn.cpp
-    HW/EXI/BBA/BuiltIn.h
   )
   if(ANDROID)
     target_sources(core PRIVATE
@@ -710,6 +756,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   endif()
 endif()
 
+if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
+  # OpenBSD doesn't allow memory to be both writable and executable by default.
+  # The JIT currently needs this.
+  target_link_options(core PUBLIC -Wl,-zwxneeded)
+endif()
+
 if(TARGET Hidapi::Hidapi)
   target_sources(core PRIVATE
     HW/WiimoteReal/IOhidapi.cpp
@@ -729,4 +781,10 @@ endif()
 if(MSVC)
   # Add precompiled header
   target_link_libraries(core PRIVATE use_pch)
+endif()
+
+if(USE_RETRO_ACHIEVEMENTS)
+  target_link_libraries(core PUBLIC rcheevos)
+  target_compile_definitions(core PUBLIC -DUSE_RETRO_ACHIEVEMENTS)
+  target_compile_definitions(core PUBLIC -DRC_CLIENT_SUPPORTS_HASH)
 endif()

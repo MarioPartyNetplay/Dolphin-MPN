@@ -20,6 +20,7 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/DolphinAnalytics.h"
 #include "Core/System.h"
 
 // TODO: ugly
@@ -39,16 +40,23 @@
 #include "VideoBackends/Metal/VideoBackend.h"
 #endif
 
+#include "VideoCommon/AbstractGfx.h"
 #include "VideoCommon/AsyncRequests.h"
 #include "VideoCommon/BPStructs.h"
+#include "VideoCommon/BoundingBox.h"
 #include "VideoCommon/CPMemory.h"
 #include "VideoCommon/CommandProcessor.h"
 #include "VideoCommon/Fifo.h"
+#include "VideoCommon/FrameDumper.h"
+#include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/GeometryShaderManager.h"
+#include "VideoCommon/GraphicsModSystem/Runtime/GraphicsModManager.h"
 #include "VideoCommon/IndexGenerator.h"
+#include "VideoCommon/OnScreenDisplay.h"
 #include "VideoCommon/OpcodeDecoding.h"
 #include "VideoCommon/PixelEngine.h"
 #include "VideoCommon/PixelShaderManager.h"
+#include "VideoCommon/Present.h"
 #include "VideoCommon/RenderBase.h"
 #include "VideoCommon/TMEM.h"
 #include "VideoCommon/TextureCacheBase.h"
@@ -58,6 +66,8 @@
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 #include "VideoCommon/VideoState.h"
+#include "VideoCommon/Widescreen.h"
+#include "VideoCommon/XFStateManager.h"
 
 VideoBackendBase* g_video_backend = nullptr;
 
@@ -83,16 +93,18 @@ std::string VideoBackendBase::BadShaderFilename(const char* shader_stage, int co
 
 void VideoBackendBase::Video_ExitLoop()
 {
-  Fifo::ExitGpuLoop();
+  auto& system = Core::System::GetInstance();
+  system.GetFifo().ExitGpuLoop();
 }
 
 // Run from the CPU thread (from VideoInterface.cpp)
 void VideoBackendBase::Video_OutputXFB(u32 xfb_addr, u32 fb_width, u32 fb_stride, u32 fb_height,
                                        u64 ticks)
 {
-  if (m_initialized && g_renderer && !g_ActiveConfig.bImmediateXFB)
+  if (m_initialized && g_presenter && !g_ActiveConfig.bImmediateXFB)
   {
-    Fifo::SyncGPU(Fifo::SyncGPUReason::Swap);
+    auto& system = Core::System::GetInstance();
+    system.GetFifo().SyncGPU(Fifo::SyncGPUReason::Swap);
 
     AsyncRequests::Event e;
     e.time = ticks;
@@ -147,7 +159,8 @@ u32 VideoBackendBase::Video_GetQueryResult(PerfQueryType type)
     return 0;
   }
 
-  Fifo::SyncGPU(Fifo::SyncGPUReason::PerfQuery);
+  auto& system = Core::System::GetInstance();
+  system.GetFifo().SyncGPU(Fifo::SyncGPUReason::PerfQuery);
 
   AsyncRequests::Event e;
   e.time = 0;
@@ -161,6 +174,8 @@ u32 VideoBackendBase::Video_GetQueryResult(PerfQueryType type)
 
 u16 VideoBackendBase::Video_GetBoundingBox(int index)
 {
+  DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::READS_BOUNDING_BOX);
+
   if (!g_ActiveConfig.bBBoxEnable)
   {
     static bool warn_once = true;
@@ -185,7 +200,8 @@ u16 VideoBackendBase::Video_GetBoundingBox(int index)
     warn_once = false;
   }
 
-  Fifo::SyncGPU(Fifo::SyncGPUReason::BBox);
+  auto& system = Core::System::GetInstance();
+  system.GetFifo().SyncGPU(Fifo::SyncGPUReason::BBox);
 
   AsyncRequests::Event e;
   u16 result;
@@ -206,10 +222,16 @@ static VideoBackendBase* GetDefaultVideoBackend()
   return backends.front().get();
 }
 
-std::string VideoBackendBase::GetDefaultBackendName()
+std::string VideoBackendBase::GetDefaultBackendConfigName()
 {
   auto* default_backend = GetDefaultVideoBackend();
   return default_backend ? default_backend->GetName() : "";
+}
+
+std::string VideoBackendBase::GetDefaultBackendDisplayName()
+{
+  auto* const default_backend = GetDefaultVideoBackend();
+  return default_backend ? default_backend->GetDisplayName() : "";
 }
 
 const std::vector<std::unique_ptr<VideoBackendBase>>& VideoBackendBase::GetAvailableBackends()
@@ -217,23 +239,24 @@ const std::vector<std::unique_ptr<VideoBackendBase>>& VideoBackendBase::GetAvail
   static auto s_available_backends = [] {
     std::vector<std::unique_ptr<VideoBackendBase>> backends;
 
-    // OGL > D3D11 > D3D12 > Vulkan > SW > Null
-    // On macOS, we prefer Vulkan over OpenGL due to OpenGL support being deprecated by Apple.
-#ifdef HAS_OPENGL
-    backends.push_back(std::make_unique<OGL::VideoBackend>());
-#endif
 #ifdef _WIN32
     backends.push_back(std::make_unique<DX11::VideoBackend>());
     backends.push_back(std::make_unique<DX12::VideoBackend>());
 #endif
+#ifdef HAS_OPENGL
+    backends.push_back(std::make_unique<OGL::VideoBackend>());
+#endif
 #ifdef HAS_VULKAN
 #ifdef __APPLE__
     // Emplace the Vulkan backend at the beginning so it takes precedence over OpenGL.
+    // On macOS, we prefer Vulkan over OpenGL due to OpenGL support being deprecated by Apple.
     backends.emplace(backends.begin(), std::make_unique<Vulkan::VideoBackend>());
-    backends.push_back(std::make_unique<Metal::VideoBackend>());
 #else
     backends.push_back(std::make_unique<Vulkan::VideoBackend>());
 #endif
+#endif
+#ifdef __APPLE__
+    backends.emplace(backends.begin(), std::make_unique<Metal::VideoBackend>());
 #endif
 #ifdef HAS_OPENGL
     backends.push_back(std::make_unique<SW::VideoSoftware>());
@@ -265,30 +288,29 @@ void VideoBackendBase::ActivateBackend(const std::string& name)
   g_video_backend = iter->get();
 }
 
-void VideoBackendBase::PopulateBackendInfo()
+void VideoBackendBase::PopulateBackendInfo(const WindowSystemInfo& wsi)
 {
+  // If the core has been initialized, the backend info will have been populated already. Doing it
+  // again would be unnecessary and could cause the UI thread to race with the GPU thread.
+  if (!Core::IsUninitialized(Core::System::GetInstance()))
+    return;
+
   g_Config.Refresh();
   // Reset backend_info so if the backend forgets to initialize something it doesn't end up using
   // a value from the previously used renderer
   g_Config.backend_info = {};
   ActivateBackend(Config::Get(Config::MAIN_GFX_BACKEND));
-  g_video_backend->InitBackendInfo();
+  g_Config.backend_info.DisplayName = g_video_backend->GetDisplayName();
+  g_video_backend->InitBackendInfo(wsi);
   // We validate the config after initializing the backend info, as system-specific settings
   // such as anti-aliasing, or the selected adapter may be invalid, and should be checked.
   g_Config.VerifyValidity();
 }
 
-void VideoBackendBase::PopulateBackendInfoFromUI()
-{
-  // If the core is running, the backend info will have been populated already.
-  // If we did it here, the UI thread can race with the with the GPU thread.
-  if (!Core::IsRunning())
-    PopulateBackendInfo();
-}
-
 void VideoBackendBase::DoState(PointerWrap& p)
 {
-  if (!Core::System::GetInstance().IsDualCoreMode())
+  auto& system = Core::System::GetInstance();
+  if (!system.IsDualCoreMode())
   {
     VideoCommon_DoState(p);
     return;
@@ -301,36 +323,115 @@ void VideoBackendBase::DoState(PointerWrap& p)
 
   // Let the GPU thread sleep after loading the state, so we're not spinning if paused after loading
   // a state. The next GP burst will wake it up again.
-  Fifo::GpuMaySleep();
+  system.GetFifo().GpuMaySleep();
 }
 
-void VideoBackendBase::InitializeShared()
+bool VideoBackendBase::InitializeShared(std::unique_ptr<AbstractGfx> gfx,
+                                        std::unique_ptr<VertexManagerBase> vertex_manager,
+                                        std::unique_ptr<PerfQueryBase> perf_query,
+                                        std::unique_ptr<BoundingBox> bounding_box)
+{
+  // All hardware backends use the default RendererBase and TextureCacheBase.
+  // Only Null and Software backends override them
+
+  return InitializeShared(std::move(gfx), std::move(vertex_manager), std::move(perf_query),
+                          std::move(bounding_box), std::make_unique<Renderer>(),
+                          std::make_unique<TextureCacheBase>());
+}
+
+bool VideoBackendBase::InitializeShared(std::unique_ptr<AbstractGfx> gfx,
+                                        std::unique_ptr<VertexManagerBase> vertex_manager,
+                                        std::unique_ptr<PerfQueryBase> perf_query,
+                                        std::unique_ptr<BoundingBox> bounding_box,
+                                        std::unique_ptr<Renderer> renderer,
+                                        std::unique_ptr<TextureCacheBase> texture_cache)
 {
   memset(reinterpret_cast<u8*>(&g_main_cp_state), 0, sizeof(g_main_cp_state));
   memset(reinterpret_cast<u8*>(&g_preprocess_cp_state), 0, sizeof(g_preprocess_cp_state));
-  memset(texMem, 0, TMEM_SIZE);
+  s_tex_mem.fill(0);
 
   // do not initialize again for the config window
   m_initialized = true;
 
-  CommandProcessor::Init();
-  Fifo::Init();
-  PixelEngine::Init();
+  g_gfx = std::move(gfx);
+  g_vertex_manager = std::move(vertex_manager);
+  g_perf_query = std::move(perf_query);
+  g_bounding_box = std::move(bounding_box);
+
+  // Null and Software Backends supply their own derived Renderer and Texture Cache
+  g_texture_cache = std::move(texture_cache);
+  g_renderer = std::move(renderer);
+
+  g_presenter = std::make_unique<VideoCommon::Presenter>();
+  g_frame_dumper = std::make_unique<FrameDumper>();
+  g_framebuffer_manager = std::make_unique<FramebufferManager>();
+  g_shader_cache = std::make_unique<VideoCommon::ShaderCache>();
+  g_graphics_mod_manager = std::make_unique<GraphicsModManager>();
+  g_widescreen = std::make_unique<WidescreenManager>();
+
+  if (!g_vertex_manager->Initialize() || !g_shader_cache->Initialize() ||
+      !g_perf_query->Initialize() || !g_presenter->Initialize() ||
+      !g_framebuffer_manager->Initialize() || !g_texture_cache->Initialize() ||
+      (g_ActiveConfig.backend_info.bSupportsBBox && !g_bounding_box->Initialize()) ||
+      !g_graphics_mod_manager->Initialize())
+  {
+    PanicAlertFmtT("Failed to initialize renderer classes");
+    Shutdown();
+    return false;
+  }
+
+  auto& system = Core::System::GetInstance();
+  auto& command_processor = system.GetCommandProcessor();
+  command_processor.Init();
+  system.GetFifo().Init();
+  system.GetPixelEngine().Init();
   BPInit();
   VertexLoaderManager::Init();
-  VertexShaderManager::Init();
-  GeometryShaderManager::Init();
-  PixelShaderManager::Init();
+  system.GetVertexShaderManager().Init();
+  system.GetGeometryShaderManager().Init();
+  system.GetPixelShaderManager().Init();
+  system.GetXFStateManager().Init();
   TMEM::Init();
 
   g_Config.VerifyValidity();
   UpdateActiveConfig();
+
+  if (g_Config.bDumpTextures)
+  {
+    OSD::AddMessage(fmt::format("Texture Dumping is enabled. This will reduce performance."),
+                    OSD::Duration::NORMAL);
+  }
+
+  g_shader_cache->InitializeShaderCache();
+
+  return true;
 }
 
 void VideoBackendBase::ShutdownShared()
 {
+  g_frame_dumper.reset();
+  g_presenter.reset();
+
+  if (g_shader_cache)
+    g_shader_cache->Shutdown();
+  if (g_texture_cache)
+    g_texture_cache->Shutdown();
+
+  g_bounding_box.reset();
+  g_perf_query.reset();
+  g_graphics_mod_manager.reset();
+  g_texture_cache.reset();
+  g_framebuffer_manager.reset();
+  g_shader_cache.reset();
+  g_vertex_manager.reset();
+  g_renderer.reset();
+  g_widescreen.reset();
+  g_presenter.reset();
+  g_gfx.reset();
+
   m_initialized = false;
 
+  auto& system = Core::System::GetInstance();
   VertexLoaderManager::Clear();
-  Fifo::Shutdown();
+  system.GetFifo().Shutdown();
 }

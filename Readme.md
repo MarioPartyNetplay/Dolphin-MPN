@@ -1,6 +1,6 @@
 # Dolphin - A GameCube and Wii Emulator
 
-[Homepage](https://dolphin-emu.org/) | [Project Site](https://github.com/dolphin-emu/dolphin) | [Buildbot](https://dolphin.ci) | [Forums](https://forums.dolphin-emu.org) | [Wiki](https://wiki.dolphin-emu.org) | [Github Wiki](https://github.com/dolphin-emu/dolphin/wiki) | [Issue Tracker](https://bugs.dolphin-emu.org/projects/emulator/issues) | [Coding Style](https://github.com/dolphin-emu/dolphin/blob/master/Contributing.md) | [Transifex Page](https://www.transifex.com/projects/p/dolphin-emu)
+[Homepage](https://dolphin-emu.org/) | [Project Site](https://github.com/dolphin-emu/dolphin) | [Buildbot](https://dolphin.ci/) | [Forums](https://forums.dolphin-emu.org/) | [Wiki](https://wiki.dolphin-emu.org/) | [GitHub Wiki](https://github.com/dolphin-emu/dolphin/wiki) | [Issue Tracker](https://bugs.dolphin-emu.org/projects/emulator/issues) | [Coding Style](https://github.com/dolphin-emu/dolphin/blob/master/Contributing.md) | [Transifex Page](https://app.transifex.com/dolphinemu/dolphin-emu/dashboard/) | [Analytics](https://mon.dolphin-emu.org/)
 
 Dolphin is an emulator for running GameCube and Wii games on Windows,
 Linux, macOS, and recent Android devices. It's licensed under the terms
@@ -13,9 +13,9 @@ Please read the [FAQ](https://dolphin-emu.org/docs/faq/) before using Dolphin.
 ### Desktop
 
 * OS
-    * Windows (10 or higher).
+    * Windows (10 1703 or higher).
     * Linux.
-    * macOS (10.14 Mojave or higher).
+    * macOS (10.15 Catalina or higher).
     * Unix-like systems other than Linux are not officially supported but might work.
 * Processor
     * A CPU with SSE2 support.
@@ -39,13 +39,14 @@ Dolphin can only be installed on devices that satisfy the above requirements. At
 ## Building for Windows
 
 Use the solution file `Source/dolphin-emu.sln` to build Dolphin on Windows.
-Visual Studio 2022 17.2.3 or later is a hard requirement. Other compilers might be
-able to build Dolphin on Windows but have not been tested and are not
-recommended to be used. Git and Windows 11 SDK must be installed when building.
+Dolphin targets the latest MSVC shipped with Visual Studio or Build Tools.
+Other compilers might be able to build Dolphin on Windows but have not been
+tested and are not recommended to be used. Git and latest Windows SDK must be
+installed when building.
 
 Make sure to pull submodules before building:
 ```sh
-git submodule update --init
+git submodule update --init --recursive
 ```
 
 The "Release" solution configuration includes performance optimizations for the best user experience but complicates debugging Dolphin.
@@ -53,14 +54,16 @@ The "Debug" solution configuration is significantly slower, more verbose and les
 
 ## Building for Linux and macOS
 
-Dolphin requires [CMake](https://cmake.org/) for systems other than Windows. Many libraries are
-bundled with Dolphin and used if they're not installed on your system. CMake
-will inform you if a bundled library is used or if you need to install any
-missing packages yourself. You may refer to the [wiki](https://github.com/dolphin-emu/dolphin/wiki/Building-for-Linux) for more information.
+Dolphin requires [CMake](https://cmake.org/) for systems other than Windows. 
+You need a recent version of GCC or Clang with decent c++20 support. CMake will
+inform you if your compiler is too old.
+Many libraries are bundled with Dolphin and used if they're not installed on 
+your system. CMake will inform you if a bundled library is used or if you need
+to install any missing packages yourself. You may refer to the [wiki](https://github.com/dolphin-emu/dolphin/wiki/Building-for-Linux) for more information.
 
 Make sure to pull submodules before building:
 ```sh
-git submodule update --init
+git submodule update --init --recursive
 ```
 
 ### macOS Build Steps:
@@ -125,7 +128,7 @@ Android dev environment set up, see [AndroidSetup.md](AndroidSetup.md).
 
 Make sure to pull submodules before building:
 ```sh
-git submodule update --init
+git submodule update --init --recursive
 ```
 
 If using Android Studio, import the Gradle project located in `./Source/Android`.
@@ -148,7 +151,8 @@ Additionally, you'll want to remove the global user directory if you don't plan 
 
 ## Command Line Usage
 
-```Usage: Dolphin.exe [options]... [FILE]...
+```
+Usage: Dolphin.exe [options]... [FILE]...
 
 Options:
   --version             show program's version number and exit
@@ -189,10 +193,11 @@ is intended for debugging purposes only.
 ```
 usage: dolphin-tool COMMAND -h
 
-commands supported: [convert, verify, header]
+commands supported: [convert, verify, header, extract]
 ```
 
-```Usage: convert [options]... [FILE]...
+```
+Usage: convert [options]... [FILE]...
 
 Options:
   -h, --help            show this help message and exit
@@ -229,7 +234,7 @@ Options:
                         Path to disc image FILE.
   -a ALGORITHM, --algorithm=ALGORITHM
                         Optional. Compute and print the digest using the
-                        selected algorithm, then exit. [crc32|md5|sha1]
+                        selected algorithm, then exit. [crc32|md5|sha1|rchash]
 ```
 
 ```
@@ -246,4 +251,23 @@ then exit.
   -l, --compression_level
                         Optional. Print the level of compression for WIA/RVZ
                         formats, then exit.
+```
+
+```
+Usage: extract [options]...
+
+Options:
+  -h, --help            show this help message and exit
+  -i FILE, --input=FILE
+                        Path to disc image FILE.
+  -o FOLDER, --output=FOLDER
+                        Path to the destination FOLDER.
+  -p PARTITION, --partition=PARTITION
+                        Which specific partition you want to extract.
+  -s SINGLE, --single=SINGLE
+                        Which specific file/directory you want to extract.
+  -l, --list            List all files in volume/partition. Will print the
+                        directory/file specified with --single if defined.
+  -q, --quiet           Mute all messages except for errors.
+  -g, --gameonly        Only extracts the DATA partition.
 ```

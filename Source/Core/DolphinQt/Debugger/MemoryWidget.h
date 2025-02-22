@@ -9,6 +9,7 @@
 #include <QDockWidget>
 
 #include "Common/CommonTypes.h"
+#include "VideoCommon/VideoEvents.h"
 
 class MemoryViewWidget;
 class QCheckBox;
@@ -20,17 +21,22 @@ class QRadioButton;
 class QShowEvent;
 class QSplitter;
 
+namespace Core
+{
+class System;
+class CPUThreadGuard;
+}  // namespace Core
+
 class MemoryWidget : public QDockWidget
 {
   Q_OBJECT
 public:
-  explicit MemoryWidget(QWidget* parent = nullptr);
+  explicit MemoryWidget(Core::System& system, QWidget* parent = nullptr);
   ~MemoryWidget();
 
   void SetAddress(u32 address);
   void Update();
 signals:
-  void BreakpointsChanged();
   void ShowCode(u32 address);
   void RequestWatch(QString name, u32 address);
 
@@ -71,11 +77,17 @@ private:
   void FindValue(bool next);
 
   void closeEvent(QCloseEvent*) override;
+  void hideEvent(QHideEvent* event) override;
   void showEvent(QShowEvent* event) override;
+  void RegisterAfterFrameEventCallback();
+  void RemoveAfterFrameEventCallback();
+  void AutoUpdateTable();
+
+  Core::System& m_system;
 
   MemoryViewWidget* m_memory_view;
   QSplitter* m_splitter;
-  QLineEdit* m_search_address;
+  QComboBox* m_search_address;
   QLineEdit* m_search_offset;
   QLineEdit* m_data_edit;
   QCheckBox* m_base_check;
@@ -85,11 +97,6 @@ private:
   QComboBox* m_row_length_combo;
   QCheckBox* m_dual_check;
   QPushButton* m_set_value;
-  QPushButton* m_from_file;
-  QPushButton* m_dump_mram;
-  QPushButton* m_dump_exram;
-  QPushButton* m_dump_aram;
-  QPushButton* m_dump_fake_vmem;
 
   // Search
   QPushButton* m_find_next;
@@ -107,4 +114,7 @@ private:
   QRadioButton* m_bp_read_only;
   QRadioButton* m_bp_write_only;
   QCheckBox* m_bp_log_check;
+  Common::EventHook m_vi_end_field_event;
+
+  bool m_auto_update_enabled = true;
 };

@@ -1,15 +1,16 @@
 // Copyright 2017 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "Common/Crypto/AES.h"
+
 #include <array>
+#include <bit>
 #include <memory>
 
 #include <mbedtls/aes.h>
 
 #include "Common/Assert.h"
-#include "Common/BitUtils.h"
 #include "Common/CPUDetect.h"
-#include "Common/Crypto/AES.h"
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -250,7 +251,19 @@ public:
   }
 
 private:
-  std::array<__m128i, NUM_ROUND_KEYS> round_keys;
+  // Ensures alignment specifiers are respected.
+  struct XmmReg
+  {
+    __m128i data;
+
+    XmmReg& operator=(const __m128i& m)
+    {
+      data = m;
+      return *this;
+    }
+    operator __m128i() const { return data; }
+  };
+  std::array<XmmReg, NUM_ROUND_KEYS> round_keys;
 };
 
 #endif
@@ -294,7 +307,7 @@ public:
     {
       const uint8x16_t enc = vaeseq_u8(vreinterpretq_u8_u32(vmovq_n_u32(rk[i + 3])), vmovq_n_u8(0));
       const u32 temp = vgetq_lane_u32(vreinterpretq_u32_u8(enc), 0);
-      rk[i + 4] = rk[i + 0] ^ Common::RotateRight(temp, 8) ^ rcon[i / Nk];
+      rk[i + 4] = rk[i + 0] ^ std::rotr(temp, 8) ^ rcon[i / Nk];
       rk[i + 5] = rk[i + 4] ^ rk[i + 1];
       rk[i + 6] = rk[i + 5] ^ rk[i + 2];
       rk[i + 7] = rk[i + 6] ^ rk[i + 3];
@@ -406,6 +419,23 @@ std::unique_ptr<Context> CreateContextEncrypt(const u8* key)
 std::unique_ptr<Context> CreateContextDecrypt(const u8* key)
 {
   return CreateContext<Mode::Decrypt>(key);
+}
+
+// OFB encryption and decryption are the exact same. We don't encrypt though.
+void CryptOFB(const u8* key, const u8* iv, u8* iv_out, const u8* buf_in, u8* buf_out, size_t size)
+{
+  mbedtls_aes_context aes_ctx;
+  size_t iv_offset = 0;
+
+  std::array<u8, 16> iv_tmp{};
+  if (iv)
+    std::memcpy(&iv_tmp[0], iv, 16);
+
+  ASSERT(!mbedtls_aes_setkey_enc(&aes_ctx, key, 128));
+  mbedtls_aes_crypt_ofb(&aes_ctx, size, &iv_offset, &iv_tmp[0], buf_in, buf_out);
+
+  if (iv_out)
+    std::memcpy(iv_out, &iv_tmp[0], 16);
 }
 
 }  // namespace Common::AES

@@ -23,6 +23,7 @@
 class PointerWrap;
 struct libusb_device;
 struct libusb_device_handle;
+struct libusb_device_descriptor;
 struct libusb_transfer;
 
 namespace IOS::HLE
@@ -42,7 +43,7 @@ using linkkey_t = std::array<u8, 16>;
 class BluetoothRealDevice final : public BluetoothBaseDevice
 {
 public:
-  BluetoothRealDevice(Kernel& ios, const std::string& device_name);
+  BluetoothRealDevice(EmulationKernel& ios, const std::string& device_name);
   ~BluetoothRealDevice() override;
 
   std::optional<IPCReply> Open(const OpenRequest& request) override;
@@ -116,7 +117,7 @@ private:
   void LoadLinkKeys();
   void SaveLinkKeys();
 
-  bool OpenDevice(libusb_device* device);
+  bool OpenDevice(const libusb_device_descriptor& device_descriptor, libusb_device* device);
 };
 }  // namespace IOS::HLE
 

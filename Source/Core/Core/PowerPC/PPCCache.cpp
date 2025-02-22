@@ -3,6 +3,7 @@
 
 #include "Core/PowerPC/PPCCache.h"
 
+#include <algorithm>
 #include <array>
 
 #include "Common/ChunkFile.h"
@@ -12,6 +13,7 @@
 #include "Core/HW/Memmap.h"
 #include "Core/PowerPC/JitInterface.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/System.h"
 
 namespace PowerPC
 {
@@ -93,164 +95,324 @@ InstructionCache::~InstructionCache()
     Config::RemoveConfigChangedCallback(*m_config_callback_id);
 }
 
-void InstructionCache::Reset()
+void Cache::Reset()
 {
   valid.fill(0);
   plru.fill(0);
-  lookup_table.fill(0xFF);
-  lookup_table_ex.fill(0xFF);
-  lookup_table_vmem.fill(0xFF);
-  JitInterface::ClearSafe();
+  modified.fill(0);
+  std::ranges::fill(lookup_table, 0xFF);
+  std::ranges::fill(lookup_table_ex, 0xFF);
+  std::ranges::fill(lookup_table_vmem, 0xFF);
 }
 
-void InstructionCache::Init()
+void InstructionCache::Reset(JitInterface& jit_interface)
+{
+  Cache::Reset();
+  jit_interface.ClearSafe();
+}
+
+void Cache::Init(Memory::MemoryManager& memory)
+{
+  data.fill({});
+  addrs.fill({});
+  lookup_table.resize(memory.GetRamSize() >> 5);
+  lookup_table_ex.resize(memory.GetExRamSize() >> 5);
+  lookup_table_vmem.resize(memory.GetFakeVMemSize() >> 5);
+  Reset();
+}
+
+void InstructionCache::Init(Memory::MemoryManager& memory)
 {
   if (!m_config_callback_id)
     m_config_callback_id = Config::AddConfigChangedCallback([this] { RefreshConfig(); });
   RefreshConfig();
 
-  data.fill({});
-  tags.fill({});
+  Cache::Init(memory);
+}
+
+void Cache::Store(Memory::MemoryManager& memory, u32 addr)
+{
+  auto [set, way] = GetCache(memory, addr, true);
+
+  if (way == 0xff)
+    return;
+
+  if (valid[set] & (1U << way) && modified[set] & (1U << way))
+    memory.CopyToEmu((addr & ~0x1f), data[set][way].data(), 32);
+  modified[set] &= ~(1U << way);
+}
+
+void Cache::FlushAll(Memory::MemoryManager& memory)
+{
+  for (size_t set = 0; set < CACHE_SETS; set++)
+  {
+    for (size_t way = 0; way < CACHE_WAYS; way++)
+    {
+      if (valid[set] & (1U << way) && modified[set] & (1U << way))
+        memory.CopyToEmu(addrs[set][way], data[set][way].data(), 32);
+    }
+  }
+
   Reset();
 }
 
-void InstructionCache::Invalidate(u32 addr)
+void Cache::Invalidate(Memory::MemoryManager& memory, u32 addr)
 {
-  if (!HID0.ICE || m_disable_icache)
+  auto [set, way] = GetCache(memory, addr, true);
+
+  if (way == 0xff)
     return;
 
-  // Invalidates the whole set
-  const u32 set = (addr >> 5) & 0x7f;
-  for (size_t i = 0; i < 8; i++)
+  if (valid[set] & (1U << way))
   {
-    if (valid[set] & (1U << i))
-    {
-      if (tags[set][i] & (ICACHE_VMEM_BIT >> 12))
-        lookup_table_vmem[((tags[set][i] << 7) | set) & 0xfffff] = 0xff;
-      else if (tags[set][i] & (ICACHE_EXRAM_BIT >> 12))
-        lookup_table_ex[((tags[set][i] << 7) | set) & 0x1fffff] = 0xff;
-      else
-        lookup_table[((tags[set][i] << 7) | set) & 0xfffff] = 0xff;
-    }
+    if (addrs[set][way] & CACHE_VMEM_BIT)
+      lookup_table_vmem[(addrs[set][way] & memory.GetFakeVMemMask()) >> 5] = 0xff;
+    else if (addrs[set][way] & CACHE_EXRAM_BIT)
+      lookup_table_ex[(addrs[set][way] & memory.GetExRamMask()) >> 5] = 0xff;
+    else
+      lookup_table[(addrs[set][way] & memory.GetRamMask()) >> 5] = 0xff;
+
+    valid[set] &= ~(1U << way);
+    modified[set] &= ~(1U << way);
   }
-  valid[set] = 0;
-  JitInterface::InvalidateICacheLine(addr);
 }
 
-u32 InstructionCache::ReadInstruction(u32 addr)
+void Cache::Flush(Memory::MemoryManager& memory, u32 addr)
 {
-  if (!HID0.ICE || m_disable_icache)  // instruction cache is disabled
-    return Memory::Read_U32(addr);
-  u32 set = (addr >> 5) & 0x7f;
-  u32 tag = addr >> 12;
+  auto [set, way] = GetCache(memory, addr, true);
 
-  u32 t;
-  if (addr & ICACHE_VMEM_BIT)
+  if (way == 0xff)
+    return;
+
+  if (valid[set] & (1U << way))
   {
-    t = lookup_table_vmem[(addr >> 5) & 0xfffff];
+    if (modified[set] & (1U << way))
+      memory.CopyToEmu((addr & ~0x1f), data[set][way].data(), 32);
+
+    if (addrs[set][way] & CACHE_VMEM_BIT)
+      lookup_table_vmem[(addrs[set][way] & memory.GetFakeVMemMask()) >> 5] = 0xff;
+    else if (addrs[set][way] & CACHE_EXRAM_BIT)
+      lookup_table_ex[(addrs[set][way] & memory.GetExRamMask()) >> 5] = 0xff;
+    else
+      lookup_table[(addrs[set][way] & memory.GetRamMask()) >> 5] = 0xff;
+
+    valid[set] &= ~(1U << way);
+    modified[set] &= ~(1U << way);
   }
-  else if (addr & ICACHE_EXRAM_BIT)
+}
+
+void Cache::Touch(Memory::MemoryManager& memory, u32 addr, bool store)
+{
+  GetCache(memory, addr, false);
+}
+
+std::pair<u32, u32> Cache::GetCache(Memory::MemoryManager& memory, u32 addr, bool locked)
+{
+  addr &= ~31;
+  u32 set = (addr >> 5) & 0x7f;
+  u32 way;
+
+  if (addr & CACHE_VMEM_BIT)
   {
-    t = lookup_table_ex[(addr >> 5) & 0x1fffff];
+    way = lookup_table_vmem[(addr & memory.GetFakeVMemMask()) >> 5];
+  }
+  else if (addr & CACHE_EXRAM_BIT)
+  {
+    way = lookup_table_ex[(addr & memory.GetExRamMask()) >> 5];
   }
   else
   {
-    t = lookup_table[(addr >> 5) & 0xfffff];
+    way = lookup_table[(addr & memory.GetRamMask()) >> 5];
   }
 
-  if (t == 0xff)  // load to the cache
+  // load to the cache
+  if (!locked && way == 0xff)
   {
-    if (HID0.ILOCK)  // instruction cache is locked
-      return Memory::Read_U32(addr);
     // select a way
     if (valid[set] != 0xff)
-      t = s_way_from_valid[valid[set]];
+      way = s_way_from_valid[valid[set]];
     else
-      t = s_way_from_plru[plru[set]];
-    // load
-    Memory::CopyFromEmu(reinterpret_cast<u8*>(data[set][t].data()), (addr & ~0x1f), 32);
-    if (valid[set] & (1 << t))
+      way = s_way_from_plru[plru[set]];
+
+    if (valid[set] & (1 << way))
     {
-      if (tags[set][t] & (ICACHE_VMEM_BIT >> 12))
-        lookup_table_vmem[((tags[set][t] << 7) | set) & 0xfffff] = 0xff;
-      else if (tags[set][t] & (ICACHE_EXRAM_BIT >> 12))
-        lookup_table_ex[((tags[set][t] << 7) | set) & 0x1fffff] = 0xff;
+      // store the cache back to main memory
+      if (modified[set] & (1 << way))
+        memory.CopyToEmu(addrs[set][way], data[set][way].data(), 32);
+
+      if (addrs[set][way] & CACHE_VMEM_BIT)
+        lookup_table_vmem[(addrs[set][way] & memory.GetFakeVMemMask()) >> 5] = 0xff;
+      else if (addrs[set][way] & CACHE_EXRAM_BIT)
+        lookup_table_ex[(addrs[set][way] & memory.GetExRamMask()) >> 5] = 0xff;
       else
-        lookup_table[((tags[set][t] << 7) | set) & 0xfffff] = 0xff;
+        lookup_table[(addrs[set][way] & memory.GetRamMask()) >> 5] = 0xff;
     }
 
-    if (addr & ICACHE_VMEM_BIT)
-      lookup_table_vmem[(addr >> 5) & 0xfffff] = t;
-    else if (addr & ICACHE_EXRAM_BIT)
-      lookup_table_ex[(addr >> 5) & 0x1fffff] = t;
+    // load
+    memory.CopyFromEmu(data[set][way].data(), (addr & ~0x1f), 32);
+
+    if (addr & CACHE_VMEM_BIT)
+      lookup_table_vmem[(addr & memory.GetFakeVMemMask()) >> 5] = way;
+    else if (addr & CACHE_EXRAM_BIT)
+      lookup_table_ex[(addr & memory.GetExRamMask()) >> 5] = way;
     else
-      lookup_table[(addr >> 5) & 0xfffff] = t;
-    tags[set][t] = tag;
-    valid[set] |= (1 << t);
+      lookup_table[(addr & memory.GetRamMask()) >> 5] = way;
+
+    addrs[set][way] = addr;
+    valid[set] |= (1 << way);
+    modified[set] &= ~(1 << way);
   }
+
   // update plru
-  plru[set] = (plru[set] & ~s_plru_mask[t]) | s_plru_value[t];
-  const u32 res = Common::swap32(data[set][t][(addr >> 2) & 7]);
-  const u32 inmem = Memory::Read_U32(addr);
-  if (res != inmem)
-  {
-    INFO_LOG_FMT(POWERPC,
-                 "ICache read at {:08x} returned stale data: CACHED: {:08x} vs. RAM: {:08x}", addr,
-                 res, inmem);
-    DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::ICACHE_MATTERS);
-  }
-  return res;
+  if (way != 0xff)
+    plru[set] = (plru[set] & ~s_plru_mask[way]) | s_plru_value[way];
+
+  return {set, way};
 }
 
-void InstructionCache::DoState(PointerWrap& p)
+void Cache::Read(Memory::MemoryManager& memory, u32 addr, void* buffer, u32 len, bool locked)
+{
+  auto* value = static_cast<u8*>(buffer);
+
+  while (len > 0)
+  {
+    auto [set, way] = GetCache(memory, addr, locked);
+
+    u32 offset_in_block = addr - (addr & ~31);
+    u32 len_in_block = std::min<u32>(len, ((addr + 32) & ~31) - addr);
+
+    if (way != 0xff)
+    {
+      std::memcpy(value, reinterpret_cast<u8*>(data[set][way].data()) + offset_in_block,
+                  len_in_block);
+    }
+    else
+    {
+      memory.CopyFromEmu(value, addr, len_in_block);
+    }
+
+    addr += len_in_block;
+    len -= len_in_block;
+    value += len_in_block;
+  }
+}
+
+void Cache::Write(Memory::MemoryManager& memory, u32 addr, const void* buffer, u32 len, bool locked)
+{
+  auto* value = static_cast<const u8*>(buffer);
+
+  while (len > 0)
+  {
+    auto [set, way] = GetCache(memory, addr, locked);
+
+    u32 offset_in_block = addr - (addr & ~31);
+    u32 len_in_block = std::min<u32>(len, ((addr + 32) & ~31) - addr);
+
+    if (way != 0xff)
+    {
+      std::memcpy(reinterpret_cast<u8*>(data[set][way].data()) + offset_in_block, value,
+                  len_in_block);
+      modified[set] |= (1 << way);
+    }
+    else
+    {
+      memory.CopyToEmu(addr, value, len_in_block);
+    }
+
+    addr += len_in_block;
+    len -= len_in_block;
+    value += len_in_block;
+  }
+}
+
+void Cache::DoState(Memory::MemoryManager& memory, PointerWrap& p)
 {
   if (p.IsReadMode())
   {
     // Clear valid parts of the lookup tables (this is done instead of using fill(0xff) to avoid
     // loading the entire 4MB of tables into cache)
-    for (u32 set = 0; set < ICACHE_SETS; set++)
+    for (u32 set = 0; set < CACHE_SETS; set++)
     {
-      for (u32 way = 0; way < ICACHE_WAYS; way++)
+      for (u32 way = 0; way < CACHE_WAYS; way++)
       {
         if ((valid[set] & (1 << way)) != 0)
         {
-          const u32 addr = (tags[set][way] << 12) | (set << 5);
-          if (addr & ICACHE_VMEM_BIT)
-            lookup_table_vmem[(addr >> 5) & 0xfffff] = 0xff;
-          else if (addr & ICACHE_EXRAM_BIT)
-            lookup_table_ex[(addr >> 5) & 0x1fffff] = 0xff;
+          if (addrs[set][way] & CACHE_VMEM_BIT)
+            lookup_table_vmem[(addrs[set][way] & memory.GetFakeVMemMask()) >> 5] = 0xff;
+          else if (addrs[set][way] & CACHE_EXRAM_BIT)
+            lookup_table_ex[(addrs[set][way] & memory.GetExRamMask()) >> 5] = 0xff;
           else
-            lookup_table[(addr >> 5) & 0xfffff] = 0xff;
+            lookup_table[(addrs[set][way] & memory.GetRamMask()) >> 5] = 0xff;
         }
       }
     }
   }
 
   p.DoArray(data);
-  p.DoArray(tags);
   p.DoArray(plru);
   p.DoArray(valid);
+  p.DoArray(addrs);
+  p.DoArray(modified);
 
   if (p.IsReadMode())
   {
     // Recompute lookup tables
-    for (u32 set = 0; set < ICACHE_SETS; set++)
+    for (u32 set = 0; set < CACHE_SETS; set++)
     {
-      for (u32 way = 0; way < ICACHE_WAYS; way++)
+      for (u32 way = 0; way < CACHE_WAYS; way++)
       {
         if ((valid[set] & (1 << way)) != 0)
         {
-          const u32 addr = (tags[set][way] << 12) | (set << 5);
-          if (addr & ICACHE_VMEM_BIT)
-            lookup_table_vmem[(addr >> 5) & 0xfffff] = way;
-          else if (addr & ICACHE_EXRAM_BIT)
-            lookup_table_ex[(addr >> 5) & 0x1fffff] = way;
+          if (addrs[set][way] & CACHE_VMEM_BIT)
+            lookup_table_vmem[(addrs[set][way] & memory.GetFakeVMemMask()) >> 5] = way;
+          else if (addrs[set][way] & CACHE_EXRAM_BIT)
+            lookup_table_ex[(addrs[set][way] & memory.GetExRamMask()) >> 5] = way;
           else
-            lookup_table[(addr >> 5) & 0xfffff] = way;
+            lookup_table[(addrs[set][way] & memory.GetRamMask()) >> 5] = way;
         }
       }
     }
   }
+}
+
+u32 InstructionCache::ReadInstruction(Memory::MemoryManager& memory,
+                                      PowerPC::PowerPCState& ppc_state, u32 addr)
+{
+  if (!HID0(ppc_state).ICE || m_disable_icache)  // instruction cache is disabled
+    return memory.Read_U32(addr);
+
+  u32 value;
+  Read(memory, addr, &value, sizeof(value), HID0(ppc_state).ILOCK);
+  return Common::swap32(value);
+}
+
+void InstructionCache::Invalidate(Memory::MemoryManager& memory, JitInterface& jit_interface,
+                                  u32 addr)
+{
+  // Per the 750cl manual, section 3.4.1.5 Instruction Cache Enabling/Disabling (page 137)
+  // and section 3.4.2.6 Instruction Cache Block Invalidate (icbi) (page 140), the icbi
+  // instruction always invalidates, even if the instruction cache is disabled or locked,
+  // and it also invalidates all ways of the corresponding cache set, not just the way corresponding
+  // to the given address.
+  // (However, the icbi instruction's info on page 432 does not include this information)
+  const u32 set = (addr >> 5) & 0x7f;
+  for (size_t way = 0; way < 8; way++)
+  {
+    if (valid[set] & (1U << way))
+    {
+      if (addrs[set][way] & CACHE_VMEM_BIT)
+        lookup_table_vmem[(addrs[set][way] & memory.GetFakeVMemMask()) >> 5] = 0xff;
+      else if (addrs[set][way] & CACHE_EXRAM_BIT)
+        lookup_table_ex[(addrs[set][way] & memory.GetExRamMask()) >> 5] = 0xff;
+      else
+        lookup_table[(addrs[set][way] & memory.GetRamMask()) >> 5] = 0xff;
+    }
+  }
+  valid[set] = 0;
+  modified[set] = 0;
+
+  // Also tell the JIT that the corresponding address has been invalidated
+  jit_interface.InvalidateICacheLine(addr);
 }
 
 void InstructionCache::RefreshConfig()

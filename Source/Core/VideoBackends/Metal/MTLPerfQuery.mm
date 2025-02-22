@@ -46,7 +46,7 @@ u32 Metal::PerfQuery::GetQueryResult(PerfQueryType type)
     result = m_results[PQG_EFB_COPY_CLOCKS].load(std::memory_order_relaxed);
   }
 
-  return result;
+  return result / 4;
 }
 
 void Metal::PerfQuery::FlushResults()
@@ -56,6 +56,7 @@ void Metal::PerfQuery::FlushResults()
 
   // There's a possibility that some active performance queries are unflushed
   g_state_tracker->FlushEncoders();
+  g_state_tracker->NotifyOfCPUGPUSync();
 
   std::unique_lock<std::mutex> lock(m_results_mtx);
   while (!IsFlushed())
@@ -76,8 +77,9 @@ void Metal::PerfQuery::ReturnResults(const u64* data, const PerfQueryGroup* grou
     {
       for (size_t i = 0; i < count; ++i)
       {
-        u64 native_res_result = data[i] * (EFB_WIDTH * EFB_HEIGHT) /
-                                (g_renderer->GetTargetWidth() * g_renderer->GetTargetHeight());
+        u64 native_res_result =
+            data[i] * (EFB_WIDTH * EFB_HEIGHT) /
+            (g_framebuffer_manager->GetEFBWidth() * g_framebuffer_manager->GetEFBHeight());
 
         native_res_result /= g_ActiveConfig.iMultisamples;
 

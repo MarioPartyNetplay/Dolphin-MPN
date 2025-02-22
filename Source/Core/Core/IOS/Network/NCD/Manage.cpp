@@ -11,11 +11,12 @@
 
 #include "Core/HW/Memmap.h"
 #include "Core/IOS/Network/MACUtils.h"
+#include "Core/System.h"
 
 namespace IOS::HLE
 {
-NetNCDManageDevice::NetNCDManageDevice(Kernel& ios, const std::string& device_name)
-    : Device(ios, device_name)
+NetNCDManageDevice::NetNCDManageDevice(EmulationKernel& ios, const std::string& device_name)
+    : EmulationDevice(ios, device_name)
 {
   config.ReadConfig(ios.GetFS().get());
 }
@@ -31,6 +32,9 @@ std::optional<IPCReply> NetNCDManageDevice::IOCtlV(const IOCtlVRequest& request)
   s32 return_value = IPC_SUCCESS;
   u32 common_result = 0;
   u32 common_vector = 0;
+
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
 
   switch (request.request)
   {
@@ -52,7 +56,7 @@ std::optional<IPCReply> NetNCDManageDevice::IOCtlV(const IOCtlVRequest& request)
       // We will just write the value of the file descriptor.
       // The value will be positive so this will work fine.
       m_ipc_fd = request.fd;
-      Memory::Write_U32(request.fd, request.io_vectors[0].address + 4);
+      memory.Write_U32(request.fd, request.io_vectors[0].address + 4);
     }
     break;
 
@@ -67,7 +71,7 @@ std::optional<IPCReply> NetNCDManageDevice::IOCtlV(const IOCtlVRequest& request)
     if (request.io_vectors[0].size < sizeof(u32))
       return IPCReply(IPC_EINVAL);
 
-    const u32 request_handle = Memory::Read_U32(request.in_vectors[0].address);
+    const u32 request_handle = memory.Read_U32(request.in_vectors[0].address);
     if (m_ipc_fd == request_handle)
     {
       m_ipc_fd = 0;
@@ -83,31 +87,31 @@ std::optional<IPCReply> NetNCDManageDevice::IOCtlV(const IOCtlVRequest& request)
 
   case IOCTLV_NCD_GETCONFIG:
     INFO_LOG_FMT(IOS_NET, "NET_NCD_MANAGE: IOCTLV_NCD_GETCONFIG");
-    config.WriteToMem(request.io_vectors.at(0).address);
+    config.WriteToMem(memory, request.io_vectors.at(0).address);
     common_vector = 1;
     break;
 
   case IOCTLV_NCD_SETCONFIG:
     INFO_LOG_FMT(IOS_NET, "NET_NCD_MANAGE: IOCTLV_NCD_SETCONFIG");
-    config.ReadFromMem(request.in_vectors.at(0).address);
+    config.ReadFromMem(memory, request.in_vectors.at(0).address);
     break;
 
   case IOCTLV_NCD_READCONFIG:
     INFO_LOG_FMT(IOS_NET, "NET_NCD_MANAGE: IOCTLV_NCD_READCONFIG");
     config.ReadConfig(m_ios.GetFS().get());
-    config.WriteToMem(request.io_vectors.at(0).address);
+    config.WriteToMem(memory, request.io_vectors.at(0).address);
     break;
 
   case IOCTLV_NCD_WRITECONFIG:
     INFO_LOG_FMT(IOS_NET, "NET_NCD_MANAGE: IOCTLV_NCD_WRITECONFIG");
-    config.ReadFromMem(request.in_vectors.at(0).address);
+    config.ReadFromMem(memory, request.in_vectors.at(0).address);
     config.WriteConfig(m_ios.GetFS().get());
     break;
 
   case IOCTLV_NCD_GETLINKSTATUS:
     INFO_LOG_FMT(IOS_NET, "NET_NCD_MANAGE: IOCTLV_NCD_GETLINKSTATUS");
     // Always connected
-    Memory::Write_U32(Net::ConnectionSettings::LINK_WIRED, request.io_vectors.at(0).address + 4);
+    memory.Write_U32(Net::ConnectionSettings::LINK_WIRED, request.io_vectors.at(0).address + 4);
     break;
 
   case IOCTLV_NCD_GETWIRELESSMACADDRESS:
@@ -115,7 +119,7 @@ std::optional<IPCReply> NetNCDManageDevice::IOCtlV(const IOCtlVRequest& request)
     INFO_LOG_FMT(IOS_NET, "NET_NCD_MANAGE: IOCTLV_NCD_GETWIRELESSMACADDRESS");
 
     const Common::MACAddress address = IOS::Net::GetMACAddress();
-    Memory::CopyToEmu(request.io_vectors.at(1).address, address.data(), address.size());
+    memory.CopyToEmu(request.io_vectors.at(1).address, address.data(), address.size());
     break;
   }
 
@@ -124,10 +128,10 @@ std::optional<IPCReply> NetNCDManageDevice::IOCtlV(const IOCtlVRequest& request)
     break;
   }
 
-  Memory::Write_U32(common_result, request.io_vectors.at(common_vector).address);
+  memory.Write_U32(common_result, request.io_vectors.at(common_vector).address);
   if (common_vector == 1)
   {
-    Memory::Write_U32(common_result, request.io_vectors.at(common_vector).address + 4);
+    memory.Write_U32(common_result, request.io_vectors.at(common_vector).address + 4);
   }
   return IPCReply(return_value);
 }

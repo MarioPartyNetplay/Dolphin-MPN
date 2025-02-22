@@ -19,11 +19,10 @@
 #include <QTimer>
 #include <QWindow>
 
-#include <imgui.h>
-
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
 #include "Core/State.h"
+#include "Core/System.h"
 
 #include "DolphinQt/Host.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
@@ -32,11 +31,13 @@
 
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 
-#include "VideoCommon/RenderBase.h"
+#include "VideoCommon/OnScreenUI.h"
+#include "VideoCommon/Present.h"
 #include "VideoCommon/VideoConfig.h"
 
 #ifdef _WIN32
 #include <Windows.h>
+#include <dwmapi.h>
 #endif
 
 RenderWidget::RenderWidget(QWidget* parent) : QWidget(parent)
@@ -62,14 +63,14 @@ RenderWidget::RenderWidget(QWidget* parent) : QWidget(parent)
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
     if (state == Core::State::Running)
-      SetImGuiKeyMap();
+      SetPresenterKeyMap();
   });
 
   // We have to use Qt::DirectConnection here because we don't want those signals to get queued
   // (which results in them not getting called)
   connect(this, &RenderWidget::StateChanged, Host::GetInstance(), &Host::SetRenderFullscreen,
           Qt::DirectConnection);
-  connect(this, &RenderWidget::HandleChanged, Host::GetInstance(), &Host::SetRenderHandle,
+  connect(this, &RenderWidget::HandleChanged, this, &RenderWidget::OnHandleChanged,
           Qt::DirectConnection);
   connect(this, &RenderWidget::SizeChanged, Host::GetInstance(), &Host::ResizeSurface,
           Qt::DirectConnection);
@@ -130,7 +131,21 @@ void RenderWidget::dropEvent(QDropEvent* event)
     return;
   }
 
-  State::LoadAs(path.toStdString());
+  State::LoadAs(Core::System::GetInstance(), path.toStdString());
+}
+
+void RenderWidget::OnHandleChanged(void* handle)
+{
+  if (handle)
+  {
+#ifdef _WIN32
+    // Remove rounded corners from the render window on Windows 11
+    const DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_DONOTROUND;
+    DwmSetWindowAttribute(reinterpret_cast<HWND>(handle), DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner_preference, sizeof(corner_preference));
+#endif
+  }
+  Host::GetInstance()->SetRenderHandle(handle);
 }
 
 void RenderWidget::OnHideCursorChanged()
@@ -263,7 +278,16 @@ void RenderWidget::SetCursorLocked(bool locked, bool follow_aspect_ratio)
 
     if (ClipCursor(&rect))
 #else
-    // TODO: implement on other platforms. Probably XGrabPointer on Linux.
+    // TODO: Implement on other platforms. XGrabPointer on Linux X11 should be equivalent to
+    // ClipCursor on Windows, though XFixesCreatePointerBarrier and XFixesDestroyPointerBarrier
+    // may also work. On Wayland zwp_pointer_constraints_v1::confine_pointer and
+    // zwp_pointer_constraints_v1::destroy provide this functionality.
+    // More info:
+    // https://stackoverflow.com/a/36269507
+    // https://tronche.com/gui/x/xlib/input/XGrabPointer.html
+    // https://www.x.org/releases/X11R7.7/doc/fixesproto/fixesproto.txt
+    // https://wayland.app/protocols/pointer-constraints-unstable-v1
+
     // The setting is hidden in the UI if not implemented
     if (false)
 #endif
@@ -338,7 +362,7 @@ void RenderWidget::SetWaitingForMessageBox(bool waiting_for_message_box)
 
 bool RenderWidget::event(QEvent* event)
 {
-  PassEventToImGui(event);
+  PassEventToPresenter(event);
 
   switch (event->type())
   {
@@ -397,8 +421,13 @@ bool RenderWidget::event(QEvent* event)
   // Note that this event in Windows is not always aligned to the window that is highlighted,
   // it's the window that has keyboard and mouse focus
   case QEvent::WindowActivate:
-    if (Config::Get(Config::MAIN_PAUSE_ON_FOCUS_LOST) && Core::GetState() == Core::State::Paused)
-      Core::SetState(Core::State::Running);
+    if (m_should_unpause_on_focus &&
+        Core::GetState(Core::System::GetInstance()) == Core::State::Paused)
+    {
+      Core::SetState(Core::System::GetInstance(), Core::State::Running);
+    }
+
+    m_should_unpause_on_focus = false;
 
     UpdateCursor();
 
@@ -419,13 +448,17 @@ bool RenderWidget::event(QEvent* event)
 
     UpdateCursor();
 
-    if (Config::Get(Config::MAIN_PAUSE_ON_FOCUS_LOST) && Core::GetState() == Core::State::Running)
+    if (Config::Get(Config::MAIN_PAUSE_ON_FOCUS_LOST) &&
+        Core::GetState(Core::System::GetInstance()) == Core::State::Running)
     {
       // If we are declared as the CPU or GPU thread, it means that the real CPU or GPU thread
       // is waiting for us to finish showing a panic alert (with that panic alert likely being
       // the cause of this event), so trying to pause the core would cause a deadlock
       if (!Core::IsCPUThread() && !Core::IsGPUThread())
-        Core::SetState(Core::State::Paused);
+      {
+        m_should_unpause_on_focus = true;
+        Core::SetState(Core::System::GetInstance(), Core::State::Paused);
+      }
     }
 
     emit FocusChanged(false);
@@ -433,6 +466,10 @@ bool RenderWidget::event(QEvent* event)
   case QEvent::Move:
     SetCursorLocked(m_cursor_locked);
     break;
+
+  // According to https://bugreports.qt.io/browse/QTBUG-95925 the recommended practice for
+  // handling DPI change is responding to paint events
+  case QEvent::Paint:
   case QEvent::Resize:
   {
     SetCursorLocked(m_cursor_locked);
@@ -442,9 +479,18 @@ bool RenderWidget::event(QEvent* event)
 
     QScreen* screen = window()->windowHandle()->screen();
 
-    const auto dpr = screen->devicePixelRatio();
+    const float dpr = screen->devicePixelRatio();
+    const int width = new_size.width() * dpr;
+    const int height = new_size.height() * dpr;
 
-    emit SizeChanged(new_size.width() * dpr, new_size.height() * dpr);
+    if (m_last_window_width != width || m_last_window_height != height ||
+        m_last_window_scale != dpr)
+    {
+      m_last_window_width = width;
+      m_last_window_height = height;
+      m_last_window_scale = dpr;
+      emit SizeChanged(width, height);
+    }
     break;
   }
   // Happens when we add/remove the widget from the main window instead of the dedicated one
@@ -465,9 +511,9 @@ bool RenderWidget::event(QEvent* event)
   return QWidget::event(event);
 }
 
-void RenderWidget::PassEventToImGui(const QEvent* event)
+void RenderWidget::PassEventToPresenter(const QEvent* event)
 {
-  if (!Core::IsRunningAndStarted())
+  if (!Core::IsRunning(Core::System::GetInstance()))
     return;
 
   switch (event->type())
@@ -482,38 +528,41 @@ void RenderWidget::PassEventToImGui(const QEvent* event)
     const QKeyEvent* key_event = static_cast<const QKeyEvent*>(event);
     const bool is_down = event->type() == QEvent::KeyPress;
     const u32 key = static_cast<u32>(key_event->key() & 0x1FF);
-    auto lock = g_renderer->GetImGuiLock();
-    if (key < std::size(ImGui::GetIO().KeysDown))
-      ImGui::GetIO().KeysDown[key] = is_down;
+
+    const char* chars = nullptr;
+    QByteArray utf8;
 
     if (is_down)
     {
-      auto utf8 = key_event->text().toUtf8();
-      ImGui::GetIO().AddInputCharactersUTF8(utf8.constData());
+      utf8 = key_event->text().toUtf8();
+
+      if (utf8.size())
+        chars = utf8.constData();
     }
+
+    // Pass the key onto Presenter (for the imgui UI)
+    g_presenter->SetKey(key, is_down, chars);
   }
   break;
 
   case QEvent::MouseMove:
   {
-    auto lock = g_renderer->GetImGuiLock();
-
     // Qt multiplies all coordinates by the scaling factor in highdpi mode, giving us "scaled" mouse
     // coordinates (as if the screen was standard dpi). We need to update the mouse position in
     // native coordinates, as the UI (and game) is rendered at native resolution.
     const float scale = devicePixelRatio();
-    ImGui::GetIO().MousePos.x = static_cast<const QMouseEvent*>(event)->pos().x() * scale;
-    ImGui::GetIO().MousePos.y = static_cast<const QMouseEvent*>(event)->pos().y() * scale;
+    float x = static_cast<const QMouseEvent*>(event)->pos().x() * scale;
+    float y = static_cast<const QMouseEvent*>(event)->pos().y() * scale;
+
+    g_presenter->SetMousePos(x, y);
   }
   break;
 
   case QEvent::MouseButtonPress:
   case QEvent::MouseButtonRelease:
   {
-    auto lock = g_renderer->GetImGuiLock();
     const u32 button_mask = static_cast<u32>(static_cast<const QMouseEvent*>(event)->buttons());
-    for (size_t i = 0; i < std::size(ImGui::GetIO().MouseDown); i++)
-      ImGui::GetIO().MouseDown[i] = (button_mask & (1u << i)) != 0;
+    g_presenter->SetMousePress(button_mask);
   }
   break;
 
@@ -522,33 +571,16 @@ void RenderWidget::PassEventToImGui(const QEvent* event)
   }
 }
 
-void RenderWidget::SetImGuiKeyMap()
+void RenderWidget::SetPresenterKeyMap()
 {
-  static constexpr std::array<std::array<int, 2>, 21> key_map{{
-      {ImGuiKey_Tab, Qt::Key_Tab},
-      {ImGuiKey_LeftArrow, Qt::Key_Left},
-      {ImGuiKey_RightArrow, Qt::Key_Right},
-      {ImGuiKey_UpArrow, Qt::Key_Up},
-      {ImGuiKey_DownArrow, Qt::Key_Down},
-      {ImGuiKey_PageUp, Qt::Key_PageUp},
-      {ImGuiKey_PageDown, Qt::Key_PageDown},
-      {ImGuiKey_Home, Qt::Key_Home},
-      {ImGuiKey_End, Qt::Key_End},
-      {ImGuiKey_Insert, Qt::Key_Insert},
-      {ImGuiKey_Delete, Qt::Key_Delete},
-      {ImGuiKey_Backspace, Qt::Key_Backspace},
-      {ImGuiKey_Space, Qt::Key_Space},
-      {ImGuiKey_Enter, Qt::Key_Return},
-      {ImGuiKey_Escape, Qt::Key_Escape},
-      {ImGuiKey_A, Qt::Key_A},
-      {ImGuiKey_C, Qt::Key_C},
-      {ImGuiKey_V, Qt::Key_V},
-      {ImGuiKey_X, Qt::Key_X},
-      {ImGuiKey_Y, Qt::Key_Y},
-      {ImGuiKey_Z, Qt::Key_Z},
-  }};
-  auto lock = g_renderer->GetImGuiLock();
+  static constexpr DolphinKeyMap key_map = {
+      Qt::Key_Tab,    Qt::Key_Left,      Qt::Key_Right, Qt::Key_Up,     Qt::Key_Down,
+      Qt::Key_PageUp, Qt::Key_PageDown,  Qt::Key_Home,  Qt::Key_End,    Qt::Key_Insert,
+      Qt::Key_Delete, Qt::Key_Backspace, Qt::Key_Space, Qt::Key_Return, Qt::Key_Escape,
+      Qt::Key_Enter,  // Keypad enter
+      Qt::Key_A,      Qt::Key_C,         Qt::Key_V,     Qt::Key_X,      Qt::Key_Y,
+      Qt::Key_Z,
+  };
 
-  for (auto [imgui_key, qt_key] : key_map)
-    ImGui::GetIO().KeyMap[imgui_key] = (qt_key & 0x1FF);
+  g_presenter->SetKeyMap(key_map);
 }

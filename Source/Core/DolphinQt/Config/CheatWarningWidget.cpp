@@ -11,6 +11,7 @@
 
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/System.h"
 
 #include "DolphinQt/Settings.h"
 
@@ -22,11 +23,12 @@ CheatWarningWidget::CheatWarningWidget(const std::string& game_id, bool restart_
   ConnectWidgets();
 
   connect(&Settings::Instance(), &Settings::EnableCheatsChanged, this,
-          [this] { Update(Core::IsRunning()); });
-  connect(&Settings::Instance(), &Settings::EmulationStateChanged, this,
-          [this](Core::State state) { Update(state == Core::State::Running); });
+          [this] { Update(Core::IsRunning(Core::System::GetInstance())); });
+  connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
+    Update(state == Core::State::Running || state == Core::State::Paused);
+  });
 
-  Update(Core::IsRunning());
+  Update(Core::IsRunning(Core::System::GetInstance()));
 }
 
 void CheatWarningWidget::CreateWidgets()

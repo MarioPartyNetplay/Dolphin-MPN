@@ -55,14 +55,17 @@ public:
 
   Result<NandStats> GetNandStats() override;
   Result<DirectoryStats> GetDirectoryStats(const std::string& path) override;
+  Result<ExtendedDirectoryStats> GetExtendedDirectoryStats(const std::string& path) override;
 
   void SetNandRedirects(std::vector<NandRedirect> nand_redirects) override;
 
 private:
+  void DoStateWriteOrMeasure(PointerWrap& p, std::string start_directory_path);
+  void DoStateRead(PointerWrap& p, std::string start_directory_path);
+
   struct FstEntry
   {
     bool CheckPermission(Uid uid, Gid gid, Mode requested_mode) const;
-
     std::string name;
     Metadata data{};
     /// Children of this FST entry. Only valid for directories.

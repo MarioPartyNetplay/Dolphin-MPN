@@ -6,6 +6,7 @@
 #include "Common/Assert.h"
 #include "Common/CommonTypes.h"
 #include "VideoCommon/BPMemory.h"
+#include "VideoCommon/ConstantManager.h"
 #include "VideoCommon/LightingShaderGen.h"
 #include "VideoCommon/NativeVertexFormat.h"
 #include "VideoCommon/VertexLoaderManager.h"
@@ -83,6 +84,8 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
   const bool ssaa = host_config.ssaa;
   const bool vertex_rounding = host_config.vertex_rounding;
 
+  ShaderCode input_extract;
+
   out.Write("{}", s_lighting_struct);
 
   // uniforms
@@ -91,6 +94,21 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
   out.Write("{}", s_shader_uniforms);
   out.Write("}};\n");
 
+  if (uid_data->vs_expand != VSExpand::None)
+  {
+    out.Write("UBO_BINDING(std140, 4) uniform GSBlock {{\n");
+    out.Write("{}", s_geometry_shader_uniforms);
+    out.Write("}};\n");
+
+    if (api_type == APIType::D3D)
+    {
+      // D3D doesn't include the base vertex in SV_VertexID
+      out.Write("UBO_BINDING(std140, 5) uniform DX_Constants {{\n"
+                "  uint base_vertex;\n"
+                "}};\n\n");
+    }
+  }
+
   out.Write("struct VS_OUTPUT {{\n");
   GenerateVSOutputMembers(out, api_type, uid_data->numTexGens, host_config, "",
                           ShaderStage::Vertex);
@@ -98,30 +116,113 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
 
   WriteIsNanHeader(out, api_type);
 
-  out.Write("ATTRIBUTE_LOCATION({}) in float4 rawpos;\n", SHADER_POSITION_ATTRIB);
-  if ((uid_data->components & VB_HAS_POSMTXIDX) != 0)
-    out.Write("ATTRIBUTE_LOCATION({}) in uint4 posmtx;\n", SHADER_POSMTX_ATTRIB);
-  if ((uid_data->components & VB_HAS_NORMAL) != 0)
-    out.Write("ATTRIBUTE_LOCATION({}) in float3 rawnormal;\n", SHADER_NORMAL_ATTRIB);
-  if ((uid_data->components & VB_HAS_TANGENT) != 0)
-    out.Write("ATTRIBUTE_LOCATION({}) in float3 rawtangent;\n", SHADER_TANGENT_ATTRIB);
-  if ((uid_data->components & VB_HAS_BINORMAL) != 0)
-    out.Write("ATTRIBUTE_LOCATION({}) in float3 rawbinormal;\n", SHADER_BINORMAL_ATTRIB);
-
-  if ((uid_data->components & VB_HAS_COL0) != 0)
-    out.Write("ATTRIBUTE_LOCATION({}) in float4 rawcolor0;\n", SHADER_COLOR0_ATTRIB);
-  if ((uid_data->components & VB_HAS_COL1) != 0)
-    out.Write("ATTRIBUTE_LOCATION({}) in float4 rawcolor1;\n", SHADER_COLOR1_ATTRIB);
-
-  for (u32 i = 0; i < 8; ++i)
+  if (uid_data->vs_expand == VSExpand::None)
   {
-    const u32 has_texmtx = (uid_data->components & (VB_HAS_TEXMTXIDX0 << i));
+    out.Write("ATTRIBUTE_LOCATION({:s}) in float4 rawpos;\n", ShaderAttrib::Position);
+    if ((uid_data->components & VB_HAS_POSMTXIDX) != 0)
+      out.Write("ATTRIBUTE_LOCATION({:s}) in uint4 posmtx;\n", ShaderAttrib::PositionMatrix);
+    if ((uid_data->components & VB_HAS_NORMAL) != 0)
+      out.Write("ATTRIBUTE_LOCATION({:s}) in float3 rawnormal;\n", ShaderAttrib::Normal);
+    if ((uid_data->components & VB_HAS_TANGENT) != 0)
+      out.Write("ATTRIBUTE_LOCATION({:s}) in float3 rawtangent;\n", ShaderAttrib::Tangent);
+    if ((uid_data->components & VB_HAS_BINORMAL) != 0)
+      out.Write("ATTRIBUTE_LOCATION({:s}) in float3 rawbinormal;\n", ShaderAttrib::Binormal);
 
-    if ((uid_data->components & (VB_HAS_UV0 << i)) != 0 || has_texmtx != 0)
+    if ((uid_data->components & VB_HAS_COL0) != 0)
+      out.Write("ATTRIBUTE_LOCATION({:s}) in float4 rawcolor0;\n", ShaderAttrib::Color0);
+    if ((uid_data->components & VB_HAS_COL1) != 0)
+      out.Write("ATTRIBUTE_LOCATION({:s}) in float4 rawcolor1;\n", ShaderAttrib::Color1);
+
+    for (u32 i = 0; i < 8; ++i)
     {
-      out.Write("ATTRIBUTE_LOCATION({}) in float{} rawtex{};\n", SHADER_TEXTURE0_ATTRIB + i,
-                has_texmtx != 0 ? 3 : 2, i);
+      const u32 has_texmtx = (uid_data->components & (VB_HAS_TEXMTXIDX0 << i));
+
+      if ((uid_data->components & (VB_HAS_UV0 << i)) != 0 || has_texmtx != 0)
+      {
+        out.Write("ATTRIBUTE_LOCATION({:s}) in float{} rawtex{};\n", ShaderAttrib::TexCoord0 + i,
+                  has_texmtx != 0 ? 3 : 2, i);
+      }
     }
+  }
+  else
+  {
+    // Can't use float3, etc because we want 4-byte alignment
+    out.Write(
+        "uint4 unpack_ubyte4(uint value) {{\n"
+        "  return uint4(value & 0xffu, (value >> 8) & 0xffu, (value >> 16) & 0xffu, value >> 24);\n"
+        "}}\n\n"
+        "struct InputData {{\n");
+    if (uid_data->components & VB_HAS_POSMTXIDX)
+    {
+      out.Write("  uint posmtx;\n");
+      input_extract.Write("uint4 posmtx = unpack_ubyte4(i.posmtx);\n");
+    }
+    if (uid_data->position_has_3_elems)
+    {
+      out.Write("  float pos0;\n"
+                "  float pos1;\n"
+                "  float pos2;\n");
+      input_extract.Write("float4 rawpos = float4(i.pos0, i.pos1, i.pos2, 1.0f);\n");
+    }
+    else
+    {
+      out.Write("  float pos0;\n"
+                "  float pos1;\n");
+      input_extract.Write("float4 rawpos = float4(i.pos0, i.pos1, 0.0f, 1.0f);\n");
+    }
+    std::array<std::string_view, 3> names = {"normal", "binormal", "tangent"};
+    for (int i = 0; i < 3; i++)
+    {
+      if (uid_data->components & (VB_HAS_NORMAL << i))
+      {
+        out.Write("  float {0}0;\n"
+                  "  float {0}1;\n"
+                  "  float {0}2;\n",
+                  names[i]);
+        input_extract.Write("float3 raw{0} = float3(i.{0}0, i.{0}1, i.{0}2);\n", names[i]);
+      }
+    }
+    for (int i = 0; i < 2; i++)
+    {
+      if (uid_data->components & (VB_HAS_COL0 << i))
+      {
+        out.Write("  uint color{};\n", i);
+        input_extract.Write("float4 rawcolor{0} = float4(unpack_ubyte4(i.color{0})) / 255.0f;\n",
+                            i);
+      }
+    }
+    for (int i = 0; i < 8; i++)
+    {
+      if (uid_data->components & (VB_HAS_UV0 << i))
+      {
+        u32 ncomponents = (uid_data->texcoord_elem_count >> (2 * i)) & 3;
+        if (ncomponents < 2)
+        {
+          out.Write("  float tex{};\n", i);
+          input_extract.Write("float3 rawtex{0} = float3(i.tex{0}, 0.0f, 0.0f);\n", i);
+        }
+        else if (ncomponents == 2)
+        {
+          out.Write("  float tex{0}_0;\n"
+                    "  float tex{0}_1;\n",
+                    i);
+          input_extract.Write("float3 rawtex{0} = float3(i.tex{0}_0, i.tex{0}_1, 0.0f);\n", i);
+        }
+        else
+        {
+          out.Write("  float tex{0}_0;\n"
+                    "  float tex{0}_1;\n"
+                    "  float tex{0}_2;\n",
+                    i);
+          input_extract.Write("float3 rawtex{0} = float3(i.tex{0}_0, i.tex{0}_1, i.tex{0}_2);\n",
+                              i);
+        }
+      }
+    }
+    out.Write("}};\n\n"
+              "SSBO_BINDING(1) readonly restrict buffer InputBuffer {{\n"
+              "  InputData input_buffer[];\n"
+              "}};\n\n");
   }
 
   if (host_config.backend_geometry_shaders)
@@ -161,6 +262,21 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
 
   out.Write("void main()\n{{\n");
 
+  if (uid_data->vs_expand != VSExpand::None)
+  {
+    out.Write("bool is_bottom = (gl_VertexID & 2) != 0;\n"
+              "bool is_right = (gl_VertexID & 1) != 0;\n");
+    // D3D doesn't include the base vertex in SV_VertexID
+    // See comment in UberShaderVertex for details
+    if (api_type == APIType::D3D)
+      out.Write("uint vertex_id = (gl_VertexID >> 2) + base_vertex;\n");
+    else
+      out.Write("uint vertex_id = uint(gl_VertexID) >> 2u;\n");
+    out.Write("InputData i = input_buffer[vertex_id];\n"
+              "{}",
+              input_extract.GetBuffer());
+  }
+
   out.Write("VS_OUTPUT o;\n");
 
   // xfmem.numColorChans controls the number of color channels available to TEV, but we still need
@@ -196,56 +312,43 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
     out.Write("int posidx = int(posmtx.r);\n"
               "float4 P0 = " I_TRANSFORMMATRICES "[posidx];\n"
               "float4 P1 = " I_TRANSFORMMATRICES "[posidx + 1];\n"
-              "float4 P2 = " I_TRANSFORMMATRICES "[posidx + 2];\n");
-    if ((uid_data->components & VB_HAS_NORMAL) != 0)
-    {
-      out.Write("int normidx = posidx & 31;\n"
-                "float3 N0 = " I_NORMALMATRICES "[normidx].xyz;\n"
-                "float3 N1 = " I_NORMALMATRICES "[normidx + 1].xyz;\n"
-                "float3 N2 = " I_NORMALMATRICES "[normidx + 2].xyz;\n");
-    }
+              "float4 P2 = " I_TRANSFORMMATRICES "[posidx + 2];\n"
+              "int normidx = posidx & 31;\n"
+              "float3 N0 = " I_NORMALMATRICES "[normidx].xyz;\n"
+              "float3 N1 = " I_NORMALMATRICES "[normidx + 1].xyz;\n"
+              "float3 N2 = " I_NORMALMATRICES "[normidx + 2].xyz;\n");
   }
   else
   {
     // One shared matrix
     out.Write("float4 P0 = " I_POSNORMALMATRIX "[0];\n"
               "float4 P1 = " I_POSNORMALMATRIX "[1];\n"
-              "float4 P2 = " I_POSNORMALMATRIX "[2];\n");
-    if ((uid_data->components & VB_HAS_NORMAL) != 0)
-    {
-      out.Write("float3 N0 = " I_POSNORMALMATRIX "[3].xyz;\n"
-                "float3 N1 = " I_POSNORMALMATRIX "[4].xyz;\n"
-                "float3 N2 = " I_POSNORMALMATRIX "[5].xyz;\n");
-    }
+              "float4 P2 = " I_POSNORMALMATRIX "[2];\n"
+              "float3 N0 = " I_POSNORMALMATRIX "[3].xyz;\n"
+              "float3 N1 = " I_POSNORMALMATRIX "[4].xyz;\n"
+              "float3 N2 = " I_POSNORMALMATRIX "[5].xyz;\n");
   }
 
   out.Write("// Multiply the position vector by the position matrix\n"
             "float4 pos = float4(dot(P0, rawpos), dot(P1, rawpos), dot(P2, rawpos), 1.0);\n");
-  if ((uid_data->components & VB_HAS_NORMAL) != 0)
-  {
-    if ((uid_data->components & VB_HAS_TANGENT) == 0)
-      out.Write("float3 rawtangent = " I_CACHED_TANGENT ".xyz;\n");
-    if ((uid_data->components & VB_HAS_BINORMAL) == 0)
-      out.Write("float3 rawbinormal = " I_CACHED_BINORMAL ".xyz;\n");
+  if ((uid_data->components & VB_HAS_NORMAL) == 0)
+    out.Write("float3 rawnormal = " I_CACHED_NORMAL ".xyz;\n");
+  if ((uid_data->components & VB_HAS_TANGENT) == 0)
+    out.Write("float3 rawtangent = " I_CACHED_TANGENT ".xyz;\n");
+  if ((uid_data->components & VB_HAS_BINORMAL) == 0)
+    out.Write("float3 rawbinormal = " I_CACHED_BINORMAL ".xyz;\n");
 
-    // The scale of the transform matrix is used to control the size of the emboss map effect, by
-    // changing the scale of the transformed binormals (which only get used by emboss map texgens).
-    // By normalising the first transformed normal (which is used by lighting calculations and needs
-    // to be unit length), the same transform matrix can do double duty, scaling for emboss mapping,
-    // and not scaling for lighting.
-    out.Write("float3 _normal = normalize(float3(dot(N0, rawnormal), dot(N1, rawnormal), dot(N2, "
-              "rawnormal)));\n"
-              "float3 _tangent = float3(dot(N0, rawtangent), dot(N1, rawtangent), dot(N2, "
-              "rawtangent));\n"
-              "float3 _binormal = float3(dot(N0, rawbinormal), dot(N1, rawbinormal), dot(N2, "
-              "rawbinormal));\n");
-  }
-  else
-  {
-    out.Write("float3 _normal = float3(0.0, 0.0, 0.0);\n");
-    out.Write("float3 _binormal = float3(0.0, 0.0, 0.0);\n");
-    out.Write("float3 _tangent = float3(0.0, 0.0, 0.0);\n");
-  }
+  // The scale of the transform matrix is used to control the size of the emboss map effect, by
+  // changing the scale of the transformed binormals (which only get used by emboss map texgens).
+  // By normalising the first transformed normal (which is used by lighting calculations and needs
+  // to be unit length), the same transform matrix can do double duty, scaling for emboss mapping,
+  // and not scaling for lighting.
+  out.Write("float3 _normal = normalize(float3(dot(N0, rawnormal), dot(N1, rawnormal), dot(N2, "
+            "rawnormal)));\n"
+            "float3 _tangent = float3(dot(N0, rawtangent), dot(N1, rawtangent), dot(N2, "
+            "rawtangent));\n"
+            "float3 _binormal = float3(dot(N0, rawbinormal), dot(N1, rawbinormal), dot(N2, "
+            "rawbinormal));\n");
 
   out.Write("o.pos = float4(dot(" I_PROJECTION "[0], pos), dot(" I_PROJECTION
             "[1], pos), dot(" I_PROJECTION "[2], pos), dot(" I_PROJECTION "[3], pos));\n");
@@ -401,6 +504,42 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
     }
 
     out.Write("}}\n");
+  }
+
+  if (uid_data->vs_expand == VSExpand::Line)
+  {
+    out.Write("// Line expansion\n"
+              "uint other_id = vertex_id;\n"
+              "if (is_bottom) {{\n"
+              "  other_id -= 1u;\n"
+              "}} else {{\n"
+              "  other_id += 1u;\n"
+              "}}\n"
+              "InputData other = input_buffer[other_id];\n");
+    if (uid_data->position_has_3_elems)
+      out.Write("float4 other_pos = float4(other.pos0, other.pos1, other.pos2, 1.0f);\n");
+    else
+      out.Write("float4 other_pos = float4(other.pos0, other.pos1, 0.0f, 1.0f);\n");
+    if (uid_data->components & VB_HAS_POSMTXIDX)
+    {
+      out.Write("uint other_posidx = other.posmtx & 0xff;\n"
+                "float4 other_p0 = " I_TRANSFORMMATRICES "[other_posidx];\n"
+                "float4 other_p1 = " I_TRANSFORMMATRICES "[other_posidx + 1];\n"
+                "float4 other_p2 = " I_TRANSFORMMATRICES "[other_posidx + 2];\n"
+                "other_pos = float4(dot(other_p0, other_pos), dot(other_p1, other_pos), "
+                "dot(other_p2, other_pos), 1.0f);\n");
+    }
+    else
+    {
+      out.Write("other_pos = float4(dot(P0, other_pos), dot(P1, other_pos), dot(P2, other_pos), "
+                "1.0f);\n");
+    }
+    GenerateVSLineExpansion(out, "", uid_data->numTexGens);
+  }
+  else if (uid_data->vs_expand == VSExpand::Point)
+  {
+    out.Write("// Point expansion\n");
+    GenerateVSPointExpansion(out, "", uid_data->numTexGens);
   }
 
   if (per_pixel_lighting)

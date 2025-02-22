@@ -1,16 +1,24 @@
 // Copyright 2016 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#define VMA_IMPLEMENTATION
 #include "VideoBackends/Vulkan/VulkanLoader.h"
 
 #include <atomic>
 #include <cstdarg>
 #include <cstdlib>
 
+#if defined(ANDROID)
+#include <adrenotools/driver.h>
+#include <dlfcn.h>
+#endif
+
 #include "Common/CommonFuncs.h"
 #include "Common/DynamicLibrary.h"
 #include "Common/FileUtil.h"
 #include "Common/StringUtil.h"
+
+#include "VideoCommon/VideoConfig.h"
 
 #define VULKAN_MODULE_ENTRY_POINT(name, required) PFN_##name name;
 #define VULKAN_INSTANCE_ENTRY_POINT(name, required) PFN_##name name;
@@ -35,9 +43,9 @@ static void ResetVulkanLibraryFunctionPointers()
 
 static Common::DynamicLibrary s_vulkan_module;
 
-static bool OpenVulkanLibrary()
+static bool OpenVulkanLibrary(bool force_system_library)
 {
-#ifdef __APPLE__
+#if defined(__APPLE__)
   // Check if a path to a specific Vulkan library has been specified.
   char* libvulkan_env = getenv("LIBVULKAN_PATH");
   if (libvulkan_env && s_vulkan_module.Open(libvulkan_env))
@@ -47,6 +55,35 @@ static bool OpenVulkanLibrary()
   std::string filename = File::GetBundleDirectory() + "/Contents/Frameworks/libMoltenVK.dylib";
   return s_vulkan_module.Open(filename.c_str());
 #else
+
+#if defined(ANDROID) && _M_ARM_64
+  const std::string& driver_lib_name = g_Config.customDriverLibraryName;
+
+  if (!force_system_library && !driver_lib_name.empty() && SupportsCustomDriver())
+  {
+    std::string tmp_dir = File::GetGpuDriverDirectory(D_GPU_DRIVERS_TMP);
+    std::string hook_dir = File::GetGpuDriverDirectory(D_GPU_DRIVERS_HOOKS);
+    std::string file_redirect_dir = File::GetGpuDriverDirectory(D_GPU_DRIVERS_FILE_REDIRECT);
+    std::string driver_dir = File::GetGpuDriverDirectory(D_GPU_DRIVERS_EXTRACTED);
+    INFO_LOG_FMT(HOST_GPU, "Loading driver: {}", driver_lib_name);
+
+    s_vulkan_module = adrenotools_open_libvulkan(
+        RTLD_NOW, ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_CUSTOM, tmp_dir.c_str(),
+        hook_dir.c_str(), driver_dir.c_str(), driver_lib_name.c_str(), file_redirect_dir.c_str(),
+        nullptr);
+    if (s_vulkan_module.IsOpen())
+    {
+      INFO_LOG_FMT(HOST_GPU, "Successfully loaded driver: {}", driver_lib_name);
+      return true;
+    }
+    else
+    {
+      WARN_LOG_FMT(HOST_GPU, "Loading driver {} failed.", driver_lib_name);
+    }
+  }
+#endif
+
+  WARN_LOG_FMT(HOST_GPU, "Loading system driver");
   std::string filename = Common::DynamicLibrary::GetVersionedFilename("vulkan", 1);
   if (s_vulkan_module.Open(filename.c_str()))
     return true;
@@ -57,9 +94,9 @@ static bool OpenVulkanLibrary()
 #endif
 }
 
-bool LoadVulkanLibrary()
+bool LoadVulkanLibrary(bool force_system_library)
 {
-  if (!s_vulkan_module.IsOpen() && !OpenVulkanLibrary())
+  if (!s_vulkan_module.IsOpen() && !OpenVulkanLibrary(force_system_library))
     return false;
 
 #define VULKAN_MODULE_ENTRY_POINT(name, required)                                                  \
@@ -90,7 +127,7 @@ bool LoadVulkanInstanceFunctions(VkInstance instance)
     *func_ptr = vkGetInstanceProcAddr(instance, name);
     if (!(*func_ptr) && is_required)
     {
-      ERROR_LOG_FMT(VIDEO, "Vulkan: Failed to load required instance function {}", name);
+      ERROR_LOG_FMT(HOST_GPU, "Vulkan: Failed to load required instance function {}", name);
       required_functions_missing = true;
     }
   };
@@ -110,7 +147,7 @@ bool LoadVulkanDeviceFunctions(VkDevice device)
     *func_ptr = vkGetDeviceProcAddr(device, name);
     if (!(*func_ptr) && is_required)
     {
-      ERROR_LOG_FMT(VIDEO, "Vulkan: Failed to load required device function {}", name);
+      ERROR_LOG_FMT(HOST_GPU, "Vulkan: Failed to load required device function {}", name);
       required_functions_missing = true;
     }
   };
@@ -204,18 +241,25 @@ const char* VkResultToString(VkResult res)
   }
 }
 
-void LogVulkanResult(Common::Log::LogLevel level, const char* func_name, VkResult res,
-                     const char* msg, ...)
+void LogVulkanResult(Common::Log::LogLevel level, const char* func_name, const int line,
+                     VkResult res, const char* msg)
 {
-  std::va_list ap;
-  va_start(ap, msg);
-  std::string real_msg = StringFromFormatV(msg, ap);
-  va_end(ap);
-
-  real_msg = fmt::format("({}) {} ({}: {})", func_name, real_msg, static_cast<int>(res),
-                         VkResultToString(res));
-
-  GENERIC_LOG_FMT(Common::Log::LogType::VIDEO, level, "{}", real_msg);
+  GENERIC_LOG_FMT(Common::Log::LogType::VIDEO, level, "({}:{}) {} ({}: {})", func_name, line, msg,
+                  static_cast<int>(res), VkResultToString(res));
 }
+
+#ifdef ANDROID
+static bool CheckKgslPresent()
+{
+  constexpr auto KgslPath{"/dev/kgsl-3d0"};
+
+  return access(KgslPath, F_OK) == 0;
+}
+
+bool SupportsCustomDriver()
+{
+  return android_get_device_api_level() >= 28 && CheckKgslPresent();
+}
+#endif
 
 }  // namespace Vulkan

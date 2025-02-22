@@ -3,18 +3,26 @@
 
 #pragma once
 
+#include <array>
 #include <initializer_list>
+#include <memory>
 
 #include "Common/CommonTypes.h"
 #include "Common/EnumFormatter.h"
 #include "Core/CoreTiming.h"
 
 class PointerWrap;
+struct Sram;
 
+namespace Core
+{
+class System;
+}
 namespace CoreTiming
 {
+struct EventType;
 enum class FromThread;
-}
+}  // namespace CoreTiming
 namespace MMIO
 {
 class Mapping;
@@ -51,24 +59,48 @@ constexpr bool IsMemcardSlot(Slot slot)
 u8 SlotToEXIChannel(Slot slot);
 u8 SlotToEXIDevice(Slot slot);
 
-void Init();
-void Shutdown();
-void DoState(PointerWrap& p);
-void PauseAndLock(bool doLock, bool unpauseOnUnlock);
+class ExpansionInterfaceManager
+{
+public:
+  explicit ExpansionInterfaceManager(Core::System& system);
+  ExpansionInterfaceManager(const ExpansionInterfaceManager&) = delete;
+  ExpansionInterfaceManager(ExpansionInterfaceManager&&) = delete;
+  ExpansionInterfaceManager& operator=(const ExpansionInterfaceManager&) = delete;
+  ExpansionInterfaceManager& operator=(ExpansionInterfaceManager&&) = delete;
+  ~ExpansionInterfaceManager();
 
-void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
+  void Init(const Sram* override_sram);
+  void Shutdown();
+  void DoState(PointerWrap& p);
 
-void UpdateInterrupts();
-void ScheduleUpdateInterrupts(CoreTiming::FromThread from, int cycles_late);
+  void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
 
-void ChangeDevice(Slot slot, EXIDeviceType device_type,
-                  CoreTiming::FromThread from_thread = CoreTiming::FromThread::NON_CPU);
-void ChangeDevice(u8 channel, u8 device_num, EXIDeviceType device_type,
-                  CoreTiming::FromThread from_thread = CoreTiming::FromThread::NON_CPU);
+  void UpdateInterrupts();
+  void ScheduleUpdateInterrupts(CoreTiming::FromThread from, int cycles_late);
 
-CEXIChannel* GetChannel(u32 index);
-IEXIDevice* GetDevice(Slot slot);
+  void ChangeDevice(Slot slot, EXIDeviceType device_type,
+                    CoreTiming::FromThread from_thread = CoreTiming::FromThread::NON_CPU);
+  void ChangeDevice(u8 channel, u8 device_num, EXIDeviceType device_type,
+                    CoreTiming::FromThread from_thread = CoreTiming::FromThread::NON_CPU);
 
+  CEXIChannel* GetChannel(u32 index);
+  IEXIDevice* GetDevice(Slot slot);
+
+private:
+  void AddMemoryCard(Slot slot);
+
+  static void ChangeDeviceCallback(Core::System& system, u64 userdata, s64 cycles_late);
+  static void UpdateInterruptsCallback(Core::System& system, u64 userdata, s64 cycles_late);
+
+  CoreTiming::EventType* m_event_type_change_device = nullptr;
+  CoreTiming::EventType* m_event_type_update_interrupts = nullptr;
+
+  std::array<std::unique_ptr<CEXIChannel>, MAX_EXI_CHANNELS> m_channels;
+
+  bool m_using_overridden_sram = false;
+
+  Core::System& m_system;
+};
 }  // namespace ExpansionInterface
 
 template <>

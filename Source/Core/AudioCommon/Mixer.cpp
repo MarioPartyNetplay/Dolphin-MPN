@@ -14,6 +14,7 @@
 #include "Common/Swap.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
+#include "VideoCommon/PerformanceMetrics.h"
 
 static u32 DPL2QualityToFrameBlockSize(AudioCommon::DPL2Quality quality)
 {
@@ -51,6 +52,7 @@ void Mixer::DoState(PointerWrap& p)
   m_dma_mixer.DoState(p);
   m_streaming_mixer.DoState(p);
   m_wiimote_speaker_mixer.DoState(p);
+  m_skylander_portal_mixer.DoState(p);
   for (auto& mixer : m_gba_mixers)
     mixer.DoState(p);
 }
@@ -160,12 +162,19 @@ unsigned int Mixer::Mix(short* samples, unsigned int num_samples)
 
   memset(samples, 0, num_samples * 2 * sizeof(short));
 
+  // TODO: Determine how emulation speed will be used in audio
+  // const float emulation_speed = g_perf_metrics.GetSpeed();
   const float emulation_speed = m_config_emulation_speed;
   const int timing_variance = m_config_timing_variance;
   if (m_config_audio_stretch)
   {
     unsigned int available_samples =
         std::min(m_dma_mixer.AvailableSamples(), m_streaming_mixer.AvailableSamples());
+
+    ASSERT_MSG(AUDIO, available_samples <= MAX_SAMPLES,
+               "Audio stretching would overflow m_scratch_buffer: min({}, {}) -> {} > {} ({})",
+               m_dma_mixer.AvailableSamples(), m_streaming_mixer.AvailableSamples(),
+               available_samples, MAX_SAMPLES, num_samples);
 
     m_scratch_buffer.fill(0);
 
@@ -175,6 +184,8 @@ unsigned int Mixer::Mix(short* samples, unsigned int num_samples)
                           timing_variance);
     m_wiimote_speaker_mixer.Mix(m_scratch_buffer.data(), available_samples, false, emulation_speed,
                                 timing_variance);
+    m_skylander_portal_mixer.Mix(m_scratch_buffer.data(), available_samples, false, emulation_speed,
+                                 timing_variance);
     for (auto& mixer : m_gba_mixers)
     {
       mixer.Mix(m_scratch_buffer.data(), available_samples, false, emulation_speed,
@@ -194,6 +205,7 @@ unsigned int Mixer::Mix(short* samples, unsigned int num_samples)
     m_dma_mixer.Mix(samples, num_samples, true, emulation_speed, timing_variance);
     m_streaming_mixer.Mix(samples, num_samples, true, emulation_speed, timing_variance);
     m_wiimote_speaker_mixer.Mix(samples, num_samples, true, emulation_speed, timing_variance);
+    m_skylander_portal_mixer.Mix(samples, num_samples, true, emulation_speed, timing_variance);
     for (auto& mixer : m_gba_mixers)
       mixer.Mix(samples, num_samples, true, emulation_speed, timing_variance);
     m_is_stretching = false;
@@ -213,10 +225,15 @@ unsigned int Mixer::MixSurround(float* samples, unsigned int num_samples)
 
   // Mix() may also use m_scratch_buffer internally, but is safe because it alternates reads
   // and writes.
+  ASSERT_MSG(AUDIO, needed_frames <= MAX_SAMPLES,
+             "needed_frames would overflow m_scratch_buffer: {} -> {} > {}", num_samples,
+             needed_frames, MAX_SAMPLES);
   size_t available_frames = Mix(m_scratch_buffer.data(), static_cast<u32>(needed_frames));
   if (available_frames != needed_frames)
   {
-    ERROR_LOG_FMT(AUDIO, "Error decoding surround frames.");
+    ERROR_LOG_FMT(AUDIO,
+                  "Error decoding surround frames: needed {} frames for {} samples but got {}",
+                  needed_frames, num_samples, available_frames);
     return 0;
   }
 
@@ -282,9 +299,14 @@ void Mixer::PushStreamingSamples(const short* samples, unsigned int num_samples)
 void Mixer::PushWiimoteSpeakerSamples(const short* samples, unsigned int num_samples,
                                       unsigned int sample_rate_divisor)
 {
-  short samples_stereo[MAX_SAMPLES * 2];
+  // Max 20 bytes/speaker report, may be 4-bit ADPCM so multiply by 2
+  static constexpr u32 MAX_SPEAKER_SAMPLES = 20 * 2;
+  std::array<short, MAX_SPEAKER_SAMPLES * 2> samples_stereo;
 
-  if (num_samples < MAX_SAMPLES)
+  ASSERT_MSG(AUDIO, num_samples <= MAX_SPEAKER_SAMPLES,
+             "num_samples would overflow samples_stereo: {} > {}", num_samples,
+             MAX_SPEAKER_SAMPLES);
+  if (num_samples <= MAX_SPEAKER_SAMPLES)
   {
     m_wiimote_speaker_mixer.SetInputSampleRateDivisor(sample_rate_divisor);
 
@@ -294,7 +316,31 @@ void Mixer::PushWiimoteSpeakerSamples(const short* samples, unsigned int num_sam
       samples_stereo[i * 2 + 1] = samples[i];
     }
 
-    m_wiimote_speaker_mixer.PushSamples(samples_stereo, num_samples);
+    m_wiimote_speaker_mixer.PushSamples(samples_stereo.data(), num_samples);
+  }
+}
+
+void Mixer::PushSkylanderPortalSamples(const u8* samples, unsigned int num_samples)
+{
+  // Skylander samples are always supplied as 64 bytes, 32 x 16 bit samples
+  // The portal speaker is 1 channel, so duplicate and play as stereo audio
+  static constexpr u32 MAX_PORTAL_SPEAKER_SAMPLES = 32;
+  std::array<short, MAX_PORTAL_SPEAKER_SAMPLES * 2> samples_stereo;
+
+  ASSERT_MSG(AUDIO, num_samples <= MAX_PORTAL_SPEAKER_SAMPLES,
+             "num_samples is not less or equal to 32: {} > {}", num_samples,
+             MAX_PORTAL_SPEAKER_SAMPLES);
+
+  if (num_samples <= MAX_PORTAL_SPEAKER_SAMPLES)
+  {
+    for (unsigned int i = 0; i < num_samples; ++i)
+    {
+      s16 sample = static_cast<u16>(samples[i * 2 + 1]) << 8 | static_cast<u16>(samples[i * 2]);
+      samples_stereo[i * 2] = sample;
+      samples_stereo[i * 2 + 1] = sample;
+    }
+
+    m_skylander_portal_mixer.PushSamples(samples_stereo.data(), num_samples);
   }
 }
 

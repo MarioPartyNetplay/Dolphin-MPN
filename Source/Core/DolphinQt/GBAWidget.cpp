@@ -26,8 +26,10 @@
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/System.h"
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/Settings/GameCubePane.h"
@@ -35,16 +37,19 @@
 static void RestartCore(const std::weak_ptr<HW::GBA::Core>& core, std::string_view rom_path = {})
 {
   Core::RunOnCPUThread(
-      [core, rom_path = std::string(rom_path)] {
+      Core::System::GetInstance(),
+      [core, rom_path = std::string(rom_path)]() {
         if (auto core_ptr = core.lock())
         {
           auto& info = Config::MAIN_GBA_ROM_PATHS[core_ptr->GetCoreInfo().device_number];
           core_ptr->Stop();
           Config::SetCurrent(info, rom_path);
-          if (core_ptr->Start(CoreTiming::GetTicks()))
+          auto& system = Core::System::GetInstance();
+          auto& core_timing = system.GetCoreTiming();
+          if (core_ptr->Start(core_timing.GetTicks()))
             return;
           Config::SetCurrent(info, Config::GetBase(info));
-          core_ptr->Start(CoreTiming::GetTicks());
+          core_ptr->Start(core_timing.GetTicks());
         }
       },
       false);
@@ -53,7 +58,8 @@ static void RestartCore(const std::weak_ptr<HW::GBA::Core>& core, std::string_vi
 static void QueueEReaderCard(const std::weak_ptr<HW::GBA::Core>& core, std::string_view card_path)
 {
   Core::RunOnCPUThread(
-      [core, card_path = std::string(card_path)] {
+      Core::System::GetInstance(),
+      [core, card_path = std::string(card_path)]() {
         if (auto core_ptr = core.lock())
           core_ptr->EReaderQueueCard(card_path);
       },
@@ -102,7 +108,7 @@ void GBAWidget::GameChanged(const HW::GBA::CoreInfo& info)
   update();
 }
 
-void GBAWidget::SetVideoBuffer(std::vector<u32> video_buffer)
+void GBAWidget::SetVideoBuffer(std::span<const u32> video_buffer)
 {
   m_previous_frame = std::move(m_last_frame);
   if (video_buffer.size() == static_cast<size_t>(m_core_info.width * m_core_info.height))
@@ -155,7 +161,8 @@ void GBAWidget::ToggleDisconnect()
   m_force_disconnect = !m_force_disconnect;
 
   Core::RunOnCPUThread(
-      [core = m_core, force_disconnect = m_force_disconnect] {
+      Core::System::GetInstance(),
+      [core = m_core, force_disconnect = m_force_disconnect]() {
         if (auto core_ptr = core.lock())
           core_ptr->SetForceDisconnect(force_disconnect);
       },
@@ -217,7 +224,8 @@ void GBAWidget::DoState(bool export_state)
     return;
 
   Core::RunOnCPUThread(
-      [export_state, core = m_core, state_path = state_path.toStdString()] {
+      Core::System::GetInstance(),
+      [export_state, core = m_core, state_path = state_path.toStdString()]() {
         if (auto core_ptr = core.lock())
         {
           if (export_state)
@@ -247,7 +255,8 @@ void GBAWidget::ImportExportSave(bool export_save)
     return;
 
   Core::RunOnCPUThread(
-      [export_save, core = m_core, save_path = save_path.toStdString()] {
+      Core::System::GetInstance(),
+      [export_save, core = m_core, save_path = save_path.toStdString()]() {
         if (auto core_ptr = core.lock())
         {
           if (export_save)
@@ -325,7 +334,8 @@ void GBAWidget::UpdateTitle()
 void GBAWidget::UpdateVolume()
 {
   int volume = m_muted ? 0 : m_volume * 256 / 100;
-  g_sound_stream->GetMixer()->SetGBAVolume(m_core_info.device_number, volume, volume);
+  auto& system = Core::System::GetInstance();
+  system.GetSoundStream()->GetMixer()->SetGBAVolume(m_core_info.device_number, volume, volume);
   UpdateTitle();
 }
 
@@ -360,7 +370,7 @@ void GBAWidget::SaveSettings()
 
 bool GBAWidget::CanControlCore()
 {
-  return !Movie::IsMovieActive() && !NetPlay::IsNetPlayRunning();
+  return !Core::System::GetInstance().GetMovie().IsMovieActive() && !NetPlay::IsNetPlayRunning();
 }
 
 bool GBAWidget::CanResetCore()
@@ -482,6 +492,7 @@ void GBAWidget::contextMenuEvent(QContextMenuEvent* event)
   size_menu->addAction(x4_action);
 
   menu->move(event->globalPos());
+  SetQWidgetWindowDecorations(menu);
   menu->show();
 }
 
@@ -510,12 +521,7 @@ void GBAWidget::mouseMoveEvent(QMouseEvent* event)
 {
   if (!m_moving)
     return;
-  auto event_pos =
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-      event->globalPosition().toPoint();
-#else
-      event->globalPos();
-#endif
+  auto event_pos = event->globalPosition().toPoint();
   move(event_pos - m_move_pos - (geometry().topLeft() - pos()));
 }
 
@@ -607,7 +613,7 @@ void GBAWidgetController::GameChanged(const HW::GBA::CoreInfo& info)
   m_widget->GameChanged(info);
 }
 
-void GBAWidgetController::FrameEnded(std::vector<u32> video_buffer)
+void GBAWidgetController::FrameEnded(std::span<const u32> video_buffer)
 {
-  m_widget->SetVideoBuffer(std::move(video_buffer));
+  m_widget->SetVideoBuffer(video_buffer);
 }

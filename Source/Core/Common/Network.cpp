@@ -4,11 +4,13 @@
 #include "Common/Network.h"
 
 #include <algorithm>
+#include <bit>
 #include <string_view>
 #include <vector>
 
 #ifndef _WIN32
 #include <netinet/in.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #else
@@ -18,6 +20,7 @@
 #include <fmt/format.h>
 
 #include "Common/BitUtils.h"
+#include "Common/CommonFuncs.h"
 #include "Common/Random.h"
 #include "Common/StringUtil.h"
 
@@ -33,10 +36,10 @@ MACAddress GenerateMacAddress(const MACConsumer type)
   switch (type)
   {
   case MACConsumer::BBA:
-    std::copy(oui_bba.begin(), oui_bba.end(), mac.begin());
+    std::ranges::copy(oui_bba, mac.begin());
     break;
   case MACConsumer::IOS:
-    std::copy(oui_ios.begin(), oui_ios.end(), mac.begin());
+    std::ranges::copy(oui_ios, mac.begin());
     break;
   }
 
@@ -305,8 +308,8 @@ u16 ComputeNetworkChecksum(const void* data, u16 length, u32 initial_value)
 u16 ComputeTCPNetworkChecksum(const IPAddress& from, const IPAddress& to, const void* data,
                               u16 length, u8 protocol)
 {
-  const u32 source_addr = ntohl(Common::BitCast<u32>(from));
-  const u32 destination_addr = ntohl(Common::BitCast<u32>(to));
+  const u32 source_addr = ntohl(std::bit_cast<u32>(from));
+  const u32 destination_addr = ntohl(std::bit_cast<u32>(to));
   const u32 initial_value = (source_addr >> 16) + (source_addr & 0xFFFF) +
                             (destination_addr >> 16) + (destination_addr & 0xFFFF) + protocol +
                             length;
@@ -544,5 +547,30 @@ void RestoreNetworkErrorState(const NetworkErrorState& state)
 #ifdef _WIN32
   WSASetLastError(state.wsa_error);
 #endif
+}
+
+const char* DecodeNetworkError(s32 error_code)
+{
+  thread_local char buffer[1024];
+
+#ifdef _WIN32
+  FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
+                     FORMAT_MESSAGE_MAX_WIDTH_MASK,
+                 nullptr, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer,
+                 sizeof(buffer), nullptr);
+  return buffer;
+#else
+  return Common::StrErrorWrapper(error_code, buffer, sizeof(buffer));
+#endif
+}
+
+const char* StrNetworkError()
+{
+#ifdef _WIN32
+  const s32 error_code = WSAGetLastError();
+#else
+  const s32 error_code = errno;
+#endif
+  return DecodeNetworkError(error_code);
 }
 }  // namespace Common

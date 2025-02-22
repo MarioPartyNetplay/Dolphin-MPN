@@ -4,16 +4,13 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <type_traits>
-
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
 
 namespace Common
 {
@@ -108,50 +105,6 @@ constexpr Result ExtractBits(const T src) noexcept
 }
 
 ///
-/// Rotates a value left (ROL).
-///
-/// @param  value  The value to rotate.
-/// @param  amount The number of bits to rotate the value.
-/// @tparam T      An unsigned type.
-///
-/// @return The rotated value.
-///
-template <typename T>
-constexpr T RotateLeft(const T value, size_t amount) noexcept
-{
-  static_assert(std::is_unsigned<T>(), "Can only rotate unsigned types left.");
-
-  amount %= BitSize<T>();
-
-  if (amount == 0)
-    return value;
-
-  return static_cast<T>((value << amount) | (value >> (BitSize<T>() - amount)));
-}
-
-///
-/// Rotates a value right (ROR).
-///
-/// @param  value  The value to rotate.
-/// @param  amount The number of bits to rotate the value.
-/// @tparam T      An unsigned type.
-///
-/// @return The rotated value.
-///
-template <typename T>
-constexpr T RotateRight(const T value, size_t amount) noexcept
-{
-  static_assert(std::is_unsigned<T>(), "Can only rotate unsigned types right.");
-
-  amount %= BitSize<T>();
-
-  if (amount == 0)
-    return value;
-
-  return static_cast<T>((value >> amount) | (value << (BitSize<T>() - amount)));
-}
-
-///
 /// Verifies whether the supplied value is a valid bit mask of the form 0b00...0011...11.
 /// Both edge cases of all zeros and all ones are considered valid masks, too.
 ///
@@ -171,39 +124,6 @@ constexpr bool IsValidLowMask(const T mask) noexcept
   // to https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2
   // and doesn't require special casing either edge case.
   return (mask & (mask + 1)) == 0;
-}
-
-///
-/// Reinterpret objects of one type as another by bit-casting between object representations.
-///
-/// @remark This is the example implementation of std::bit_cast which is to be included
-///         in C++2a. See http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0476r2.html
-///         for more details. The only difference is this variant is not constexpr,
-///         as the mechanism for bit_cast requires a compiler built-in to have that quality.
-///
-/// @param source The source object to convert to another representation.
-///
-/// @tparam To   The type to reinterpret source as.
-/// @tparam From The initial type representation of source.
-///
-/// @return The representation of type From as type To.
-///
-/// @pre Both To and From types must be the same size
-/// @pre Both To and From types must satisfy the TriviallyCopyable concept.
-///
-template <typename To, typename From>
-inline To BitCast(const From& source) noexcept
-{
-  static_assert(sizeof(From) == sizeof(To),
-                "BitCast source and destination types must be equal in size.");
-  static_assert(std::is_trivially_copyable<From>(),
-                "BitCast source type must be trivially copyable.");
-  static_assert(std::is_trivially_copyable<To>(),
-                "BitCast destination type must be trivially copyable.");
-
-  alignas(To) std::byte storage[sizeof(To)];
-  std::memcpy(&storage, &source, sizeof(storage));
-  return reinterpret_cast<To&>(storage);
 }
 
 template <typename T, typename PtrType>
@@ -247,50 +167,10 @@ inline auto BitCastPtr(PtrType* ptr) noexcept -> BitCastPtrType<T, PtrType>
 }
 
 // Similar to BitCastPtr, but specifically for aliasing structs to arrays.
-template <typename ArrayType, typename T,
-          typename Container = std::array<ArrayType, sizeof(T) / sizeof(ArrayType)>>
-inline auto BitCastToArray(const T& obj) noexcept -> Container
+template <typename ValueType, typename From>
+[[nodiscard]] constexpr auto BitCastToArray(const From& obj) noexcept
 {
-  static_assert(sizeof(T) % sizeof(ArrayType) == 0,
-                "Size of array type must be a factor of size of source type.");
-  static_assert(std::is_trivially_copyable<T>(),
-                "BitCastToArray source type must be trivially copyable.");
-  static_assert(std::is_trivially_copyable<Container>(),
-                "BitCastToArray array type must be trivially copyable.");
-
-  Container result;
-  std::memcpy(result.data(), &obj, sizeof(T));
-  return result;
-}
-
-template <typename ArrayType, typename T,
-          typename Container = std::array<ArrayType, sizeof(T) / sizeof(ArrayType)>>
-inline void BitCastFromArray(const Container& array, T& obj) noexcept
-{
-  static_assert(sizeof(T) % sizeof(ArrayType) == 0,
-                "Size of array type must be a factor of size of destination type.");
-  static_assert(std::is_trivially_copyable<Container>(),
-                "BitCastFromArray array type must be trivially copyable.");
-  static_assert(std::is_trivially_copyable<T>(),
-                "BitCastFromArray destination type must be trivially copyable.");
-
-  std::memcpy(&obj, array.data(), sizeof(T));
-}
-
-template <typename ArrayType, typename T,
-          typename Container = std::array<ArrayType, sizeof(T) / sizeof(ArrayType)>>
-inline auto BitCastFromArray(const Container& array) noexcept -> T
-{
-  static_assert(sizeof(T) % sizeof(ArrayType) == 0,
-                "Size of array type must be a factor of size of destination type.");
-  static_assert(std::is_trivially_copyable<Container>(),
-                "BitCastFromArray array type must be trivially copyable.");
-  static_assert(std::is_trivially_copyable<T>(),
-                "BitCastFromArray destination type must be trivially copyable.");
-
-  T obj;
-  std::memcpy(&obj, array.data(), sizeof(T));
-  return obj;
+  return std::bit_cast<std::array<ValueType, sizeof(From) / sizeof(ValueType)>>(obj);
 }
 
 template <typename T>
@@ -360,105 +240,4 @@ T ExpandValue(T value, size_t left_shift_amount)
   return (value << left_shift_amount) |
          (T(-ExtractBit<0>(value)) >> (BitSize<T>() - left_shift_amount));
 }
-
-template <typename T>
-constexpr int CountLeadingZerosConst(T value)
-{
-  int result = sizeof(T) * 8;
-  while (value)
-  {
-    result--;
-    value >>= 1;
-  }
-  return result;
-}
-
-constexpr int CountLeadingZeros(uint64_t value)
-{
-#if defined(__GNUC__)
-  return value ? __builtin_clzll(value) : 64;
-#elif defined(_MSC_VER)
-  if (std::is_constant_evaluated())
-  {
-    return CountLeadingZerosConst(value);
-  }
-  else
-  {
-    unsigned long index = 0;
-    return _BitScanReverse64(&index, value) ? 63 - index : 64;
-  }
-#else
-  return CountLeadingZerosConst(value);
-#endif
-}
-
-constexpr int CountLeadingZeros(uint32_t value)
-{
-#if defined(__GNUC__)
-  return value ? __builtin_clz(value) : 32;
-#elif defined(_MSC_VER)
-  if (std::is_constant_evaluated())
-  {
-    return CountLeadingZerosConst(value);
-  }
-  else
-  {
-    unsigned long index = 0;
-    return _BitScanReverse(&index, value) ? 31 - index : 32;
-  }
-#else
-  return CountLeadingZerosConst(value);
-#endif
-}
-
-template <typename T>
-constexpr int CountTrailingZerosConst(T value)
-{
-  int result = sizeof(T) * 8;
-  while (value)
-  {
-    result--;
-    value <<= 1;
-  }
-  return result;
-}
-
-constexpr int CountTrailingZeros(uint64_t value)
-{
-#if defined(__GNUC__)
-  return value ? __builtin_ctzll(value) : 64;
-#elif defined(_MSC_VER)
-  if (std::is_constant_evaluated())
-  {
-    return CountTrailingZerosConst(value);
-  }
-  else
-  {
-    unsigned long index = 0;
-    return _BitScanForward64(&index, value) ? index : 64;
-  }
-#else
-  return CountTrailingZerosConst(value);
-#endif
-}
-
-constexpr int CountTrailingZeros(uint32_t value)
-{
-#if defined(__GNUC__)
-  return value ? __builtin_ctz(value) : 32;
-#elif defined(_MSC_VER)
-  if (std::is_constant_evaluated())
-  {
-    return CountTrailingZerosConst(value);
-  }
-  else
-  {
-    unsigned long index = 0;
-    return _BitScanForward(&index, value) ? index : 32;
-  }
-#else
-  return CountTrailingZerosConst(value);
-#endif
-}
-
 }  // namespace Common

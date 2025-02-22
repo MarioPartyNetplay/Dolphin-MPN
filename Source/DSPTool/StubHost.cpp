@@ -13,7 +13,10 @@ std::vector<std::string> Host_GetPreferredLocales()
 {
   return {};
 }
-void Host_NotifyMapLoaded()
+void Host_PPCSymbolsChanged()
+{
+}
+void Host_PPCBreakpointsChanged()
 {
 }
 void Host_RefreshDSPDebuggerWindow()
@@ -41,6 +44,12 @@ bool Host_UpdateDiscordPresenceRaw(const std::string& details, const std::string
 void Host_UpdateDisasmDialog()
 {
 }
+void Host_JitCacheInvalidation()
+{
+}
+void Host_JitProfileDataWiped()
+{
+}
 void Host_UpdateMainFrame()
 {
 }
@@ -56,6 +65,10 @@ bool Host_RendererHasFullFocus()
   return false;
 }
 bool Host_RendererIsFullscreen()
+{
+  return false;
+}
+bool Host_TASInputHasFocus()
 {
   return false;
 }

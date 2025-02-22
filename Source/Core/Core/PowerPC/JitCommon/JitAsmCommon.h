@@ -17,7 +17,9 @@ struct CommonAsmRoutinesBase
 
   const u8* dispatcher_mispredicted_blr;
   const u8* dispatcher;
+  const u8* dispatcher_no_timing_check;
   const u8* dispatcher_no_check;
+  const u8* dispatcher_exit;
 
   const u8* do_timing;
 

@@ -37,7 +37,7 @@ GameTracker::GameTracker(QObject* parent) : QFileSystemWatcher(parent)
 
   connect(qApp, &QApplication::aboutToQuit, this, [this] {
     m_processing_halted = true;
-    m_load_thread.Cancel();
+    m_load_thread.Shutdown(true);
   });
   connect(this, &QFileSystemWatcher::directoryChanged, this, &GameTracker::UpdateDirectory);
   connect(this, &QFileSystemWatcher::fileChanged, this, &GameTracker::UpdateFile);
@@ -55,7 +55,7 @@ GameTracker::GameTracker(QObject* parent) : QFileSystemWatcher(parent)
     m_load_thread.EmplaceItem(Command{CommandType::UpdateMetadata, {}});
   });
 
-  m_load_thread.Reset([this](Command command) {
+  m_load_thread.Reset("GameList Tracker", [this](Command command) {
     switch (command.type)
     {
     case CommandType::LoadCache:
@@ -89,12 +89,15 @@ GameTracker::GameTracker(QObject* parent) : QFileSystemWatcher(parent)
       m_cache.Clear(UICommon::GameFileCache::DeleteOnDisk::Yes);
       break;
     case CommandType::BeginRefresh:
+      m_refresh_in_progress = true;
       QueueOnObject(this, [] { Settings::Instance().NotifyRefreshGameListStarted(); });
       for (auto& file : m_tracked_files.keys())
         emit GameRemoved(file.toStdString());
       m_tracked_files.clear();
       break;
     case CommandType::EndRefresh:
+      m_refresh_in_progress = false;
+      m_cache.Save();
       QueueOnObject(this, [] { Settings::Instance().NotifyRefreshGameListComplete(); });
       break;
     }
@@ -200,7 +203,7 @@ void GameTracker::RemoveDirectory(const QString& dir)
 void GameTracker::RefreshAll()
 {
   m_processing_halted = true;
-  m_load_thread.Clear();
+  m_load_thread.Cancel();
   m_load_thread.EmplaceItem(Command{CommandType::ResumeProcessing, {}});
 
   if (m_needs_purge)
@@ -356,7 +359,7 @@ void GameTracker::LoadGame(const QString& path)
     auto game = m_cache.AddOrGet(converted_path, &cache_changed);
     if (game)
       emit GameLoaded(std::move(game));
-    if (cache_changed)
+    if (cache_changed && !m_refresh_in_progress)
       m_cache.Save();
   }
 }

@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -33,6 +34,11 @@ class FileSystem;
 namespace UICommon
 {
 class GameFile;
+}
+
+namespace WiimoteEmu
+{
+struct SerializedWiimoteState;
 }
 
 namespace NetPlay
@@ -62,10 +68,11 @@ public:
   virtual void OnDesync(u32 frame, const std::string& player) = 0;
   virtual void OnConnectionLost() = 0;
   virtual void OnConnectionError(const std::string& message) = 0;
-  virtual void OnTraversalError(TraversalClient::FailureReason error) = 0;
-  virtual void OnTraversalStateChanged(TraversalClient::State state) = 0;
+  virtual void OnTraversalError(Common::TraversalClient::FailureReason error) = 0;
+  virtual void OnTraversalStateChanged(Common::TraversalClient::State state) = 0;
   virtual void OnGameStartAborted() = 0;
   virtual void OnGolferChanged(bool is_golfer, const std::string& golfer_name) = 0;
+  virtual void OnTtlDetermined(u8 ttl) = 0;
 
   virtual bool IsRecording() = 0;
   virtual std::shared_ptr<const UICommon::GameFile>
@@ -73,10 +80,10 @@ public:
                SyncIdentifierComparison* found = nullptr) = 0;
   virtual std::string FindGBARomPath(const std::array<u8, 20>& hash, std::string_view title,
                                      int device_number) = 0;
-  virtual void ShowMD5Dialog(const std::string& title) = 0;
-  virtual void SetMD5Progress(int pid, int progress) = 0;
-  virtual void SetMD5Result(int pid, const std::string& result) = 0;
-  virtual void AbortMD5() = 0;
+  virtual void ShowGameDigestDialog(const std::string& title) = 0;
+  virtual void SetGameDigestProgress(int pid, int progress) = 0;
+  virtual void SetGameDigestResult(int pid, const std::string& result) = 0;
+  virtual void AbortGameDigest() = 0;
 
   virtual void OnIndexAdded(bool success, std::string error) = 0;
   virtual void OnIndexRefreshFailed(std::string error) = 0;
@@ -101,7 +108,7 @@ public:
   bool IsHost() const { return pid == 1; }
 };
 
-class NetPlayClient : public TraversalClientClient
+class NetPlayClient : public Common::TraversalClientClient
 {
 public:
   void ThreadFunc();
@@ -117,6 +124,7 @@ public:
   // Called from the GUI thread.
   bool IsConnected() const { return m_is_connected; }
   bool StartGame(const std::string& path);
+  void InvokeStop();
   bool StopGame();
   void Stop();
   bool ChangeGame(const std::string& game);
@@ -128,24 +136,34 @@ public:
   std::string GetCurrentGolfer();
 
   // Send and receive pads values
-  bool WiimoteUpdate(int _number, u8* data, std::size_t size, u8 reporting_mode);
+  struct WiimoteDataBatchEntry
+  {
+    int wiimote;
+    WiimoteEmu::SerializedWiimoteState* state;
+  };
+  bool WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entries);
   bool GetNetPads(int pad_nb, bool from_vi, GCPadStatus* pad_status);
 
   u64 GetInitialRTCValue() const;
 
   void OnTraversalStateChanged() override;
   void OnConnectReady(ENetAddress addr) override;
-  void OnConnectFailed(TraversalConnectFailedReason reason) override;
+  void OnConnectFailed(Common::TraversalConnectFailedReason reason) override;
+  void OnTtlDetermined(u8 ttl) override {}
 
   bool IsFirstInGamePad(int ingame_pad) const;
   int NumLocalPads() const;
+  int NumLocalWiimotes() const;
 
   int InGamePadToLocalPad(int ingame_pad) const;
-  int LocalPadToInGamePad(int localPad) const;
+  int LocalPadToInGamePad(int local_pad) const;
+  int InGameWiimoteToLocalWiimote(int ingame_wiimote) const;
+  int LocalWiimoteToInGameWiimote(int local_wiimote) const;
 
   bool PlayerHasControllerMapped(PlayerId pid) const;
   bool LocalPlayerHasControllerMapped() const;
   bool IsLocalPlayer(PlayerId pid) const;
+  const PlayerId& GetLocalPlayerId() const;
 
   static void SendTimeBase();
   bool DoAllPlayersHaveGame();
@@ -181,7 +199,7 @@ protected:
   Common::SPSCQueue<AsyncQueueEntry, false> m_async_queue;
 
   std::array<Common::SPSCQueue<GCPadStatus>, 4> m_pad_buffer;
-  std::array<Common::SPSCQueue<WiimoteInput>, 4> m_wiimote_buffer;
+  std::array<Common::SPSCQueue<WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_buffer;
 
   std::array<GCPadStatus, 4> m_last_pad_status{};
   std::array<bool, 4> m_first_pad_status_received{};
@@ -241,14 +259,18 @@ private:
   bool PollLocalPad(int local_pad, sf::Packet& packet);
   void SendPadHostPoll(PadIndex pad_num);
 
+  bool AddLocalWiimoteToBuffer(int local_wiimote, const WiimoteEmu::SerializedWiimoteState& state,
+                               sf::Packet& packet);
+
   void UpdateDevices();
   void AddPadStateToPacket(int in_game_pad, const GCPadStatus& np, sf::Packet& packet);
-  void SendWiimoteState(int in_game_pad, const WiimoteInput& nw);
+  void AddWiimoteStateToPacket(int in_game_pad, const WiimoteEmu::SerializedWiimoteState& np,
+                               sf::Packet& packet);
   void Send(const sf::Packet& packet, u8 channel_id = DEFAULT_CHANNEL);
   void Disconnect();
   bool Connect();
   void SendGameStatus();
-  void ComputeMD5(const SyncIdentifier& sync_identifier);
+  void ComputeGameDigest(const SyncIdentifier& sync_identifier);
   void DisplayPlayersPing();
   u32 GetPlayersMaxPing() const;
 
@@ -278,7 +300,6 @@ private:
   void OnPing(sf::Packet& packet);
   void OnPlayerPingData(sf::Packet& packet);
   void OnDesyncDetected(sf::Packet& packet);
-  void OnSyncGCSRAM(sf::Packet& packet);
   void OnSyncSaveData(sf::Packet& packet);
   void OnSyncSaveDataNotify(sf::Packet& packet);
   void OnSyncSaveDataRaw(sf::Packet& packet);
@@ -291,11 +312,11 @@ private:
   void OnSyncCodesDataGecko(sf::Packet& packet);
   void OnSyncCodesNotifyAR(sf::Packet& packet);
   void OnSyncCodesDataAR(sf::Packet& packet);
-  void OnComputeMD5(sf::Packet& packet);
-  void OnMD5Progress(sf::Packet& packet);
-  void OnMD5Result(sf::Packet& packet);
-  void OnMD5Error(sf::Packet& packet);
-  void OnMD5Abort();
+  void OnComputeGameDigest(sf::Packet& packet);
+  void OnGameDigestProgress(sf::Packet& packet);
+  void OnGameDigestResult(sf::Packet& packet);
+  void OnGameDigestError(sf::Packet& packet);
+  void OnGameDigestAbort();
 
   bool m_is_connected = false;
   ConnectionState m_connection_state = ConnectionState::Failure;
@@ -306,9 +327,9 @@ private:
   std::string m_host_spec;
   std::string m_player_name;
   bool m_connecting = false;
-  TraversalClient* m_traversal_client = nullptr;
-  std::thread m_MD5_thread;
-  bool m_should_compute_MD5 = false;
+  Common::TraversalClient* m_traversal_client = nullptr;
+  std::thread m_game_digest_thread;
+  bool m_should_compute_game_digest = false;
   Common::Event m_gc_pad_event;
   Common::Event m_wii_pad_event;
   Common::Event m_first_pad_status_received_event;
@@ -333,4 +354,6 @@ private:
 
 void NetPlay_Enable(NetPlayClient* const np);
 void NetPlay_Disable();
+bool NetPlay_GetWiimoteData(const std::span<NetPlayClient::WiimoteDataBatchEntry>& entries);
+unsigned int NetPlay_GetLocalWiimoteForSlot(unsigned int slot);
 }  // namespace NetPlay

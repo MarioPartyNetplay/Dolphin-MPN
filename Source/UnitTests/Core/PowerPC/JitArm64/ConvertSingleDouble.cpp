@@ -3,12 +3,16 @@
 
 #include <functional>
 
+#include <bit>
+
 #include "Common/Arm64Emitter.h"
-#include "Common/BitUtils.h"
 #include "Common/CommonTypes.h"
 #include "Common/FPURoundMode.h"
+#include "Common/ScopeGuard.h"
+#include "Core/Core.h"
 #include "Core/PowerPC/Interpreter/Interpreter_FPUtils.h"
 #include "Core/PowerPC/JitArm64/Jit.h"
+#include "Core/System.h"
 
 #include "../TestValues.h"
 
@@ -30,7 +34,7 @@ struct Pair
 class TestConversion : private JitArm64
 {
 public:
-  TestConversion()
+  explicit TestConversion(Core::System& system) : JitArm64(system)
   {
     const Common::ScopedJITPageWriteAndNoExecute enable_jit_page_writes;
 
@@ -50,13 +54,13 @@ public:
     gpr.Lock(ARM64Reg::W30);
     fpr.Lock(ARM64Reg::Q0, ARM64Reg::Q1);
 
-    convert_single_to_double_lower = Common::BitCast<u64 (*)(u32)>(GetCodePtr());
+    convert_single_to_double_lower = std::bit_cast<u64 (*)(u32)>(GetCodePtr());
     m_float_emit.INS(32, ARM64Reg::S0, 0, ARM64Reg::W0);
     ConvertSingleToDoubleLower(0, ARM64Reg::D0, ARM64Reg::S0, ARM64Reg::Q1);
     m_float_emit.UMOV(64, ARM64Reg::X0, ARM64Reg::D0, 0);
     RET();
 
-    convert_single_to_double_pair = Common::BitCast<Pair<u64> (*)(u32, u32)>(GetCodePtr());
+    convert_single_to_double_pair = std::bit_cast<Pair<u64> (*)(u32, u32)>(GetCodePtr());
     m_float_emit.INS(32, ARM64Reg::D0, 0, ARM64Reg::W0);
     m_float_emit.INS(32, ARM64Reg::D0, 1, ARM64Reg::W1);
     ConvertSingleToDoublePair(0, ARM64Reg::Q0, ARM64Reg::D0, ARM64Reg::Q1);
@@ -64,13 +68,13 @@ public:
     m_float_emit.UMOV(64, ARM64Reg::X1, ARM64Reg::Q0, 1);
     RET();
 
-    convert_double_to_single_lower = Common::BitCast<u32 (*)(u64)>(GetCodePtr());
+    convert_double_to_single_lower = std::bit_cast<u32 (*)(u64)>(GetCodePtr());
     m_float_emit.INS(64, ARM64Reg::D0, 0, ARM64Reg::X0);
     ConvertDoubleToSingleLower(0, ARM64Reg::S0, ARM64Reg::D0);
     m_float_emit.UMOV(32, ARM64Reg::W0, ARM64Reg::S0, 0);
     RET();
 
-    convert_double_to_single_pair = Common::BitCast<Pair<u32> (*)(u64, u64)>(GetCodePtr());
+    convert_double_to_single_pair = std::bit_cast<Pair<u32> (*)(u64, u64)>(GetCodePtr());
     m_float_emit.INS(64, ARM64Reg::Q0, 0, ARM64Reg::X0);
     m_float_emit.INS(64, ARM64Reg::Q0, 1, ARM64Reg::X1);
     ConvertDoubleToSinglePair(0, ARM64Reg::D0, ARM64Reg::Q0);
@@ -84,12 +88,12 @@ public:
 
     // Set the rounding mode to something that's as annoying as possible to handle
     // (flush-to-zero enabled, and rounding not symmetric about the origin)
-    FPURoundMode::SetSIMDMode(FPURoundMode::RoundMode::ROUND_UP, true);
+    Common::FPU::SetSIMDMode(Common::FPU::RoundMode::ROUND_UP, true);
   }
 
   ~TestConversion() override
   {
-    FPURoundMode::LoadDefaultSIMDState();
+    Common::FPU::LoadDefaultSIMDState();
 
     FreeCodeSpace();
   }
@@ -119,7 +123,10 @@ private:
 
 TEST(JitArm64, ConvertDoubleToSingle)
 {
-  TestConversion test;
+  Core::DeclareAsCPUThread();
+  Common::ScopeGuard cpu_thread_guard([] { Core::UndeclareAsCPUThread(); });
+
+  TestConversion test(Core::System::GetInstance());
 
   for (const u64 input : double_test_values)
   {
@@ -154,7 +161,10 @@ TEST(JitArm64, ConvertDoubleToSingle)
 
 TEST(JitArm64, ConvertSingleToDouble)
 {
-  TestConversion test;
+  Core::DeclareAsCPUThread();
+  Common::ScopeGuard cpu_thread_guard([] { Core::UndeclareAsCPUThread(); });
+
+  TestConversion test(Core::System::GetInstance());
 
   for (const u32 input : single_test_values)
   {

@@ -5,7 +5,11 @@
 
 #include <array>
 #include <numeric>
+#include <optional>
 #include <string>
+
+#include "Common/Common.h"
+#include "Common/Config/Config.h"
 
 #include "Core/HW/WiimoteCommon/WiimoteReport.h"
 
@@ -30,6 +34,7 @@ class Force;
 class IMUAccelerometer;
 class IMUGyroscope;
 class IMUCursor;
+class IRPassthrough;
 class ModifySettingsButton;
 class Output;
 class Tilt;
@@ -37,6 +42,9 @@ class Tilt;
 
 namespace WiimoteEmu
 {
+struct DesiredWiimoteState;
+struct DesiredExtensionState;
+
 enum class WiimoteGroup
 {
   Buttons,
@@ -52,6 +60,7 @@ enum class WiimoteGroup
   IMUAccelerometer,
   IMUGyroscope,
   IMUPoint,
+  IRPassthrough,
 };
 
 enum class NunchukGroup;
@@ -62,6 +71,7 @@ enum class TurntableGroup;
 enum class UDrawTabletGroup;
 enum class DrawsomeTabletGroup;
 enum class TaTaConGroup;
+enum class ShinkansenGroup;
 
 template <typename T>
 void UpdateCalibrationDataChecksum(T& data, int cksum_bytes)
@@ -108,10 +118,31 @@ public:
   static constexpr u16 BUTTON_MINUS = 0x1000;
   static constexpr u16 BUTTON_HOME = 0x8000;
 
+  static constexpr const char* BUTTONS_GROUP = _trans("Buttons");
+  static constexpr const char* DPAD_GROUP = _trans("D-Pad");
+  static constexpr const char* ACCELEROMETER_GROUP = "IMUAccelerometer";
+  static constexpr const char* GYROSCOPE_GROUP = "IMUGyroscope";
+  static constexpr const char* IR_GROUP = "IR";
+  static constexpr const char* IR_PASSTHROUGH_GROUP = "IRPassthrough";
+
+  static constexpr const char* A_BUTTON = "A";
+  static constexpr const char* B_BUTTON = "B";
+  static constexpr const char* ONE_BUTTON = "1";
+  static constexpr const char* TWO_BUTTON = "2";
+  static constexpr const char* MINUS_BUTTON = "-";
+  static constexpr const char* PLUS_BUTTON = "+";
+  static constexpr const char* HOME_BUTTON = "Home";
+
+  static constexpr const char* UPRIGHT_OPTION = "Upright Wiimote";
+  static constexpr const char* SIDEWAYS_OPTION = "Sideways Wiimote";
+
   explicit Wiimote(unsigned int index);
   ~Wiimote();
 
   std::string GetName() const override;
+
+  InputConfig* GetConfig() const override;
+
   void LoadDefaults(const ControllerInterface& ciface) override;
 
   ControllerEmu::ControlGroup* GetWiimoteGroup(WiimoteGroup group) const;
@@ -123,12 +154,18 @@ public:
   ControllerEmu::ControlGroup* GetUDrawTabletGroup(UDrawTabletGroup group) const;
   ControllerEmu::ControlGroup* GetDrawsomeTabletGroup(DrawsomeTabletGroup group) const;
   ControllerEmu::ControlGroup* GetTaTaConGroup(TaTaConGroup group) const;
+  ControllerEmu::ControlGroup* GetShinkansenGroup(ShinkansenGroup group) const;
 
-  void Update() override;
+  u8 GetWiimoteDeviceIndex() const override;
+  void SetWiimoteDeviceIndex(u8 index) override;
+
+  void PrepareInput(WiimoteEmu::DesiredWiimoteState* target_state,
+                    SensorBarState sensor_bar_state) override;
+  void Update(const WiimoteEmu::DesiredWiimoteState& target_state) override;
   void EventLinked() override;
   void EventUnlinked() override;
   void InterruptDataOutput(const u8* data, u32 size) override;
-  bool IsButtonPressed() override;
+  WiimoteCommon::ButtonData GetCurrentlyPressedButtons() override;
 
   void Reset();
 
@@ -136,6 +173,11 @@ public:
 
   // Active extension number is exposed for TAS.
   ExtensionNumber GetActiveExtensionNumber() const;
+  ControllerEmu::SubscribableSettingValue<bool>& GetMotionPlusSetting();
+
+  static Common::Vec3
+  OverrideVec3(const ControllerEmu::ControlGroup* control_group, Common::Vec3 vec,
+               const ControllerEmu::InputOverrideFunction& input_override_function);
 
 private:
   // Used only for error generation:
@@ -148,14 +190,14 @@ private:
   void RefreshConfig();
 
   void StepDynamics();
-  void UpdateButtonsStatus();
+  void UpdateButtonsStatus(const DesiredWiimoteState& target_state);
+  void BuildDesiredWiimoteState(DesiredWiimoteState* target_state, SensorBarState sensor_bar_state);
 
   // Returns simulated accelerometer data in m/s^2.
-  Common::Vec3 GetAcceleration(
-      Common::Vec3 extra_acceleration = Common::Vec3(0, 0, float(GRAVITY_ACCELERATION))) const;
+  Common::Vec3 GetAcceleration(Common::Vec3 extra_acceleration) const;
 
   // Returns simulated gyroscope data in radians/s.
-  Common::Vec3 GetAngularVelocity(Common::Vec3 extra_angular_velocity = {}) const;
+  Common::Vec3 GetAngularVelocity(Common::Vec3 extra_angular_velocity) const;
 
   // Returns the transformation of the world around the wiimote.
   // Used for simulating camera data and for rotating acceleration data.
@@ -166,6 +208,10 @@ private:
   // Returns the world rotation from the effects of sideways/upright settings.
   Common::Quaternion GetOrientation() const;
 
+  std::optional<Common::Vec3> OverrideVec3(const ControllerEmu::ControlGroup* control_group,
+                                           std::optional<Common::Vec3> optional_vec) const;
+  Common::Vec3 OverrideVec3(const ControllerEmu::ControlGroup* control_group,
+                            Common::Vec3 vec) const;
   Common::Vec3 GetTotalAcceleration() const;
   Common::Vec3 GetTotalAngularVelocity() const;
   Common::Matrix44 GetTotalTransformation() const;
@@ -185,9 +231,9 @@ private:
   template <typename T, typename H>
   void InvokeHandler(H&& handler, const WiimoteCommon::OutputReportGeneric& rpt, u32 size);
 
-  void HandleExtensionSwap();
+  void HandleExtensionSwap(ExtensionNumber desired_extension_number, bool desired_motion_plus);
   bool ProcessExtensionPortEvent();
-  void SendDataReport();
+  void SendDataReport(const DesiredWiimoteState& target_state);
   bool ProcessReadDataRequest();
 
   void SetRumble(bool on);
@@ -199,8 +245,6 @@ private:
 
   Extension* GetActiveExtension() const;
   Extension* GetNoneExtension() const;
-
-  bool NetPlay_GetWiimoteData(int wiimote, u8* data, u8 size, u8 reporting_mode);
 
   // TODO: Kill this nonsensical function used for TAS:
   EncryptionKey GetExtensionEncryptionKey() const;
@@ -259,11 +303,12 @@ private:
   ControllerEmu::IMUAccelerometer* m_imu_accelerometer;
   ControllerEmu::IMUGyroscope* m_imu_gyroscope;
   ControllerEmu::IMUCursor* m_imu_ir;
+  ControllerEmu::IRPassthrough* m_ir_passthrough;
 
   ControllerEmu::SettingValue<bool> m_sideways_setting;
   ControllerEmu::SettingValue<bool> m_upright_setting;
   ControllerEmu::SettingValue<double> m_battery_setting;
-  ControllerEmu::SettingValue<bool> m_motion_plus_setting;
+  ControllerEmu::SubscribableSettingValue<bool> m_motion_plus_setting;
   ControllerEmu::SettingValue<double> m_fov_x_setting;
   ControllerEmu::SettingValue<double> m_fov_y_setting;
 
@@ -275,8 +320,14 @@ private:
 
   ExtensionPort m_extension_port{&m_i2c_bus};
 
-  // Wiimote index, 0-3
+  // Wiimote index, 0-3.
+  // Can also be 4 for Balance Board.
+  // This is used to look up the user button config.
   const u8 m_index;
+
+  // The Bluetooth 'slot' this device is connected to.
+  // This is usually the same as m_index, but can differ during Netplay.
+  u8 m_bt_device_index;
 
   WiimoteCommon::InputReportID m_reporting_mode;
   bool m_reporting_continuous;
@@ -301,6 +352,6 @@ private:
 
   IMUCursorState m_imu_cursor_state;
 
-  size_t m_config_changed_callback_id;
+  Config::ConfigChangedCallbackID m_config_changed_callback_id;
 };
 }  // namespace WiimoteEmu

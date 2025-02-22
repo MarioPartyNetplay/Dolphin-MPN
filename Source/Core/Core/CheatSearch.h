@@ -14,6 +14,11 @@
 #include "Common/Result.h"
 #include "Core/PowerPC/MMU.h"
 
+namespace Core
+{
+class CPUThreadGuard;
+}
+
 namespace Cheats
 {
 enum class CompareType
@@ -94,6 +99,9 @@ enum class SearchErrorCode
   // This is returned if PowerPC::RequestedAddressSpace::Virtual is given but the MSR.DR flag is
   // currently off in the emulated game.
   VirtualAddressesCurrentlyNotAccessible,
+
+  // Cheats and memory reading are disabled in RetroAchievements hardcore mode.
+  DisabledInHardcoreMode,
 };
 
 // Returns the corresponding DataType enum for the value currently held by the given SearchValue.
@@ -108,7 +116,7 @@ std::vector<u8> GetValueAsByteVector(const SearchValue& value);
 // for which the given validator returns true.
 template <typename T>
 Common::Result<SearchErrorCode, std::vector<SearchResult<T>>>
-NewSearch(const std::vector<MemoryRange>& memory_ranges,
+NewSearch(const Core::CPUThreadGuard& guard, const std::vector<MemoryRange>& memory_ranges,
           PowerPC::RequestedAddressSpace address_space, bool aligned,
           const std::function<bool(const T& value)>& validator);
 
@@ -116,7 +124,7 @@ NewSearch(const std::vector<MemoryRange>& memory_ranges,
 // which the given validator returns true.
 template <typename T>
 Common::Result<SearchErrorCode, std::vector<SearchResult<T>>>
-NextSearch(const std::vector<SearchResult<T>>& previous_results,
+NextSearch(const Core::CPUThreadGuard& guard, const std::vector<SearchResult<T>>& previous_results,
            PowerPC::RequestedAddressSpace address_space,
            const std::function<bool(const T& new_value, const T& old_value)>& validator);
 
@@ -138,7 +146,7 @@ public:
   virtual void ResetResults() = 0;
 
   // Run either a new search or a next search based on the current state of this session.
-  virtual SearchErrorCode RunSearch() = 0;
+  virtual SearchErrorCode RunSearch(const Core::CPUThreadGuard& guard) = 0;
 
   virtual size_t GetMemoryRangeCount() const = 0;
   virtual MemoryRange GetMemoryRange(size_t index) const = 0;
@@ -160,11 +168,11 @@ public:
   // Create a complete copy of this search session.
   virtual std::unique_ptr<CheatSearchSessionBase> Clone() const = 0;
 
-  // Create a partial copy of this search session. Only the results with the passed indices are
-  // copied. This is useful if you want to run a next search on only partial result data of a
+  // Create a partial copy of this search session. Only the results with indices in the given range
+  // are copied. This is useful if you want to run a next search on only partial result data of a
   // previous search.
-  virtual std::unique_ptr<CheatSearchSessionBase>
-  ClonePartial(const std::vector<size_t>& result_indices) const = 0;
+  virtual std::unique_ptr<CheatSearchSessionBase> ClonePartial(size_t begin_index,
+                                                               size_t end_index) const = 0;
 };
 
 template <typename T>
@@ -184,7 +192,7 @@ public:
   bool SetValueFromString(const std::string& value_as_string, bool force_parse_as_hex) override;
 
   void ResetResults() override;
-  SearchErrorCode RunSearch() override;
+  SearchErrorCode RunSearch(const Core::CPUThreadGuard& guard) override;
 
   size_t GetMemoryRangeCount() const override;
   MemoryRange GetMemoryRange(size_t index) const override;
@@ -205,8 +213,8 @@ public:
   bool WasFirstSearchDone() const override;
 
   std::unique_ptr<CheatSearchSessionBase> Clone() const override;
-  std::unique_ptr<CheatSearchSessionBase>
-  ClonePartial(const std::vector<size_t>& result_indices) const override;
+  std::unique_ptr<CheatSearchSessionBase> ClonePartial(size_t begin_index,
+                                                       size_t end_index) const override;
 
 private:
   std::vector<SearchResult<T>> m_search_results;

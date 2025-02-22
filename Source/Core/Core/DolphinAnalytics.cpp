@@ -12,7 +12,8 @@
 #include <fmt/format.h>
 
 #if defined(_WIN32)
-#include <windows.h>
+#include <Windows.h>
+#include "Common/WindowsRegistry.h"
 #elif defined(__APPLE__)
 #include <objc/message.h>
 #elif defined(ANDROID)
@@ -33,6 +34,7 @@
 #include "Core/HW/GCPad.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/System.h"
 #include "InputCommon/GCAdapter.h"
 #include "InputCommon/InputConfig.h"
 #include "VideoCommon/VideoBackendBase.h"
@@ -135,8 +137,7 @@ void DolphinAnalytics::ReportGameStart()
 }
 
 // Keep in sync with enum class GameQuirk definition.
-constexpr std::array<const char*, 28> GAME_QUIRKS_NAMES{
-    "icache-matters",
+constexpr std::array<const char*, 34> GAME_QUIRKS_NAMES{
     "directly-reads-wiimote-input",
     "uses-DVDLowStopLaser",
     "uses-DVDLowOffset",
@@ -157,6 +158,8 @@ constexpr std::array<const char*, 28> GAME_QUIRKS_NAMES{
     "uses-cp-perf-command",
     "uses-unimplemented-ax-command",
     "uses-ax-initial-time-delay",
+    "uses-ax-wiimote-lowpass",
+    "uses-ax-wiimote-biquad",
     "sets-xf-clipdisable-bit-0",
     "sets-xf-clipdisable-bit-1",
     "sets-xf-clipdisable-bit-2",
@@ -164,6 +167,11 @@ constexpr std::array<const char*, 28> GAME_QUIRKS_NAMES{
     "mismatched-gpu-normals-between-cp-and-xf",
     "mismatched-gpu-tex-coords-between-cp-and-xf",
     "mismatched-gpu-matrix-indices-between-cp-and-xf",
+    "reads-bounding-box",
+    "invalid-position-component-format",
+    "invalid-normal-component-format",
+    "invalid-texture-coordinate-component-format",
+    "invalid-color-component-format",
 };
 static_assert(GAME_QUIRKS_NAMES.size() == static_cast<u32>(GameQuirk::COUNT),
               "Game quirks names and enum definition are out of sync.");
@@ -266,21 +274,10 @@ void DolphinAnalytics::MakeBaseBuilder()
 #if defined(_WIN32)
   builder.AddData("os-type", "windows");
 
-  // Windows 8 removes support for GetVersionEx and such. Stupid.
-  DWORD(WINAPI * RtlGetVersion)(LPOSVERSIONINFOEXW);
-  *(FARPROC*)&RtlGetVersion = GetProcAddress(GetModuleHandle(TEXT("ntdll")), "RtlGetVersion");
-
-  OSVERSIONINFOEXW winver;
-  winver.dwOSVersionInfoSize = sizeof(winver);
-  if (RtlGetVersion != nullptr)
-  {
-    RtlGetVersion(&winver);
-    builder.AddData("win-ver-major", static_cast<u32>(winver.dwMajorVersion));
-    builder.AddData("win-ver-minor", static_cast<u32>(winver.dwMinorVersion));
-    builder.AddData("win-ver-build", static_cast<u32>(winver.dwBuildNumber));
-    builder.AddData("win-ver-spmajor", static_cast<u32>(winver.wServicePackMajor));
-    builder.AddData("win-ver-spminor", static_cast<u32>(winver.wServicePackMinor));
-  }
+  const auto winver = WindowsRegistry::GetOSVersion();
+  builder.AddData("win-ver-major", static_cast<u32>(winver.dwMajorVersion));
+  builder.AddData("win-ver-minor", static_cast<u32>(winver.dwMinorVersion));
+  builder.AddData("win-ver-build", static_cast<u32>(winver.dwBuildNumber));
 #elif defined(ANDROID)
   builder.AddData("os-type", "android");
   builder.AddData("android-manufacturer", s_get_val_func("DEVICE_MANUFACTURER"));
@@ -302,7 +299,7 @@ void DolphinAnalytics::MakeBaseBuilder()
     };
     // Under arm64, we need to call objc_msgSend to recieve a struct.
     // On x86_64, we need to explicitly call objc_msgSend_stret for a struct.
-#if _M_ARM_64
+#ifdef _M_ARM_64
 #define msgSend objc_msgSend
 #else
 #define msgSend objc_msgSend_stret
@@ -390,6 +387,9 @@ void DolphinAnalytics::MakePerGameBuilder()
   builder.AddData("cfg-gfx-internal-resolution", g_Config.iEFBScale);
   builder.AddData("cfg-gfx-tc-samples", g_Config.iSafeTextureCache_ColorSamples);
   builder.AddData("cfg-gfx-stereo-mode", static_cast<int>(g_Config.stereo_mode));
+  builder.AddData("cfg-gfx-stereo-per-eye-resolution-full",
+                  g_Config.stereo_per_eye_resolution_full);
+  builder.AddData("cfg-gfx-hdr", static_cast<int>(g_Config.bHDR));
   builder.AddData("cfg-gfx-per-pixel-lighting", g_Config.bEnablePixelLighting);
   builder.AddData("cfg-gfx-shader-compilation-mode", GetShaderCompilationMode(g_Config));
   builder.AddData("cfg-gfx-wait-for-shaders", g_Config.bWaitForShadersBeforeStarting);
@@ -421,15 +421,16 @@ void DolphinAnalytics::MakePerGameBuilder()
   builder.AddData("gpu-has-palette-conversion", g_Config.backend_info.bSupportsPaletteConversion);
   builder.AddData("gpu-has-clip-control", g_Config.backend_info.bSupportsClipControl);
   builder.AddData("gpu-has-ssaa", g_Config.backend_info.bSupportsSSAA);
+  builder.AddData("gpu-has-logic-ops", g_Config.backend_info.bSupportsLogicOp);
+  builder.AddData("gpu-has-framebuffer-fetch", g_Config.backend_info.bSupportsFramebufferFetch);
 
   // NetPlay / recording.
   builder.AddData("netplay", NetPlay::IsNetPlayRunning());
-  builder.AddData("movie", Movie::IsMovieActive());
+  builder.AddData("movie", Core::System::GetInstance().GetMovie().IsMovieActive());
 
   // Controller information
   // We grab enough to tell what percentage of our users are playing with keyboard/mouse, some kind
-  // of gamepad
-  // or the official GameCube adapter.
+  // of gamepad, or the official GameCube adapter.
   builder.AddData("gcadapter-detected", GCAdapter::IsDetected(nullptr));
   builder.AddData("has-controller", Pad::GetConfig()->IsControllerControlledByGamepadDevice(0) ||
                                         GCAdapter::IsDetected(nullptr));

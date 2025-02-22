@@ -3,12 +3,18 @@
 
 #pragma once
 
+#include <span>
 #include <string>
 #include <vector>
 
 #include "Common/CommonTypes.h"
 
 class PointerWrap;
+
+namespace Core
+{
+class CPUThreadGuard;
+}
 
 namespace Gecko
 {
@@ -30,15 +36,11 @@ public:
   bool enabled = false;
   bool default_enabled = false;
   bool user_defined = false;
-
-  bool Exist(u32 address, u32 data) const;
 };
 
 bool operator==(const GeckoCode& lhs, const GeckoCode& rhs);
-bool operator!=(const GeckoCode& lhs, const GeckoCode& rhs);
 
 bool operator==(const GeckoCode::Code& lhs, const GeckoCode::Code& rhs);
-bool operator!=(const GeckoCode::Code& lhs, const GeckoCode::Code& rhs);
 
 // Installation address for codehandler.bin in the Game's RAM
 constexpr u32 INSTALLER_BASE_ADDRESS = 0x80001800;
@@ -58,11 +60,11 @@ constexpr u32 HLE_TRAMPOLINE_ADDRESS = INSTALLER_END_ADDRESS - 4;
 // preserve the emulation performance.
 constexpr u32 MAGIC_GAMEID = 0xD01F1BAD;
 
-void SetActiveCodes(const std::vector<GeckoCode>& gcodes);
+void SetActiveCodes(std::span<const GeckoCode> gcodes, const std::string& game_id);
 void SetSyncedCodesAsActive();
-void UpdateSyncedCodes(const std::vector<GeckoCode>& gcodes);
-std::vector<GeckoCode> SetAndReturnActiveCodes(const std::vector<GeckoCode>& gcodes);
-void RunCodeHandler();
+void UpdateSyncedCodes(std::span<const GeckoCode> gcodes);
+std::vector<GeckoCode> SetAndReturnActiveCodes(std::span<const GeckoCode> gcodes);
+void RunCodeHandler(const Core::CPUThreadGuard& guard);
 void Shutdown();
 void DoState(PointerWrap&);
 

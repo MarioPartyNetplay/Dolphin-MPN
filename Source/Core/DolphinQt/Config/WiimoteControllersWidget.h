@@ -16,24 +16,29 @@ class QLabel;
 class QPushButton;
 class QRadioButton;
 
+namespace Core
+{
+enum class State;
+}
+
 class WiimoteControllersWidget final : public QWidget
 {
   Q_OBJECT
 public:
   explicit WiimoteControllersWidget(QWidget* parent);
 
+  void UpdateBluetoothAvailableStatus();
+
 private:
-  void OnWiimoteModeChanged();
-  void UpdateDisabledWiimoteControls();
   void SaveSettings();
   void OnBluetoothPassthroughSyncPressed();
   void OnBluetoothPassthroughResetPressed();
   void OnWiimoteRefreshPressed();
-  void OnWiimoteConfigure();
+  void OnWiimoteConfigure(size_t index);
 
   void CreateLayout();
   void ConnectWidgets();
-  void LoadSettings();
+  void LoadSettings(Core::State state);
 
   QGroupBox* m_wiimote_box;
   QGridLayout* m_wiimote_layout;
@@ -52,4 +57,5 @@ private:
   QCheckBox* m_wiimote_speaker_data;
   QCheckBox* m_wiimote_ciface;
   QPushButton* m_wiimote_refresh;
+  QLabel* m_bluetooth_unavailable;
 };

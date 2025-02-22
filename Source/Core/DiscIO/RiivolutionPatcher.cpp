@@ -14,10 +14,13 @@
 #include "Common/FileUtil.h"
 #include "Common/IOFile.h"
 #include "Common/StringUtil.h"
+#include "Core/AchievementManager.h"
+#include "Core/Core.h"
 #include "Core/HLE/HLE.h"
 #include "Core/HW/Memmap.h"
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/PowerPC/MMU.h"
+#include "Core/System.h"
 #include "DiscIO/DirectoryBlob.h"
 #include "DiscIO/RiivolutionParser.h"
 
@@ -63,13 +66,14 @@ FileDataLoaderHostFS::MakeAbsoluteFromRelative(std::string_view external_relativ
     return std::nullopt;
 #endif
 
-  std::string result = StringBeginsWith(external_relative_path, "/") ? m_sd_root : m_patch_root;
+  const std::string& root = external_relative_path.starts_with('/') ? m_sd_root : m_patch_root;
+  std::string result = root;
   std::string_view work = external_relative_path;
 
   // Strip away all leading and trailing path separators.
-  while (StringBeginsWith(work, "/"))
+  while (work.starts_with('/'))
     work.remove_prefix(1);
-  while (StringEndsWith(work, "/"))
+  while (work.ends_with('/'))
     work.remove_suffix(1);
   size_t depth = 0;
   while (true)
@@ -100,7 +104,7 @@ FileDataLoaderHostFS::MakeAbsoluteFromRelative(std::string_view external_relativ
         result.pop_back();
       result.pop_back();
     }
-    else if (std::all_of(element.begin(), element.end(), [](char c) { return c == '.'; }))
+    else if (std::ranges::all_of(element, [](char c) { return c == '.'; }))
     {
       // This is a triple, quadruple, etc. dot.
       // Some file systems treat this as several 'up' path traversals, but Riivolution does not.
@@ -115,6 +119,33 @@ FileDataLoaderHostFS::MakeAbsoluteFromRelative(std::string_view external_relativ
       // Append path element to result string.
       result += '/';
       result += element;
+
+      // Riivolution assumes a case-insensitive file system, which means it's possible that an XML
+      // file references a 'file.bin' but the actual file is named 'File.bin' or 'FILE.BIN'. To
+      // preserve this behavior, we modify the file path to match any existing file in the file
+      // system, if one exists.
+      if (!::File::Exists(result))
+      {
+        // Drop path element again so we can search in the directory.
+        result.erase(result.size() - element.size(), element.size());
+
+        // Re-attach an element that actually matches the capitalization in the host filesystem.
+        auto possible_files = ::File::ScanDirectoryTree(result, false);
+        bool found = false;
+        for (auto& f : possible_files.children)
+        {
+          if (Common::CaseInsensitiveEquals(element, f.virtualName))
+          {
+            result += f.virtualName;
+            found = true;
+            break;
+          }
+        }
+
+        // If there isn't any file that matches just use the given element.
+        if (!found)
+          result += element;
+      }
     }
 
     // If this was the last path element, we're done.
@@ -125,7 +156,7 @@ FileDataLoaderHostFS::MakeAbsoluteFromRelative(std::string_view external_relativ
     work = work.substr(separator_position + 1);
 
     // Remove any potential extra path separators.
-    while (StringBeginsWith(work, "/"))
+    while (work.starts_with('/'))
       work = work.substr(1);
   }
   return result;
@@ -205,13 +236,23 @@ static void SplitAt(BuilderContentSource* before, BuilderContentSource* after, u
   after->m_offset += before->m_size;
   after->m_size = end - split_at;
   if (std::holds_alternative<ContentFile>(after->m_source))
+  {
     std::get<ContentFile>(after->m_source).m_offset += before->m_size;
-  else if (std::holds_alternative<const u8*>(after->m_source))
-    std::get<const u8*>(after->m_source) += before->m_size;
+  }
+  else if (std::holds_alternative<ContentMemory>(after->m_source))
+  {
+    after->m_source = std::make_shared<std::vector<u8>>(
+        std::get<ContentMemory>(after->m_source)->begin() + before->m_size,
+        std::get<ContentMemory>(after->m_source)->end());
+  }
   else if (std::holds_alternative<ContentPartition>(after->m_source))
+  {
     std::get<ContentPartition>(after->m_source).m_offset += before->m_size;
+  }
   else if (std::holds_alternative<ContentVolume>(after->m_source))
+  {
     std::get<ContentVolume>(after->m_source).m_offset += before->m_size;
+  }
 }
 
 static void ApplyPatchToFile(const Patch& patch, DiscIO::FSTBuilderNode* file_node,
@@ -319,22 +360,14 @@ static void ApplyPatchToFile(const Patch& patch, const File& file_patch,
                    file_patch.m_fileoffset, file_patch.m_length, file_patch.m_resize);
 }
 
-static bool CaseInsensitiveEquals(std::string_view a, std::string_view b)
-{
-  if (a.size() != b.size())
-    return false;
-  return std::equal(a.begin(), a.end(), b.begin(),
-                    [](char ca, char cb) { return Common::ToLower(ca) == Common::ToLower(cb); });
-}
-
 static FSTBuilderNode* FindFileNodeInFST(std::string_view path, std::vector<FSTBuilderNode>* fst,
                                          bool create_if_not_exists)
 {
   const size_t path_separator = path.find('/');
   const bool is_file = path_separator == std::string_view::npos;
   const std::string_view name = is_file ? path : path.substr(0, path_separator);
-  const auto it = std::find_if(fst->begin(), fst->end(), [&](const FSTBuilderNode& node) {
-    return CaseInsensitiveEquals(node.m_filename, name);
+  const auto it = std::ranges::find_if(*fst, [&](const FSTBuilderNode& node) {
+    return Common::CaseInsensitiveEquals(node.m_filename, name);
   });
 
   if (it == fst->end())
@@ -376,7 +409,7 @@ static DiscIO::FSTBuilderNode* FindFilenameNodeInFST(std::string_view filename,
       if (result)
         return result;
     }
-    else if (CaseInsensitiveEquals(node.m_filename, filename))
+    else if (Common::CaseInsensitiveEquals(node.m_filename, filename))
     {
       return &node;
     }
@@ -397,7 +430,7 @@ static void ApplyFilePatchToFST(const Patch& patch, const File& file,
     if (node)
       ApplyPatchToFile(patch, file, node);
   }
-  else if (dol_node && CaseInsensitiveEquals(file.m_disc, "main.dol"))
+  else if (dol_node && Common::CaseInsensitiveEquals(file.m_disc, "main.dol"))
   {
     // Special case: If the filename is "main.dol", we want to patch the main executable.
     ApplyPatchToFile(patch, file, dol_node);
@@ -424,9 +457,9 @@ static void ApplyFolderPatchToFST(const Patch& patch, const Folder& folder,
         return std::string(b);
       if (b.empty())
         return std::string(a);
-      if (StringEndsWith(a, "/"))
+      if (a.ends_with('/'))
         a.remove_suffix(1);
-      if (StringBeginsWith(b, "/"))
+      if (b.starts_with('/'))
         b.remove_prefix(1);
       return fmt::format("{}/{}", a, b);
     };
@@ -458,8 +491,8 @@ static void ApplyFolderPatchToFST(const Patch& patch, const Folder& folder,
   ApplyFolderPatchToFST(patch, folder, fst, dol_node, folder.m_disc, folder.m_external);
 }
 
-void ApplyPatchesToFiles(const std::vector<Patch>& patches, PatchIndex index,
-                         std::vector<DiscIO::FSTBuilderNode>* fst, DiscIO::FSTBuilderNode* dol_node)
+void ApplyPatchesToFiles(std::span<const Patch> patches, PatchIndex index,
+                         std::vector<FSTBuilderNode>* fst, FSTBuilderNode* dol_node)
 {
   for (const auto& patch : patches)
   {
@@ -476,30 +509,35 @@ void ApplyPatchesToFiles(const std::vector<Patch>& patches, PatchIndex index,
   }
 }
 
-static bool MemoryMatchesAt(u32 offset, const std::vector<u8>& value)
+static bool MemoryMatchesAt(const Core::CPUThreadGuard& guard, u32 offset,
+                            std::span<const u8> value)
 {
   for (u32 i = 0; i < value.size(); ++i)
   {
-    auto result = PowerPC::HostTryReadU8(offset + i);
+    auto result = PowerPC::MMU::HostTryReadU8(guard, offset + i);
     if (!result || result->value != value[i])
       return false;
   }
   return true;
 }
 
-static void ApplyMemoryPatch(u32 offset, const std::vector<u8>& value,
-                             const std::vector<u8>& original)
+static void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, u32 offset,
+                             std::span<const u8> value, std::span<const u8> original)
 {
+  if (AchievementManager::GetInstance().IsHardcoreModeActive())
+    return;
+
   if (value.empty())
     return;
 
-  if (!original.empty() && !MemoryMatchesAt(offset, original))
+  if (!original.empty() && !MemoryMatchesAt(guard, offset, original))
     return;
 
+  auto& system = guard.GetSystem();
   const u32 size = static_cast<u32>(value.size());
   for (u32 i = 0; i < size; ++i)
-    PowerPC::HostTryWriteU8(value[i], offset + i);
-  const u32 overlapping_hook_count = HLE::UnpatchRange(offset, offset + size);
+    PowerPC::MMU::HostTryWriteU8(guard, value[i], offset + i);
+  const u32 overlapping_hook_count = HLE::UnpatchRange(system, offset, offset + size);
   if (overlapping_hook_count != 0)
   {
     WARN_LOG_FMT(OSHLE, "Riivolution memory patch overlaps {} HLE hook(s) at {:08x} (size: {})",
@@ -514,17 +552,18 @@ static std::vector<u8> GetMemoryPatchValue(const Patch& patch, const Memory& mem
   return memory_patch.m_value;
 }
 
-static void ApplyMemoryPatch(const Patch& patch, const Memory& memory_patch)
+static void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, const Patch& patch,
+                             const Memory& memory_patch)
 {
   if (memory_patch.m_offset == 0)
     return;
 
-  ApplyMemoryPatch(memory_patch.m_offset | 0x80000000, GetMemoryPatchValue(patch, memory_patch),
-                   memory_patch.m_original);
+  ApplyMemoryPatch(guard, memory_patch.m_offset | 0x80000000,
+                   GetMemoryPatchValue(patch, memory_patch), memory_patch.m_original);
 }
 
-static void ApplySearchMemoryPatch(const Patch& patch, const Memory& memory_patch, u32 ram_start,
-                                   u32 length)
+static void ApplySearchMemoryPatch(const Core::CPUThreadGuard& guard, const Patch& patch,
+                                   const Memory& memory_patch, u32 ram_start, u32 length)
 {
   if (memory_patch.m_original.empty() || memory_patch.m_align == 0)
     return;
@@ -533,16 +572,16 @@ static void ApplySearchMemoryPatch(const Patch& patch, const Memory& memory_patc
   for (u32 i = 0; i < length - (stride - 1); i += stride)
   {
     const u32 address = ram_start + i;
-    if (MemoryMatchesAt(address, memory_patch.m_original))
+    if (MemoryMatchesAt(guard, address, memory_patch.m_original))
     {
-      ApplyMemoryPatch(address, GetMemoryPatchValue(patch, memory_patch), {});
+      ApplyMemoryPatch(guard, address, GetMemoryPatchValue(patch, memory_patch), {});
       break;
     }
   }
 }
 
-static void ApplyOcarinaMemoryPatch(const Patch& patch, const Memory& memory_patch, u32 ram_start,
-                                    u32 length)
+static void ApplyOcarinaMemoryPatch(const Core::CPUThreadGuard& guard, const Patch& patch,
+                                    const Memory& memory_patch, u32 ram_start, u32 length)
 {
   if (memory_patch.m_offset == 0)
     return;
@@ -550,24 +589,26 @@ static void ApplyOcarinaMemoryPatch(const Patch& patch, const Memory& memory_pat
   if (value.empty())
     return;
 
+  auto& system = guard.GetSystem();
   for (u32 i = 0; i < length; i += 4)
   {
     // first find the pattern
     const u32 address = ram_start + i;
-    if (MemoryMatchesAt(address, value))
+    if (MemoryMatchesAt(guard, address, value))
     {
       for (; i < length; i += 4)
       {
         // from the pattern find the next blr instruction
         const u32 blr_address = ram_start + i;
-        auto blr = PowerPC::HostTryReadU32(blr_address);
+        auto blr = PowerPC::MMU::HostTryReadU32(guard, blr_address);
         if (blr && blr->value == 0x4e800020)
         {
           // and replace it with a jump to the given offset
           const u32 target = memory_patch.m_offset | 0x80000000;
           const u32 jmp = ((target - blr_address) & 0x03fffffc) | 0x48000000;
-          PowerPC::HostTryWriteU32(jmp, blr_address);
-          const u32 overlapping_hook_count = HLE::UnpatchRange(blr_address, blr_address + 4);
+          PowerPC::MMU::HostTryWriteU32(guard, jmp, blr_address);
+          const u32 overlapping_hook_count =
+              HLE::UnpatchRange(system, blr_address, blr_address + 4);
           if (overlapping_hook_count != 0)
           {
             WARN_LOG_FMT(OSHLE, "Riivolution ocarina patch overlaps HLE hook at {}", blr_address);
@@ -580,8 +621,11 @@ static void ApplyOcarinaMemoryPatch(const Patch& patch, const Memory& memory_pat
   }
 }
 
-void ApplyGeneralMemoryPatches(const std::vector<Patch>& patches)
+void ApplyGeneralMemoryPatches(const Core::CPUThreadGuard& guard, std::span<const Patch> patches)
 {
+  const auto& system = guard.GetSystem();
+  const auto& system_memory = system.GetMemory();
+
   for (const auto& patch : patches)
   {
     for (const auto& memory : patch.m_memory_patches)
@@ -590,14 +634,15 @@ void ApplyGeneralMemoryPatches(const std::vector<Patch>& patches)
         continue;
 
       if (memory.m_search)
-        ApplySearchMemoryPatch(patch, memory, 0x80000000, ::Memory::GetRamSize());
+        ApplySearchMemoryPatch(guard, patch, memory, 0x80000000, system_memory.GetRamSize());
       else
-        ApplyMemoryPatch(patch, memory);
+        ApplyMemoryPatch(guard, patch, memory);
     }
   }
 }
 
-void ApplyApploaderMemoryPatches(const std::vector<Patch>& patches, u32 ram_address, u32 ram_length)
+void ApplyApploaderMemoryPatches(const Core::CPUThreadGuard& guard, std::span<const Patch> patches,
+                                 u32 ram_address, u32 ram_length)
 {
   for (const auto& patch : patches)
   {
@@ -607,15 +652,14 @@ void ApplyApploaderMemoryPatches(const std::vector<Patch>& patches, u32 ram_addr
         continue;
 
       if (memory.m_ocarina)
-        ApplyOcarinaMemoryPatch(patch, memory, ram_address, ram_length);
+        ApplyOcarinaMemoryPatch(guard, patch, memory, ram_address, ram_length);
       else
-        ApplySearchMemoryPatch(patch, memory, ram_address, ram_length);
+        ApplySearchMemoryPatch(guard, patch, memory, ram_address, ram_length);
     }
   }
 }
 
-std::optional<SavegameRedirect>
-ExtractSavegameRedirect(const std::vector<Patch>& riivolution_patches)
+std::optional<SavegameRedirect> ExtractSavegameRedirect(std::span<const Patch> riivolution_patches)
 {
   for (const auto& patch : riivolution_patches)
   {

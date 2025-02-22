@@ -1,13 +1,13 @@
 // Copyright 2021 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <bit>
 #include <cstddef>
+#include <random>
 #include <type_traits>
 
 #include "Common/Arm64Emitter.h"
 #include "Common/Assert.h"
-#include "Common/BitUtils.h"
-#include "Common/Random.h"
 
 #include <gtest/gtest.h>
 
@@ -33,7 +33,7 @@ public:
 
     FlushIcacheSection(const_cast<u8*>(fn), const_cast<u8*>(GetCodePtr()));
 
-    const u64 result = Common::BitCast<u64 (*)()>(fn)();
+    const u64 result = std::bit_cast<u64 (*)()>(fn)();
     EXPECT_EQ(value, result);
   }
 
@@ -50,7 +50,7 @@ public:
 
     FlushIcacheSection(const_cast<u8*>(fn), const_cast<u8*>(GetCodePtr()));
 
-    const u64 result = Common::BitCast<u64 (*)()>(fn)();
+    const u64 result = std::bit_cast<u64 (*)()>(fn)();
     EXPECT_EQ(value, result);
   }
 };
@@ -59,11 +59,12 @@ public:
 
 TEST(JitArm64, MovI2R_32BitValues)
 {
-  Common::Random::PRNG rng{0};
+  std::default_random_engine engine(0);
+  std::uniform_int_distribution<u32> dist;
   TestMovI2R test;
   for (u64 i = 0; i < 0x100000; i++)
   {
-    const u32 value = rng.GenerateValue<u32>();
+    const u32 value = dist(engine);
     test.Check32(value);
     test.Check64(value);
   }
@@ -71,11 +72,12 @@ TEST(JitArm64, MovI2R_32BitValues)
 
 TEST(JitArm64, MovI2R_Rand)
 {
-  Common::Random::PRNG rng{0};
+  std::default_random_engine engine(0);
+  std::uniform_int_distribution<u64> dist;
   TestMovI2R test;
   for (u64 i = 0; i < 0x100000; i++)
   {
-    test.Check64(rng.GenerateValue<u64>());
+    test.Check64(dist(engine));
   }
 }
 
@@ -96,12 +98,12 @@ TEST(JitArm64, MovI2R_LogImm)
       for (unsigned rotation = 0; rotation < size; ++rotation)
       {
         test.Check64(imm);
-        EXPECT_EQ(static_cast<bool>(LogicalImm(imm, 64)), true);
+        EXPECT_EQ(static_cast<bool>(LogicalImm(imm, GPRSize::B64)), true);
 
         if (size < 64)
         {
           test.Check32(imm);
-          EXPECT_EQ(static_cast<bool>(LogicalImm(static_cast<u32>(imm), 32)), true);
+          EXPECT_EQ(static_cast<bool>(LogicalImm(static_cast<u32>(imm), GPRSize::B32)), true);
         }
 
         imm = (imm >> 63) | (imm << 1);
@@ -113,7 +115,7 @@ TEST(JitArm64, MovI2R_LogImm)
 TEST(JitArm64, MovI2R_ADP)
 {
   TestMovI2R test;
-  const u64 base = Common::BitCast<u64>(test.GetCodePtr());
+  const u64 base = std::bit_cast<u64>(test.GetCodePtr());
 
   // Test offsets around 0
   for (s64 i = -0x20000; i < 0x20000; i++)
@@ -136,7 +138,7 @@ TEST(JitArm64, MovI2R_ADP)
 TEST(JitArm64, MovI2R_ADRP)
 {
   TestMovI2R test;
-  const u64 base = Common::BitCast<u64>(test.GetCodePtr()) & ~0xFFF;
+  const u64 base = std::bit_cast<u64>(test.GetCodePtr()) & ~0xFFF;
 
   // Test offsets around 0
   for (s64 i = -0x20000; i < 0x20000; i++)

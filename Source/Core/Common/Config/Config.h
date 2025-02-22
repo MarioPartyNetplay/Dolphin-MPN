@@ -15,6 +15,13 @@
 
 namespace Config
 {
+struct ConfigChangedCallbackID
+{
+  size_t id = -1;
+
+  bool operator==(const ConfigChangedCallbackID&) const = default;
+};
+
 using ConfigChangedCallback = std::function<void()>;
 
 // Layer management
@@ -22,9 +29,10 @@ void AddLayer(std::unique_ptr<ConfigLayerLoader> loader);
 std::shared_ptr<Layer> GetLayer(LayerType layer);
 void RemoveLayer(LayerType layer);
 
-// returns an ID that can be passed to RemoveConfigChangedCallback()
-size_t AddConfigChangedCallback(ConfigChangedCallback func);
-void RemoveConfigChangedCallback(size_t callback_id);
+// Returns an ID that can be passed to RemoveConfigChangedCallback().
+// The callback may be called from any thread.
+ConfigChangedCallbackID AddConfigChangedCallback(ConfigChangedCallback func);
+void RemoveConfigChangedCallback(ConfigChangedCallbackID callback_id);
 void OnConfigChanged();
 
 // Returns the number of times the config has changed in the current execution of the program
@@ -118,6 +126,13 @@ void SetBaseOrCurrent(const Info<T>& info, const std::common_type_t<T>& value)
     Set<T>(LayerType::Base, info, value);
   else
     Set<T>(LayerType::CurrentRun, info, value);
+}
+
+template <typename T>
+void DeleteKey(LayerType layer, const Info<T>& info)
+{
+  if (GetLayer(layer)->DeleteKey(info.GetLocation()))
+    OnConfigChanged();
 }
 
 // Used to defer OnConfigChanged until after the completion of many config changes.

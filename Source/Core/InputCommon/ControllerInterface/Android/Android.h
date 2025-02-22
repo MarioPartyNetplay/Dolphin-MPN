@@ -1,11 +1,12 @@
-// Copyright 2008 Dolphin Emulator Project
+// Copyright 2021 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
 
+#include "InputCommon/ControllerInterface/InputBackend.h"
+
 namespace ciface::Android
 {
-void SetMotionSensorsEnabled(bool accelerometer_enabled, bool gyroscope_enabled);
+std::unique_ptr<ciface::InputBackend> CreateInputBackend(ControllerInterface* controller_interface);
 
-void PopulateDevices();
 }  // namespace ciface::Android

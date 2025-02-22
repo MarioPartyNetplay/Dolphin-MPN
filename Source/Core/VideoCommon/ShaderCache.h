@@ -30,6 +30,7 @@
 #include "VideoCommon/UberShaderPixel.h"
 #include "VideoCommon/UberShaderVertex.h"
 #include "VideoCommon/VertexShaderGen.h"
+#include "VideoCommon/VideoEvents.h"
 
 class NativeVertexFormat;
 enum class AbstractTextureFormat : u32;
@@ -151,7 +152,7 @@ private:
   GetGXPipelineConfig(const NativeVertexFormat* vertex_format, const AbstractShader* vertex_shader,
                       const AbstractShader* geometry_shader, const AbstractShader* pixel_shader,
                       const RasterizationState& rasterization_state, const DepthState& depth_state,
-                      const BlendingState& blending_state);
+                      const BlendingState& blending_state, AbstractPipelineUsage usage);
   std::optional<AbstractPipelineConfig> GetGXPipelineConfig(const GXPipelineUid& uid);
   std::optional<AbstractPipelineConfig> GetGXPipelineConfig(const GXUberPipelineUid& uid);
   const AbstractPipeline* InsertGXPipeline(const GXPipelineUid& config,
@@ -175,8 +176,8 @@ private:
   template <typename T>
   void ClearShaderCache(T& cache);
   template <typename KeyType, typename DiskKeyType, typename T>
-  void LoadPipelineCache(T& cache, LinearDiskCache<DiskKeyType, u8>& disk_cache, APIType api_type,
-                         const char* type, bool include_gameid);
+  void LoadPipelineCache(T& cache, Common::LinearDiskCache<DiskKeyType, u8>& disk_cache,
+                         APIType api_type, const char* type, bool include_gameid);
   template <typename T, typename Y>
   void ClearPipelineCache(T& cache, Y& disk_cache);
 
@@ -215,7 +216,7 @@ private:
       bool pending = false;
     };
     std::map<Uid, Shader> shader_map;
-    LinearDiskCache<Uid, u8> disk_cache;
+    Common::LinearDiskCache<Uid, u8> disk_cache;
   };
   ShaderModuleCache<VertexShaderUid> m_vs_cache;
   ShaderModuleCache<GeometryShaderUid> m_gs_cache;
@@ -228,8 +229,8 @@ private:
   std::map<GXUberPipelineUid, std::pair<std::unique_ptr<AbstractPipeline>, bool>>
       m_gx_uber_pipeline_cache;
   File::IOFile m_gx_pipeline_uid_cache_file;
-  LinearDiskCache<SerializedGXPipelineUid, u8> m_gx_pipeline_disk_cache;
-  LinearDiskCache<SerializedGXUberPipelineUid, u8> m_gx_uber_pipeline_disk_cache;
+  Common::LinearDiskCache<SerializedGXPipelineUid, u8> m_gx_pipeline_disk_cache;
+  Common::LinearDiskCache<SerializedGXUberPipelineUid, u8> m_gx_uber_pipeline_disk_cache;
 
   // EFB copy to VRAM/RAM pipelines
   std::map<TextureConversionShaderGen::TCShaderUid, std::unique_ptr<AbstractPipeline>>
@@ -250,6 +251,8 @@ private:
 
   // Texture decoding shaders
   std::map<std::pair<u32, u32>, std::unique_ptr<AbstractShader>> m_texture_decoding_shaders;
+
+  Common::EventHook m_frame_end_handler;
 };
 
 }  // namespace VideoCommon

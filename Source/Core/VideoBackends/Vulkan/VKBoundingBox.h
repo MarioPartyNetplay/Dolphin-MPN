@@ -8,6 +8,7 @@
 #include <string>
 
 #include "Common/CommonTypes.h"
+#include "VideoBackends/Vulkan/StagingBuffer.h"
 #include "VideoBackends/Vulkan/VulkanLoader.h"
 
 #include "VideoCommon/BoundingBox.h"
@@ -25,14 +26,14 @@ public:
 
 protected:
   std::vector<BBoxType> Read(u32 index, u32 length) override;
-  void Write(u32 index, const std::vector<BBoxType>& values) override;
+  void Write(u32 index, std::span<const BBoxType> values) override;
 
 private:
   bool CreateGPUBuffer();
   bool CreateReadbackBuffer();
 
   VkBuffer m_gpu_buffer = VK_NULL_HANDLE;
-  VkDeviceMemory m_gpu_memory = VK_NULL_HANDLE;
+  VmaAllocation m_gpu_allocation = VK_NULL_HANDLE;
 
   static constexpr size_t BUFFER_SIZE = sizeof(BBoxType) * NUM_BBOX_VALUES;
 

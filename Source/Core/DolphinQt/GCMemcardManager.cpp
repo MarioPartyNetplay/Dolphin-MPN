@@ -42,6 +42,7 @@
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 
 using namespace ExpansionInterface;
 
@@ -64,7 +65,7 @@ Slot OtherSlot(Slot slot)
 {
   return slot == Slot::A ? Slot::B : Slot::A;
 }
-};  // namespace
+}  // namespace
 
 struct GCMemcardManager::IconAnimationData
 {
@@ -355,8 +356,8 @@ void GCMemcardManager::SetSlotFileInteractive(Slot slot)
 {
   QString path = QDir::toNativeSeparators(
       DolphinFileDialog::getOpenFileName(this,
-                                         slot == Slot::A ? tr("Set memory card file for Slot A") :
-                                                           tr("Set memory card file for Slot B"),
+                                         slot == Slot::A ? tr("Set Memory Card File for Slot A") :
+                                                           tr("Set Memory Card File for Slot B"),
                                          QString::fromStdString(File::GetUserPath(D_GCUSER_IDX)),
                                          QStringLiteral("%1 (*.raw *.gcp);;%2 (*)")
                                              .arg(tr("GameCube Memory Cards"), tr("All Files"))));
@@ -401,7 +402,7 @@ static QString GetFormatDescription(Memcard::SavefileFormat format)
   case Memcard::SavefileFormat::SAV:
     return QObject::tr("Datel MaxDrive/Pro files");
   default:
-    ASSERT(0);
+    ASSERT(false);
     return QObject::tr("Native GCI File");
   }
 }
@@ -502,7 +503,7 @@ void GCMemcardManager::ExportFiles(Memcard::SavefileFormat format)
   }
 }
 
-void GCMemcardManager::ImportFiles(Slot slot, const std::vector<Memcard::Savefile>& savefiles)
+void GCMemcardManager::ImportFiles(Slot slot, std::span<const Memcard::Savefile> savefiles)
 {
   auto& card = m_slot_memcard[slot];
   if (!card)
@@ -695,6 +696,7 @@ void GCMemcardManager::FixChecksums()
 void GCMemcardManager::CreateNewCard(Slot slot)
 {
   GCMemcardCreateNewDialog dialog(this);
+  SetQWidgetWindowDecorations(&dialog);
   if (dialog.exec() == QDialog::Accepted)
     m_slot_file_edit[slot]->setText(QString::fromStdString(dialog.GetMemoryCardPath()));
 }

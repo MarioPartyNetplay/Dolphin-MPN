@@ -8,6 +8,7 @@
 
 #include "VideoBackends/Metal/MRCHelpers.h"
 
+#include "VideoCommon/BPMemory.h"
 #include "VideoCommon/RenderState.h"
 
 struct AbstractPipelineConfig;
@@ -37,8 +38,7 @@ struct DepthStencilSelector
   bool UpdateEnable() const { return value & 1; }
   enum CompareMode CompareMode() const { return static_cast<enum CompareMode>(value >> 1); }
 
-  bool operator==(const DepthStencilSelector& other) { return value == other.value; }
-  bool operator!=(const DepthStencilSelector& other) { return !(*this == other); }
+  bool operator==(const DepthStencilSelector& other) const { return value == other.value; }
   static constexpr size_t N_VALUES = 1 << 4;
 };
 
@@ -63,8 +63,7 @@ struct SamplerSelector
   WrapMode WrapV() const { return static_cast<WrapMode>((value >> 4) / 3); }
   bool AnisotropicFiltering() const { return ((value >> 3) & 1); }
 
-  bool operator==(const SamplerSelector& other) { return value == other.value; }
-  bool operator!=(const SamplerSelector& other) { return !(*this == other); }
+  bool operator==(const SamplerSelector& other) const { return value == other.value; }
   static constexpr size_t N_VALUES = (1 << 4) * 9;
 };
 
@@ -82,7 +81,7 @@ public:
 
   id<MTLSamplerState> GetSampler(SamplerSelector sel)
   {
-    if (__builtin_expect(!m_samplers[sel.value], false))
+    if (!m_samplers[sel.value]) [[unlikely]]
       m_samplers[sel.value] = CreateSampler(sel);
     return m_samplers[sel.value];
   }

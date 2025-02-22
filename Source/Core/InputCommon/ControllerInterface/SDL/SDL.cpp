@@ -3,79 +3,499 @@
 
 #include "InputCommon/ControllerInterface/SDL/SDL.h"
 
-#include <algorithm>
 #include <thread>
+#include <unordered_set>
+#include <vector>
 
-#include <SDL_events.h>
+#include <SDL.h>
+#include <SDL_haptic.h>
 
 #include "Common/Event.h"
 #include "Common/Logging/Log.h"
+#include "Common/MathUtil.h"
 #include "Common/ScopeGuard.h"
-#include "Common/StringUtil.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 
 #ifdef _WIN32
 #include <Windows.h>
 #endif
 
-namespace ciface::SDL
+namespace ciface::Core
 {
-static std::string GetJoystickName(int index)
-{
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-  return SDL_JoystickNameForIndex(index);
-#else
-  return SDL_JoystickName(index);
-#endif
+class Device;
 }
 
-static void OpenAndAddDevice(int index)
+namespace
 {
-  SDL_Joystick* const dev = SDL_JoystickOpen(index);
-  if (dev)
+std::string GetLegacyButtonName(int index)
+{
+  return "Button " + std::to_string(index);
+}
+
+std::string GetLegacyAxisName(int index, int range)
+{
+  return "Axis " + std::to_string(index) + (range < 0 ? '-' : '+');
+}
+
+std::string GetLegacyHatName(int index, int direction)
+{
+  return "Hat " + std::to_string(index) + ' ' + "NESW"[direction];
+}
+
+constexpr int GetDirectionFromHatMask(u8 mask)
+{
+  return MathUtil::IntLog2(mask);
+}
+
+static_assert(GetDirectionFromHatMask(SDL_HAT_UP) == 0);
+static_assert(GetDirectionFromHatMask(SDL_HAT_LEFT) == 3);
+
+bool IsTriggerAxis(int index)
+{
+  // First 4 axes are for the analog sticks, the rest are for the triggers
+  return index >= 4;
+}
+
+ControlState GetBatteryValueFromSDLPowerLevel(SDL_JoystickPowerLevel sdl_power_level)
+{
+  // Values come from comments in SDL_joystick.h
+  // A proper percentage will be exposed in SDL3.
+  ControlState result;
+  switch (sdl_power_level)
   {
-    auto js = std::make_shared<Joystick>(dev, index);
-    // only add if it has some inputs/outputs
-    if (!js->Inputs().empty() || !js->Outputs().empty())
-      g_controller_interface.AddDevice(std::move(js));
+  case SDL_JOYSTICK_POWER_EMPTY:
+    result = 0.025;
+    break;
+  case SDL_JOYSTICK_POWER_LOW:
+    result = 0.125;
+    break;
+  case SDL_JOYSTICK_POWER_MEDIUM:
+    result = 0.45;
+    break;
+  case SDL_JOYSTICK_POWER_FULL:
+    result = 0.85;
+    break;
+  case SDL_JOYSTICK_POWER_WIRED:
+  case SDL_JOYSTICK_POWER_MAX:
+    result = 1.0;
+    break;
+  case SDL_JOYSTICK_POWER_UNKNOWN:
+  default:
+    result = 0.0;
+    break;
+  }
+
+  return result * ciface::BATTERY_INPUT_MAX_VALUE;
+}
+
+}  // namespace
+
+namespace ciface::SDL
+{
+
+class GameController : public Core::Device
+{
+private:
+  // GameController inputs
+  class Button : public Core::Device::Input
+  {
+  public:
+    std::string GetName() const override;
+    Button(SDL_GameController* gc, SDL_GameControllerButton button) : m_gc(gc), m_button(button) {}
+    ControlState GetState() const override;
+    bool IsMatchingName(std::string_view name) const override;
+
+  private:
+    SDL_GameController* const m_gc;
+    const SDL_GameControllerButton m_button;
+  };
+
+  class Axis : public Core::Device::Input
+  {
+  public:
+    std::string GetName() const override;
+    Axis(SDL_GameController* gc, Sint16 range, SDL_GameControllerAxis axis)
+        : m_gc(gc), m_range(range), m_axis(axis)
+    {
+    }
+    ControlState GetState() const override;
+
+  private:
+    SDL_GameController* const m_gc;
+    const Sint16 m_range;
+    const SDL_GameControllerAxis m_axis;
+  };
+
+  // Legacy inputs
+  class LegacyButton : public Core::Device::Input
+  {
+  public:
+    std::string GetName() const override { return GetLegacyButtonName(m_index); }
+    LegacyButton(SDL_Joystick* js, int index) : m_js(js), m_index(index) {}
+    ControlState GetState() const override;
+
+  private:
+    SDL_Joystick* const m_js;
+    const int m_index;
+  };
+
+  class LegacyAxis : public Core::Device::Input
+  {
+  public:
+    std::string GetName() const override { return GetLegacyAxisName(m_index, m_range); }
+    LegacyAxis(SDL_Joystick* js, int index, s16 range, bool is_handled_elsewhere)
+        : m_js(js), m_index(index), m_range(range), m_is_handled_elsewhere(is_handled_elsewhere)
+    {
+    }
+    ControlState GetState() const override;
+    bool IsHidden() const override { return m_is_handled_elsewhere; }
+    bool IsDetectable() const override { return !IsHidden(); }
+
+  private:
+    SDL_Joystick* const m_js;
+    const int m_index;
+    const s16 m_range;
+    const bool m_is_handled_elsewhere;
+  };
+
+  class LegacyHat : public Input
+  {
+  public:
+    std::string GetName() const override { return GetLegacyHatName(m_index, m_direction); }
+    LegacyHat(SDL_Joystick* js, int index, u8 direction)
+        : m_js(js), m_index(index), m_direction(direction)
+    {
+    }
+    ControlState GetState() const override;
+
+  private:
+    SDL_Joystick* const m_js;
+    const int m_index;
+    const u8 m_direction;
+  };
+
+  class BatteryInput final : public Input
+  {
+  public:
+    explicit BatteryInput(const ControlState* battery_value) : m_battery_value(*battery_value) {}
+    std::string GetName() const override { return "Battery"; }
+    ControlState GetState() const override { return m_battery_value; }
+    bool IsDetectable() const override { return false; }
+
+  private:
+    const ControlState& m_battery_value;
+  };
+
+  // Rumble
+  class Rumble : public Output
+  {
+  public:
+    using UpdateCallback = void (GameController::*)(void);
+
+    Rumble(const char* name, GameController& gc, Uint16* state, UpdateCallback update_callback)
+        : m_name{name}, m_gc{gc}, m_state{*state}, m_update_callback{update_callback}
+    {
+    }
+    std::string GetName() const override { return m_name; }
+    void SetState(ControlState state) override
+    {
+      const auto new_state = state * std::numeric_limits<Uint16>::max();
+      if (m_state == new_state)
+        return;
+
+      m_state = new_state;
+      (m_gc.*m_update_callback)();
+    }
+
+  private:
+    const char* const m_name;
+    GameController& m_gc;
+    Uint16& m_state;
+    UpdateCallback const m_update_callback;
+  };
+
+  class CombinedMotor : public Output
+  {
+  public:
+    CombinedMotor(GameController& gc, Uint16* low_state, Uint16* high_state)
+        : m_gc{gc}, m_low_state{*low_state}, m_high_state{*high_state}
+    {
+    }
+    std::string GetName() const override { return "Motor"; }
+    void SetState(ControlState state) override
+    {
+      const auto new_state = state * std::numeric_limits<Uint16>::max();
+      if (m_low_state == new_state && m_high_state == new_state)
+        return;
+
+      m_low_state = new_state;
+      m_high_state = new_state;
+      m_gc.UpdateRumble();
+    }
+
+  private:
+    GameController& m_gc;
+    Uint16& m_low_state;
+    Uint16& m_high_state;
+  };
+
+  class HapticEffect : public Output
+  {
+  public:
+    HapticEffect(SDL_Haptic* haptic);
+    ~HapticEffect();
+
+  protected:
+    virtual bool UpdateParameters(s16 value) = 0;
+    static void SetDirection(SDL_HapticDirection* dir);
+
+    SDL_HapticEffect m_effect = {};
+
+    static constexpr u16 DISABLED_EFFECT_TYPE = 0;
+
+  private:
+    virtual void SetState(ControlState state) override final;
+    void UpdateEffect();
+    SDL_Haptic* const m_haptic;
+    int m_id = -1;
+  };
+
+  class ConstantEffect : public HapticEffect
+  {
+  public:
+    ConstantEffect(SDL_Haptic* haptic);
+    std::string GetName() const override;
+
+  private:
+    bool UpdateParameters(s16 value) override;
+  };
+
+  class RampEffect : public HapticEffect
+  {
+  public:
+    RampEffect(SDL_Haptic* haptic);
+    std::string GetName() const override;
+
+  private:
+    bool UpdateParameters(s16 value) override;
+  };
+
+  class PeriodicEffect : public HapticEffect
+  {
+  public:
+    PeriodicEffect(SDL_Haptic* haptic, u16 waveform);
+    std::string GetName() const override;
+
+  private:
+    bool UpdateParameters(s16 value) override;
+
+    const u16 m_waveform;
+  };
+
+  class LeftRightEffect : public HapticEffect
+  {
+  public:
+    enum class Motor : u8
+    {
+      Weak,
+      Strong,
+    };
+
+    LeftRightEffect(SDL_Haptic* haptic, Motor motor);
+    std::string GetName() const override;
+
+  private:
+    bool UpdateParameters(s16 value) override;
+
+    const Motor m_motor;
+  };
+
+  class NormalizedInput : public Input
+  {
+  public:
+    NormalizedInput(const char* name, const float* state) : m_name{std::move(name)}, m_state{*state}
+    {
+    }
+
+    std::string GetName() const override { return std::string{m_name}; }
+    ControlState GetState() const override { return m_state; }
+
+  private:
+    const char* const m_name;
+    const float& m_state;
+  };
+
+  template <int Scale>
+  class NonDetectableDirectionalInput : public Input
+  {
+  public:
+    NonDetectableDirectionalInput(const char* name, const float* state)
+        : m_name{std::move(name)}, m_state{*state}
+    {
+    }
+
+    std::string GetName() const override { return std::string{m_name} + (Scale > 0 ? '+' : '-'); }
+    bool IsDetectable() const override { return false; }
+    ControlState GetState() const override { return m_state * Scale; }
+
+  private:
+    const char* const m_name;
+    const float& m_state;
+  };
+
+  class MotionInput : public Input
+  {
+  public:
+    MotionInput(std::string name, SDL_GameController* gc, SDL_SensorType type, int index,
+                ControlState scale)
+        : m_name(std::move(name)), m_gc(gc), m_type(type), m_index(index), m_scale(scale)
+    {
+    }
+
+    std::string GetName() const override { return m_name; }
+    bool IsDetectable() const override { return false; }
+    ControlState GetState() const override;
+
+  private:
+    std::string m_name;
+
+    SDL_GameController* const m_gc;
+    SDL_SensorType const m_type;
+    int const m_index;
+
+    ControlState const m_scale;
+  };
+
+public:
+  GameController(SDL_GameController* const gamecontroller, SDL_Joystick* const joystick);
+  ~GameController();
+
+  std::string GetName() const override;
+  std::string GetSource() const override;
+  int GetSDLInstanceID() const;
+  Core::DeviceRemoval UpdateInput() override
+  {
+    m_battery_value = GetBatteryValueFromSDLPowerLevel(SDL_JoystickCurrentPowerLevel(m_joystick));
+
+    // We only support one touchpad and one finger.
+    const int touchpad_index = 0;
+    const int finger_index = 0;
+
+    Uint8 state = 0;
+    SDL_GameControllerGetTouchpadFinger(m_gamecontroller, touchpad_index, finger_index, &state,
+                                        &m_touchpad_x, &m_touchpad_y, &m_touchpad_pressure);
+    m_touchpad_x = m_touchpad_x * 2 - 1;
+    m_touchpad_y = m_touchpad_y * 2 - 1;
+
+    return Core::DeviceRemoval::Keep;
+  }
+
+private:
+  void UpdateRumble()
+  {
+    SDL_GameControllerRumble(m_gamecontroller, m_low_freq_rumble, m_high_freq_rumble,
+                             RUMBLE_LENGTH_MS);
+  }
+
+  void UpdateRumbleTriggers()
+  {
+    SDL_GameControllerRumbleTriggers(m_gamecontroller, m_trigger_l_rumble, m_trigger_r_rumble,
+                                     RUMBLE_LENGTH_MS);
+  }
+
+  Uint16 m_low_freq_rumble = 0;
+  Uint16 m_high_freq_rumble = 0;
+
+  Uint16 m_trigger_l_rumble = 0;
+  Uint16 m_trigger_r_rumble = 0;
+
+  SDL_GameController* const m_gamecontroller;
+  std::string m_name;
+  SDL_Joystick* const m_joystick;
+  SDL_Haptic* m_haptic = nullptr;
+  ControlState m_battery_value;
+  float m_touchpad_x = 0.f;
+  float m_touchpad_y = 0.f;
+  float m_touchpad_pressure = 0.f;
+};
+
+class InputBackend final : public ciface::InputBackend
+{
+public:
+  InputBackend(ControllerInterface* controller_interface);
+  ~InputBackend();
+  void PopulateDevices() override;
+  void UpdateInput(std::vector<std::weak_ptr<ciface::Core::Device>>& devices_to_remove) override;
+
+private:
+  void OpenAndAddDevice(int index);
+
+  bool HandleEventAndContinue(const SDL_Event& e);
+
+  Common::Event m_init_event;
+  Uint32 m_stop_event_type;
+  Uint32 m_populate_event_type;
+  std::thread m_hotplug_thread;
+};
+
+std::unique_ptr<ciface::InputBackend> CreateInputBackend(ControllerInterface* controller_interface)
+{
+  return std::make_unique<InputBackend>(controller_interface);
+}
+
+void InputBackend::OpenAndAddDevice(int index)
+{
+  SDL_GameController* gc = SDL_GameControllerOpen(index);
+  SDL_Joystick* js = SDL_JoystickOpen(index);
+
+  if (js)
+  {
+    if (SDL_JoystickNumButtons(js) > 255 || SDL_JoystickNumAxes(js) > 255 ||
+        SDL_JoystickNumHats(js) > 255 || SDL_JoystickNumBalls(js) > 255)
+    {
+      // This device is invalid, don't use it
+      // Some crazy devices (HP webcam 2100) end up as HID devices
+      // SDL tries parsing these as Joysticks
+      return;
+    }
+    auto gamecontroller = std::make_shared<GameController>(gc, js);
+    if (!gamecontroller->Inputs().empty() || !gamecontroller->Outputs().empty())
+      GetControllerInterface().AddDevice(std::move(gamecontroller));
   }
 }
 
-#if SDL_VERSION_ATLEAST(2, 0, 0)
-static Common::Event s_init_event;
-static Uint32 s_stop_event_type;
-static Uint32 s_populate_event_type;
-static std::thread s_hotplug_thread;
-
-static bool HandleEventAndContinue(const SDL_Event& e)
+bool InputBackend::HandleEventAndContinue(const SDL_Event& e)
 {
   if (e.type == SDL_JOYDEVICEADDED)
   {
+    // NOTE: SDL_JOYDEVICEADDED's `jdevice.which` is a device index in SDL2.
+    // It will change to an "instance ID" in SDL3.
+    // OpenAndAddDevice impl and calls will need refactoring when changing to SDL3.
+    static_assert(!SDL_VERSION_ATLEAST(3, 0, 0), "Refactoring is needed for SDL3.");
     OpenAndAddDevice(e.jdevice.which);
   }
   else if (e.type == SDL_JOYDEVICEREMOVED)
   {
-    g_controller_interface.RemoveDevice([&e](const auto* device) {
+    // NOTE: SDL_JOYDEVICEREMOVED's `jdevice.which` is an "instance ID".
+    GetControllerInterface().RemoveDevice([&e](const auto* device) {
       return device->GetSource() == "SDL" &&
-             SDL_JoystickInstanceID(static_cast<const Joystick*>(device)->GetSDLJoystick()) ==
-                 e.jdevice.which;
+             static_cast<const GameController*>(device)->GetSDLInstanceID() == e.jdevice.which;
     });
   }
-  else if (e.type == s_populate_event_type)
+  else if (e.type == m_populate_event_type)
   {
-    g_controller_interface.PlatformPopulateDevices([] {
+    GetControllerInterface().PlatformPopulateDevices([this] {
       for (int i = 0; i < SDL_NumJoysticks(); ++i)
         OpenAndAddDevice(i);
     });
   }
-  else if (e.type == s_stop_event_type)
+  else if (e.type == m_stop_event_type)
   {
     return false;
   }
 
   return true;
 }
-#endif
 
 static void EnableSDLLogging()
 {
@@ -134,6 +554,7 @@ static void EnableSDLLogging()
           log_level = Common::Log::LogLevel::LERROR;
           break;
         case SDL_LOG_PRIORITY_CRITICAL:
+        default:
           log_level = Common::Log::LogLevel::LNOTICE;
           break;
         }
@@ -144,37 +565,30 @@ static void EnableSDLLogging()
       nullptr);
 }
 
-void Init()
+InputBackend::InputBackend(ControllerInterface* controller_interface)
+    : ciface::InputBackend(controller_interface)
 {
-#if !SDL_VERSION_ATLEAST(2, 0, 0)
-  if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC) != 0)
-    ERROR_LOG_FMT(CONTROLLERINTERFACE, "SDL failed to initialize");
-  return;
-#else
-#if defined(__APPLE__) && !SDL_VERSION_ATLEAST(2, 0, 24)
-  // Bug in SDL 2.0.22 requires the first init to be done on the main thread to avoid crashing
-  SDL_InitSubSystem(SDL_INIT_JOYSTICK);
-  SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
-#endif
-
   EnableSDLLogging();
 
-#if SDL_VERSION_ATLEAST(2, 0, 14)
   // This is required on windows so that SDL's joystick code properly pumps window messages
   SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
-#endif
 
-#if SDL_VERSION_ATLEAST(2, 0, 9)
   SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
-#endif
+  // We want buttons to come in as positions, not labels
+  SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
+  // We have our own WGI backend. Enabling SDL's WGI handling creates even more redundant devices.
+  SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "0");
 
-  s_hotplug_thread = std::thread([] {
+  // Disable DualSense Player LEDs; We already colorize the Primary LED
+  SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED, "0");
+
+  m_hotplug_thread = std::thread([this] {
     Common::ScopeGuard quit_guard([] {
       // TODO: there seems to be some sort of memory leak with SDL, quit isn't freeing everything up
       SDL_Quit();
     });
     {
-      Common::ScopeGuard init_guard([] { s_init_event.Set(); });
+      Common::ScopeGuard init_guard([this] { m_init_event.Set(); });
 
       if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC | SDL_INIT_GAMECONTROLLER) != 0)
       {
@@ -188,8 +602,8 @@ void Init()
         ERROR_LOG_FMT(CONTROLLERINTERFACE, "SDL failed to register custom events");
         return;
       }
-      s_stop_event_type = custom_events_start;
-      s_populate_event_type = custom_events_start + 1;
+      m_stop_event_type = custom_events_start;
+      m_populate_event_type = custom_events_start + 1;
 
       // Drain all of the events and add the initial joysticks before returning. Otherwise, the
       // individual joystick events as well as the custom populate event will be handled _after_
@@ -235,96 +649,252 @@ void Init()
     }
   });
 
-  s_init_event.Wait();
-#endif
+  m_init_event.Wait();
 }
 
-void DeInit()
+InputBackend::~InputBackend()
 {
-#if !SDL_VERSION_ATLEAST(2, 0, 0)
-  SDL_Quit();
-#else
-  if (!s_hotplug_thread.joinable())
+  if (!m_hotplug_thread.joinable())
     return;
 
-  SDL_Event stop_event{s_stop_event_type};
+  SDL_Event stop_event{m_stop_event_type};
   SDL_PushEvent(&stop_event);
 
-  s_hotplug_thread.join();
-#endif
+  m_hotplug_thread.join();
 }
 
-void PopulateDevices()
+void InputBackend::PopulateDevices()
 {
-#if !SDL_VERSION_ATLEAST(2, 0, 0)
-  if (!SDL_WasInit(SDL_INIT_JOYSTICK))
+  if (!m_hotplug_thread.joinable())
     return;
 
-  for (int i = 0; i < SDL_NumJoysticks(); ++i)
-    OpenAndAddDevice(i);
-#else
-  if (!s_hotplug_thread.joinable())
-    return;
-
-  SDL_Event populate_event{s_populate_event_type};
+  SDL_Event populate_event{m_populate_event_type};
   SDL_PushEvent(&populate_event);
-#endif
 }
 
-Joystick::Joystick(SDL_Joystick* const joystick, const int sdl_index)
-    : m_joystick(joystick), m_name(StripWhitespace(GetJoystickName(sdl_index)))
+struct SDLMotionAxis
 {
-  // really bad HACKS:
-  // to not use SDL for an XInput device
-  // too many people on the forums pick the SDL device and ask:
-  // "why don't my 360 gamepad triggers/rumble work correctly"
-  // XXX x360 controllers _should_ work on modern SDL2, so it's unclear why they're
-  // still broken. Perhaps it's because we're not pumping window messages, which SDL seems to
-  // expect.
-#ifdef _WIN32
-  // checking the name is probably good (and hacky) enough
-  // but I'll double check with the num of buttons/axes
-  std::string lcasename = GetName();
-  Common::ToLower(&lcasename);
+  std::string_view name;
+  int index;
+  ControlState scale;
+};
+using SDLMotionAxisList = std::array<SDLMotionAxis, 6>;
 
-  if ((std::string::npos != lcasename.find("xbox 360")) &&
-      (11 == SDL_JoystickNumButtons(joystick)) && (6 == SDL_JoystickNumAxes(joystick)) &&
-      (1 == SDL_JoystickNumHats(joystick)) && (0 == SDL_JoystickNumBalls(joystick)))
+// clang-format off
+static constexpr std::array<const char*, 21> s_sdl_button_names = {
+    "Button S",    // SDL_CONTROLLER_BUTTON_A
+    "Button E",    // SDL_CONTROLLER_BUTTON_B
+    "Button W",    // SDL_CONTROLLER_BUTTON_X
+    "Button N",    // SDL_CONTROLLER_BUTTON_Y
+    "Back",        // SDL_CONTROLLER_BUTTON_BACK
+    "Guide",       // SDL_CONTROLLER_BUTTON_GUIDE
+    "Start",       // SDL_CONTROLLER_BUTTON_START
+    "Thumb L",     // SDL_CONTROLLER_BUTTON_LEFTSTICK
+    "Thumb R",     // SDL_CONTROLLER_BUTTON_RIGHTSTICK
+    "Shoulder L",  // SDL_CONTROLLER_BUTTON_LEFTSHOULDER
+    "Shoulder R",  // SDL_CONTROLLER_BUTTON_RIGHTSHOULDER
+    "Pad N",       // SDL_CONTROLLER_BUTTON_DPAD_UP
+    "Pad S",       // SDL_CONTROLLER_BUTTON_DPAD_DOWN
+    "Pad W",       // SDL_CONTROLLER_BUTTON_DPAD_LEFT
+    "Pad E",       // SDL_CONTROLLER_BUTTON_DPAD_RIGHT
+    "Misc 1",       // SDL_CONTROLLER_BUTTON_MISC1
+    "Paddle 1",     // SDL_CONTROLLER_BUTTON_PADDLE1
+    "Paddle 2",     // SDL_CONTROLLER_BUTTON_PADDLE2
+    "Paddle 3",     // SDL_CONTROLLER_BUTTON_PADDLE3
+    "Paddle 4",     // SDL_CONTROLLER_BUTTON_PADDLE4
+    "Touchpad",    // SDL_CONTROLLER_BUTTON_TOUCHPAD
+};
+static constexpr std::array<const char*, 6> s_sdl_axis_names = {
+    "Left X",     // SDL_CONTROLLER_AXIS_LEFTX
+    "Left Y",     // SDL_CONTROLLER_AXIS_LEFTY
+    "Right X",    // SDL_CONTROLLER_AXIS_RIGHTX
+    "Right Y",    // SDL_CONTROLLER_AXIS_RIGHTY
+    "Trigger L",  // SDL_CONTROLLER_AXIS_TRIGGERLEFT
+    "Trigger R",  // SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+};
+static constexpr SDLMotionAxisList SDL_AXES_ACCELEROMETER = {{
+    {"Up",      1,  1}, {"Down",     1, -1},
+    {"Left",    0, -1}, {"Right",    0,  1},
+    {"Forward", 2, -1}, {"Backward", 2,  1},
+}};
+static constexpr SDLMotionAxisList SDL_AXES_GYRO = {{
+    {"Pitch Up",  0, 1}, {"Pitch Down", 0, -1},
+    {"Roll Left", 2, 1}, {"Roll Right", 2, -1},
+    {"Yaw Left",  1, 1}, {"Yaw Right",  1, -1},
+}};
+// clang-format on
+
+GameController::GameController(SDL_GameController* const gamecontroller,
+                               SDL_Joystick* const joystick)
+    : m_gamecontroller(gamecontroller), m_joystick(joystick)
+{
+  const char* name;
+  if (gamecontroller)
+    name = SDL_GameControllerName(gamecontroller);
+  else
+    name = SDL_JoystickName(joystick);
+  m_name = name != nullptr ? name : "Unknown";
+
+  // If a Joystick input has a GameController equivalent button/hat we don't add it.
+  // "Equivalent" axes are still added as hidden/undetectable inputs to handle
+  // loading of existing configs which may use "full surface" inputs.
+  // Otherwise handling those would require dealing with gamepad specific quirks.
+  std::unordered_set<int> registered_buttons;
+  std::unordered_set<int> registered_hats;
+  std::unordered_set<int> registered_axes;
+  const auto register_mapping = [&](const SDL_GameControllerButtonBind& bind) {
+    switch (bind.bindType)
+    {
+    case SDL_CONTROLLER_BINDTYPE_BUTTON:
+      registered_buttons.insert(bind.value.button);
+      break;
+    case SDL_CONTROLLER_BINDTYPE_HAT:
+      registered_hats.insert(bind.value.hat.hat);
+      break;
+    case SDL_CONTROLLER_BINDTYPE_AXIS:
+      registered_axes.insert(bind.value.axis);
+      break;
+    default:
+      break;
+    }
+  };
+
+  if (gamecontroller != nullptr)
   {
-    // this device won't be used
-    return;
+    // Inputs
+
+    // Buttons
+    for (u8 i = 0; i != size(s_sdl_button_names); ++i)
+    {
+      SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(i);
+      if (SDL_GameControllerHasButton(m_gamecontroller, button))
+      {
+        AddInput(new Button(gamecontroller, button));
+
+        register_mapping(SDL_GameControllerGetBindForButton(gamecontroller, button));
+      }
+    }
+
+    // Axes
+    for (u8 i = 0; i != size(s_sdl_axis_names); ++i)
+    {
+      SDL_GameControllerAxis axis = static_cast<SDL_GameControllerAxis>(i);
+      if (SDL_GameControllerHasAxis(m_gamecontroller, axis))
+      {
+        if (IsTriggerAxis(axis))
+        {
+          AddInput(new Axis(m_gamecontroller, 32767, axis));
+        }
+        else
+        {
+          // Each axis gets a negative and a positive input instance associated with it
+          AddInput(new Axis(m_gamecontroller, -32768, axis));
+          AddInput(new Axis(m_gamecontroller, 32767, axis));
+        }
+
+        register_mapping(SDL_GameControllerGetBindForAxis(gamecontroller, axis));
+      }
+    }
+
+    // Rumble
+    if (SDL_GameControllerHasRumble(m_gamecontroller))
+    {
+      AddOutput(new CombinedMotor(*this, &m_low_freq_rumble, &m_high_freq_rumble));
+      AddOutput(new Rumble("Motor L", *this, &m_low_freq_rumble, &GameController::UpdateRumble));
+      AddOutput(new Rumble("Motor R", *this, &m_high_freq_rumble, &GameController::UpdateRumble));
+    }
+    if (SDL_GameControllerHasRumbleTriggers(m_gamecontroller))
+    {
+      AddOutput(new Rumble("Trigger L", *this, &m_trigger_l_rumble,
+                           &GameController::UpdateRumbleTriggers));
+      AddOutput(new Rumble("Trigger R", *this, &m_trigger_r_rumble,
+                           &GameController::UpdateRumbleTriggers));
+    }
+
+    // Touchpad
+    if (SDL_GameControllerGetNumTouchpads(m_gamecontroller) > 0)
+    {
+      const char* const name_x = "Touchpad X";
+      AddInput(new NonDetectableDirectionalInput<-1>(name_x, &m_touchpad_x));
+      AddInput(new NonDetectableDirectionalInput<+1>(name_x, &m_touchpad_x));
+      const char* const name_y = "Touchpad Y";
+      AddInput(new NonDetectableDirectionalInput<-1>(name_y, &m_touchpad_y));
+      AddInput(new NonDetectableDirectionalInput<+1>(name_y, &m_touchpad_y));
+      AddInput(new NormalizedInput("Touchpad Pressure", &m_touchpad_pressure));
+    }
+
+    // Motion
+    const auto add_sensor = [this](SDL_SensorType type, std::string_view sensor_name,
+                                   const SDLMotionAxisList& axes) {
+      if (SDL_GameControllerSetSensorEnabled(m_gamecontroller, type, SDL_TRUE) == 0)
+      {
+        for (const SDLMotionAxis& axis : axes)
+        {
+          AddInput(new MotionInput(fmt::format("{} {}", sensor_name, axis.name), m_gamecontroller,
+                                   type, axis.index, axis.scale));
+        }
+      }
+    };
+
+    add_sensor(SDL_SENSOR_ACCEL, "Accel", SDL_AXES_ACCELEROMETER);
+    add_sensor(SDL_SENSOR_GYRO, "Gyro", SDL_AXES_GYRO);
+    add_sensor(SDL_SENSOR_ACCEL_L, "Accel L", SDL_AXES_ACCELEROMETER);
+    add_sensor(SDL_SENSOR_GYRO_L, "Gyro L", SDL_AXES_GYRO);
+    add_sensor(SDL_SENSOR_ACCEL_R, "Accel R", SDL_AXES_ACCELEROMETER);
+    add_sensor(SDL_SENSOR_GYRO_R, "Gyro R", SDL_AXES_GYRO);
   }
-#endif
 
-  if (SDL_JoystickNumButtons(joystick) > 255 || SDL_JoystickNumAxes(joystick) > 255 ||
-      SDL_JoystickNumHats(joystick) > 255 || SDL_JoystickNumBalls(joystick) > 255)
+  // Legacy inputs
+
+  // Buttons
+  int n_legacy_buttons = SDL_JoystickNumButtons(joystick);
+  if (n_legacy_buttons < 0)
   {
-    // This device is invalid, don't use it
-    // Some crazy devices(HP webcam 2100) end up as HID devices
-    // SDL tries parsing these as joysticks
-    return;
+    ERROR_LOG_FMT(CONTROLLERINTERFACE, "Error in SDL_JoystickNumButtons(): {}", SDL_GetError());
+    n_legacy_buttons = 0;
+  }
+  for (int i = 0; i != n_legacy_buttons; ++i)
+  {
+    if (registered_buttons.contains(i))
+      continue;
+
+    AddInput(new LegacyButton(m_joystick, i));
   }
 
-  // get buttons
-  for (u8 i = 0; i != SDL_JoystickNumButtons(m_joystick); ++i)
-    AddInput(new Button(i, m_joystick));
-
-  // get hats
-  for (u8 i = 0; i != SDL_JoystickNumHats(m_joystick); ++i)
+  // Axes
+  int n_legacy_axes = SDL_JoystickNumAxes(joystick);
+  if (n_legacy_axes < 0)
   {
+    ERROR_LOG_FMT(CONTROLLERINTERFACE, "Error in SDL_JoystickNumAxes(): {}", SDL_GetError());
+    n_legacy_axes = 0;
+  }
+  for (int i = 0; i != n_legacy_axes; ++i)
+  {
+    const bool is_registered = registered_axes.contains(i);
+
+    // each axis gets a negative and a positive input instance associated with it
+    AddFullAnalogSurfaceInputs(new LegacyAxis(m_joystick, i, -32768, is_registered),
+                               new LegacyAxis(m_joystick, i, 32767, is_registered));
+  }
+
+  // Hats
+  int n_legacy_hats = SDL_JoystickNumHats(joystick);
+  if (n_legacy_hats < 0)
+  {
+    ERROR_LOG_FMT(CONTROLLERINTERFACE, "Error in SDL_JoystickNumHats(): {}", SDL_GetError());
+    n_legacy_hats = 0;
+  }
+  for (int i = 0; i != n_legacy_hats; ++i)
+  {
+    if (registered_hats.contains(i))
+      continue;
+
     // each hat gets 4 input instances associated with it, (up down left right)
     for (u8 d = 0; d != 4; ++d)
-      AddInput(new Hat(i, m_joystick, d));
+      AddInput(new LegacyHat(m_joystick, i, d));
   }
 
-  // get axes
-  for (u8 i = 0; i != SDL_JoystickNumAxes(m_joystick); ++i)
-  {
-    // each axis gets a negative and a positive input instance associated with it
-    AddAnalogInputs(new Axis(i, m_joystick, -32768), new Axis(i, m_joystick, 32767));
-  }
-
-#ifdef USE_SDL_HAPTIC
+  // Haptics
   if (SDL_JoystickIsHaptic(m_joystick))
   {
     m_haptic = SDL_HapticOpenFromJoystick(m_joystick);
@@ -360,60 +930,21 @@ Joystick::Joystick(SDL_Joystick* const joystick, const int sdl_index)
       }
     }
   }
-#endif
 
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-  if (!m_haptic)
+  // Needed to make the below power level not "UNKNOWN".
+  SDL_JoystickUpdate();
+
+  // Battery
+  if (SDL_JoystickPowerLevel const power_level = SDL_JoystickCurrentPowerLevel(m_joystick);
+      power_level != SDL_JOYSTICK_POWER_UNKNOWN)
   {
-    AddOutput(new Motor(m_joystick));
+    m_battery_value = GetBatteryValueFromSDLPowerLevel(power_level);
+    AddInput(new BatteryInput{&m_battery_value});
   }
-#endif
-
-#ifdef USE_SDL_GAMECONTROLLER
-  if (SDL_IsGameController(sdl_index))
-  {
-    m_controller = SDL_GameControllerOpen(sdl_index);
-    if (m_controller)
-    {
-      if (SDL_GameControllerSetSensorEnabled(m_controller, SDL_SENSOR_ACCEL, SDL_TRUE) == 0)
-      {
-        AddInput(new MotionInput("Accel Up", m_controller, SDL_SENSOR_ACCEL, 1, 1));
-        AddInput(new MotionInput("Accel Down", m_controller, SDL_SENSOR_ACCEL, 1, -1));
-
-        AddInput(new MotionInput("Accel Left", m_controller, SDL_SENSOR_ACCEL, 0, -1));
-        AddInput(new MotionInput("Accel Right", m_controller, SDL_SENSOR_ACCEL, 0, 1));
-
-        AddInput(new MotionInput("Accel Forward", m_controller, SDL_SENSOR_ACCEL, 2, -1));
-        AddInput(new MotionInput("Accel Backward", m_controller, SDL_SENSOR_ACCEL, 2, 1));
-      }
-
-      if (SDL_GameControllerSetSensorEnabled(m_controller, SDL_SENSOR_GYRO, SDL_TRUE) == 0)
-      {
-        AddInput(new MotionInput("Gyro Pitch Up", m_controller, SDL_SENSOR_GYRO, 0, 1));
-        AddInput(new MotionInput("Gyro Pitch Down", m_controller, SDL_SENSOR_GYRO, 0, -1));
-
-        AddInput(new MotionInput("Gyro Roll Left", m_controller, SDL_SENSOR_GYRO, 2, 1));
-        AddInput(new MotionInput("Gyro Roll Right", m_controller, SDL_SENSOR_GYRO, 2, -1));
-
-        AddInput(new MotionInput("Gyro Yaw Left", m_controller, SDL_SENSOR_GYRO, 1, 1));
-        AddInput(new MotionInput("Gyro Yaw Right", m_controller, SDL_SENSOR_GYRO, 1, -1));
-      }
-    }
-  }
-#endif
 }
 
-Joystick::~Joystick()
+GameController::~GameController()
 {
-#ifdef USE_SDL_GAMECONTROLLER
-  if (m_controller)
-  {
-    SDL_GameControllerClose(m_controller);
-    m_controller = nullptr;
-  }
-#endif
-
-#ifdef USE_SDL_HAPTIC
   if (m_haptic)
   {
     // stop/destroy all effects
@@ -422,19 +953,119 @@ Joystick::~Joystick()
     SDL_HapticClose(m_haptic);
     m_haptic = nullptr;
   }
-#endif
-
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-  // stop all rumble
-  SDL_JoystickRumble(m_joystick, 0, 0, 0);
-#endif
-
+  if (m_gamecontroller)
+  {
+    // stop all rumble
+    SDL_GameControllerRumble(m_gamecontroller, 0, 0, 0);
+    // close game controller
+    SDL_GameControllerClose(m_gamecontroller);
+  }
   // close joystick
   SDL_JoystickClose(m_joystick);
 }
 
-#ifdef USE_SDL_HAPTIC
-void Joystick::HapticEffect::UpdateEffect()
+void InputBackend::UpdateInput(std::vector<std::weak_ptr<ciface::Core::Device>>& devices_to_remove)
+{
+  SDL_GameControllerUpdate();
+}
+
+std::string GameController::GetName() const
+{
+  return m_name;
+}
+
+std::string GameController::GetSource() const
+{
+  return "SDL";
+}
+
+int GameController::GetSDLInstanceID() const
+{
+  return SDL_JoystickInstanceID(m_joystick);
+}
+
+std::string GameController::Button::GetName() const
+{
+  return s_sdl_button_names[m_button];
+}
+
+std::string GameController::Axis::GetName() const
+{
+  if (IsTriggerAxis(m_axis))
+    return std::string(s_sdl_axis_names[m_axis]);
+
+  bool negative = m_range < 0;
+
+  // Respect XInput: the vertical axes are inverted on SDL
+  if (m_axis % 2 == 1)
+    negative = !negative;
+
+  return std::string(s_sdl_axis_names[m_axis]) + (negative ? '-' : '+');
+}
+
+ControlState GameController::Button::GetState() const
+{
+  return SDL_GameControllerGetButton(m_gc, m_button);
+}
+
+ControlState GameController::Axis::GetState() const
+{
+  return ControlState(SDL_GameControllerGetAxis(m_gc, m_axis)) / m_range;
+}
+
+bool GameController::Button::IsMatchingName(std::string_view name) const
+{
+  if (GetName() == name)
+    return true;
+
+  // So that SDL can be a superset of XInput
+  if (name == "Button A")
+    return GetName() == "Button S";
+  if (name == "Button B")
+    return GetName() == "Button E";
+  if (name == "Button X")
+    return GetName() == "Button W";
+  if (name == "Button Y")
+    return GetName() == "Button N";
+
+  // Match legacy names.
+  const auto bind = SDL_GameControllerGetBindForButton(m_gc, m_button);
+  switch (bind.bindType)
+  {
+  case SDL_CONTROLLER_BINDTYPE_BUTTON:
+    return name == GetLegacyButtonName(bind.value.button);
+  case SDL_CONTROLLER_BINDTYPE_HAT:
+    return name == GetLegacyHatName(bind.value.hat.hat,
+                                    GetDirectionFromHatMask(u8(bind.value.hat.hat_mask)));
+  default:
+    return false;
+  }
+}
+
+ControlState GameController::MotionInput::GetState() const
+{
+  std::array<float, 3> data{};
+  SDL_GameControllerGetSensorData(m_gc, m_type, data.data(), (int)data.size());
+  return m_scale * data[m_index];
+}
+
+// Legacy input
+ControlState GameController::LegacyButton::GetState() const
+{
+  return SDL_JoystickGetButton(m_js, m_index);
+}
+
+ControlState GameController::LegacyAxis::GetState() const
+{
+  return ControlState(SDL_JoystickGetAxis(m_js, m_index)) / m_range;
+}
+
+ControlState GameController::LegacyHat::GetState() const
+{
+  return (SDL_JoystickGetHat(m_js, m_index) & (1 << m_direction)) > 0;
+}
+
+void GameController::HapticEffect::UpdateEffect()
 {
   if (m_effect.type != DISABLED_EFFECT_TYPE)
   {
@@ -461,40 +1092,40 @@ void Joystick::HapticEffect::UpdateEffect()
   }
 }
 
-Joystick::HapticEffect::HapticEffect(SDL_Haptic* haptic) : m_haptic(haptic)
+GameController::HapticEffect::HapticEffect(SDL_Haptic* haptic) : m_haptic(haptic)
 {
   // FYI: type is set within UpdateParameters.
   m_effect.type = DISABLED_EFFECT_TYPE;
 }
 
-Joystick::HapticEffect::~HapticEffect()
+GameController::HapticEffect::~HapticEffect()
 {
   m_effect.type = DISABLED_EFFECT_TYPE;
   UpdateEffect();
 }
 
-void Joystick::HapticEffect::SetDirection(SDL_HapticDirection* dir)
+void GameController::HapticEffect::SetDirection(SDL_HapticDirection* dir)
 {
   // Left direction (for wheels)
   dir->type = SDL_HAPTIC_CARTESIAN;
   dir->dir[0] = -1;
 }
 
-Joystick::ConstantEffect::ConstantEffect(SDL_Haptic* haptic) : HapticEffect(haptic)
+GameController::ConstantEffect::ConstantEffect(SDL_Haptic* haptic) : HapticEffect(haptic)
 {
   m_effect.constant = {};
   SetDirection(&m_effect.constant.direction);
   m_effect.constant.length = RUMBLE_LENGTH_MS;
 }
 
-Joystick::RampEffect::RampEffect(SDL_Haptic* haptic) : HapticEffect(haptic)
+GameController::RampEffect::RampEffect(SDL_Haptic* haptic) : HapticEffect(haptic)
 {
   m_effect.ramp = {};
   SetDirection(&m_effect.ramp.direction);
   m_effect.ramp.length = RUMBLE_LENGTH_MS;
 }
 
-Joystick::PeriodicEffect::PeriodicEffect(SDL_Haptic* haptic, u16 waveform)
+GameController::PeriodicEffect::PeriodicEffect(SDL_Haptic* haptic, u16 waveform)
     : HapticEffect(haptic), m_waveform(waveform)
 {
   m_effect.periodic = {};
@@ -505,24 +1136,24 @@ Joystick::PeriodicEffect::PeriodicEffect(SDL_Haptic* haptic, u16 waveform)
   m_effect.periodic.phase = 0;
 }
 
-Joystick::LeftRightEffect::LeftRightEffect(SDL_Haptic* haptic, Motor motor)
+GameController::LeftRightEffect::LeftRightEffect(SDL_Haptic* haptic, Motor motor)
     : HapticEffect(haptic), m_motor(motor)
 {
   m_effect.leftright = {};
   m_effect.leftright.length = RUMBLE_LENGTH_MS;
 }
 
-std::string Joystick::ConstantEffect::GetName() const
+std::string GameController::ConstantEffect::GetName() const
 {
   return "Constant";
 }
 
-std::string Joystick::RampEffect::GetName() const
+std::string GameController::RampEffect::GetName() const
 {
   return "Ramp";
 }
 
-std::string Joystick::PeriodicEffect::GetName() const
+std::string GameController::PeriodicEffect::GetName() const
 {
   switch (m_waveform)
   {
@@ -539,12 +1170,12 @@ std::string Joystick::PeriodicEffect::GetName() const
   }
 }
 
-std::string Joystick::LeftRightEffect::GetName() const
+std::string GameController::LeftRightEffect::GetName() const
 {
   return (Motor::Strong == m_motor) ? "Strong" : "Weak";
 }
 
-void Joystick::HapticEffect::SetState(ControlState state)
+void GameController::HapticEffect::SetState(ControlState state)
 {
   // Maximum force value for all SDL effects:
   constexpr s16 MAX_FORCE_VALUE = 0x7fff;
@@ -555,7 +1186,7 @@ void Joystick::HapticEffect::SetState(ControlState state)
   }
 }
 
-bool Joystick::ConstantEffect::UpdateParameters(s16 value)
+bool GameController::ConstantEffect::UpdateParameters(s16 value)
 {
   s16& level = m_effect.constant.level;
   const s16 old_level = level;
@@ -566,7 +1197,7 @@ bool Joystick::ConstantEffect::UpdateParameters(s16 value)
   return level != old_level;
 }
 
-bool Joystick::RampEffect::UpdateParameters(s16 value)
+bool GameController::RampEffect::UpdateParameters(s16 value)
 {
   s16& level = m_effect.ramp.start;
   const s16 old_level = level;
@@ -580,7 +1211,7 @@ bool Joystick::RampEffect::UpdateParameters(s16 value)
   return level != old_level;
 }
 
-bool Joystick::PeriodicEffect::UpdateParameters(s16 value)
+bool GameController::PeriodicEffect::UpdateParameters(s16 value)
 {
   s16& level = m_effect.periodic.magnitude;
   const s16 old_level = level;
@@ -591,7 +1222,7 @@ bool Joystick::PeriodicEffect::UpdateParameters(s16 value)
   return level != old_level;
 }
 
-bool Joystick::LeftRightEffect::UpdateParameters(s16 value)
+bool GameController::LeftRightEffect::UpdateParameters(s16 value)
 {
   u16& level = (Motor::Strong == m_motor) ? m_effect.leftright.large_magnitude :
                                             m_effect.leftright.small_magnitude;
@@ -602,79 +1233,4 @@ bool Joystick::LeftRightEffect::UpdateParameters(s16 value)
   m_effect.type = level ? SDL_HAPTIC_LEFTRIGHT : DISABLED_EFFECT_TYPE;
   return level != old_level;
 }
-#endif
-
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-std::string Joystick::Motor::GetName() const
-{
-  return "Motor";
-}
-
-void Joystick::Motor::SetState(ControlState state)
-{
-  Uint16 rumble = state * std::numeric_limits<Uint16>::max();
-  SDL_JoystickRumble(m_js, rumble, rumble, std::numeric_limits<Uint32>::max());
-}
-#endif
-
-void Joystick::UpdateInput()
-{
-  // TODO: Don't call this for every Joystick, only once per ControllerInterface::UpdateInput()
-  SDL_JoystickUpdate();
-}
-
-std::string Joystick::GetName() const
-{
-  return m_name;
-}
-
-std::string Joystick::GetSource() const
-{
-  return "SDL";
-}
-
-SDL_Joystick* Joystick::GetSDLJoystick() const
-{
-  return m_joystick;
-}
-
-std::string Joystick::Button::GetName() const
-{
-  return "Button " + std::to_string(m_index);
-}
-
-std::string Joystick::Axis::GetName() const
-{
-  return "Axis " + std::to_string(m_index) + (m_range < 0 ? '-' : '+');
-}
-
-std::string Joystick::Hat::GetName() const
-{
-  return "Hat " + std::to_string(m_index) + ' ' + "NESW"[m_direction];
-}
-
-ControlState Joystick::Button::GetState() const
-{
-  return SDL_JoystickGetButton(m_js, m_index);
-}
-
-ControlState Joystick::Axis::GetState() const
-{
-  return ControlState(SDL_JoystickGetAxis(m_js, m_index)) / m_range;
-}
-
-ControlState Joystick::Hat::GetState() const
-{
-  return (SDL_JoystickGetHat(m_js, m_index) & (1 << m_direction)) > 0;
-}
-#ifdef USE_SDL_GAMECONTROLLER
-
-ControlState Joystick::MotionInput::GetState() const
-{
-  std::array<float, 3> data{};
-  SDL_GameControllerGetSensorData(m_gc, m_type, data.data(), (int)data.size());
-  return m_scale * data[m_index];
-}
-
-#endif
 }  // namespace ciface::SDL

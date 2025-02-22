@@ -12,6 +12,7 @@
 #endif
 
 #include <algorithm>
+#include <bit>
 #include <functional>
 #include <memory>
 
@@ -22,6 +23,7 @@
 #include "Core/HW/DSPHLE/UCodes/AX.h"
 #include "Core/HW/DSPHLE/UCodes/AXStructs.h"
 #include "Core/HW/Memmap.h"
+#include "Core/System.h"
 
 namespace DSP::HLE
 {
@@ -45,6 +47,34 @@ namespace
 {
 // Useful macro to convert xxx_hi + xxx_lo to xxx for 32 bits.
 #define HILO_TO_32(name) ((u32(name##_hi) << 16) | name##_lo)
+
+PBUpdateData LoadPBUpdates(Memory::MemoryManager& memory, const PB_TYPE& pb)
+{
+  PBUpdateData updates;
+  u32 updates_addr = HILO_TO_32(pb.updates.data);
+  memory.CopyFromEmuSwapped((u16*)updates.data(), updates_addr, sizeof(updates));
+  return updates;
+}
+
+// Apply updates to a PB.
+void ApplyUpdatesForMs(int curr_ms, PB_TYPE& pb, u16* num_updates, const PBUpdateData& updates)
+{
+  auto pb_mem = Common::BitCastToArray<u16>(pb);
+
+  u32 start_idx = 0;
+  for (int i = 0; i < curr_ms; ++i)
+    start_idx += num_updates[i];
+
+  for (u32 i = start_idx; i < start_idx + num_updates[curr_ms]; ++i)
+  {
+    u16 update_off = updates[i].pb_offset;
+    u16 update_val = updates[i].new_value;
+
+    pb_mem[update_off] = update_val;
+  }
+
+  pb = std::bit_cast<PB_TYPE>(pb_mem);
+}
 
 // Used to pass a large amount of buffers to the mixing function.
 union AXBuffers
@@ -82,74 +112,27 @@ union AXBuffers
 #ifdef AX_GC
   int* ptrs[9];
 #else
-  int* ptrs[20];
+  struct
+  {
+    int* regular_ptrs[12];
+    int* wiimote_ptrs[8];
+  };
 #endif
 };
 
-// Determines if this version of the UCode has a PBLowPassFilter in its AXPB layout.
-bool HasLpf(u32 crc)
-{
-  switch (crc)
-  {
-  case 0x4E8A8B21:
-    return false;
-  default:
-    return true;
-  }
-}
-
-// Read a PB from MRAM/ARAM
-void ReadPB(u32 addr, PB_TYPE& pb, u32 crc)
-{
-  if (HasLpf(crc))
-  {
-    u16* dst = (u16*)&pb;
-    Memory::CopyFromEmuSwapped<u16>(dst, addr, sizeof(pb));
-  }
-  else
-  {
-    // The below is a terrible hack in order to support two different AXPB layouts.
-    // We skip lpf in this layout.
-
-    char* dst = (char*)&pb;
-
-    constexpr size_t lpf_off = offsetof(AXPB, lpf);
-    constexpr size_t lc_off = offsetof(AXPB, loop_counter);
-
-    Memory::CopyFromEmuSwapped<u16>((u16*)dst, addr, lpf_off);
-    memset(dst + lpf_off, 0, lc_off - lpf_off);
-    Memory::CopyFromEmuSwapped<u16>((u16*)(dst + lc_off), addr + lpf_off, sizeof(pb) - lc_off);
-  }
-}
-
-// Write a PB back to MRAM/ARAM
-void WritePB(u32 addr, const PB_TYPE& pb, u32 crc)
-{
-  if (HasLpf(crc))
-  {
-    const u16* src = (const u16*)&pb;
-    Memory::CopyToEmuSwapped<u16>(addr, src, sizeof(pb));
-  }
-  else
-  {
-    // The below is a terrible hack in order to support two different AXPB layouts.
-    // We skip lpf in this layout.
-
-    const char* src = (const char*)&pb;
-
-    constexpr size_t lpf_off = offsetof(AXPB, lpf);
-    constexpr size_t lc_off = offsetof(AXPB, loop_counter);
-
-    Memory::CopyToEmuSwapped<u16>(addr, (const u16*)src, lpf_off);
-    Memory::CopyToEmuSwapped<u16>(addr + lpf_off, (const u16*)(src + lc_off), sizeof(pb) - lc_off);
-  }
-}
-
 // Simulated accelerator state.
-static PB_TYPE* acc_pb;
-
 class HLEAccelerator final : public Accelerator
 {
+public:
+  explicit HLEAccelerator(DSP::DSPManager& dsp) : m_dsp(dsp) {}
+  HLEAccelerator(const HLEAccelerator&) = delete;
+  HLEAccelerator(HLEAccelerator&&) = delete;
+  HLEAccelerator& operator=(const HLEAccelerator&) = delete;
+  HLEAccelerator& operator=(HLEAccelerator&&) = delete;
+  ~HLEAccelerator() = default;
+
+  PB_TYPE* acc_pb = nullptr;
+
 protected:
   void OnEndException() override
   {
@@ -180,31 +163,33 @@ protected:
     }
   }
 
-  u8 ReadMemory(u32 address) override { return ReadARAM(address); }
-  void WriteMemory(u32 address, u8 value) override { WriteARAM(value, address); }
+  u8 ReadMemory(u32 address) override { return m_dsp.ReadARAM(address); }
+
+  void WriteMemory(u32 address, u8 value) override { m_dsp.WriteARAM(value, address); }
+
+private:
+  DSP::DSPManager& m_dsp;
 };
 
-static std::unique_ptr<Accelerator> s_accelerator = std::make_unique<HLEAccelerator>();
-
 // Sets up the simulated accelerator.
-void AcceleratorSetup(PB_TYPE* pb)
+void AcceleratorSetup(HLEAccelerator* accelerator, PB_TYPE* pb)
 {
-  acc_pb = pb;
-  s_accelerator->SetStartAddress(HILO_TO_32(pb->audio_addr.loop_addr));
-  s_accelerator->SetEndAddress(HILO_TO_32(pb->audio_addr.end_addr));
-  s_accelerator->SetCurrentAddress(HILO_TO_32(pb->audio_addr.cur_addr));
-  s_accelerator->SetSampleFormat(pb->audio_addr.sample_format);
-  s_accelerator->SetYn1(pb->adpcm.yn1);
-  s_accelerator->SetYn2(pb->adpcm.yn2);
-  s_accelerator->SetPredScale(pb->adpcm.pred_scale);
+  accelerator->acc_pb = pb;
+  accelerator->SetStartAddress(HILO_TO_32(pb->audio_addr.loop_addr));
+  accelerator->SetEndAddress(HILO_TO_32(pb->audio_addr.end_addr));
+  accelerator->SetCurrentAddress(HILO_TO_32(pb->audio_addr.cur_addr));
+  accelerator->SetSampleFormat(pb->audio_addr.sample_format);
+  accelerator->SetYn1(pb->adpcm.yn1);
+  accelerator->SetYn2(pb->adpcm.yn2);
+  accelerator->SetPredScale(pb->adpcm.pred_scale);
 }
 
 // Reads a sample from the accelerator. Also handles looping and
 // disabling streams that reached the end (this is done by an exception raised
 // by the accelerator on real hardware).
-u16 AcceleratorGetSample()
+u16 AcceleratorGetSample(HLEAccelerator* accelerator)
 {
-  return s_accelerator->Read(acc_pb->adpcm.coefs);
+  return accelerator->Read(accelerator->acc_pb->adpcm.coefs);
 }
 
 // Reads samples from the input callback, resamples them to <count> samples at
@@ -341,23 +326,29 @@ u32 ResampleAudio(std::function<s16(u32)> input_callback, s16* output, u32 count
 
 // Read <count> input samples from ARAM, decoding and converting rate
 // if required.
-void GetInputSamples(PB_TYPE& pb, s16* samples, u16 count, const s16* coeffs)
+void GetInputSamples(HLEAccelerator* accelerator, PB_TYPE& pb, s16* samples, u16 count,
+                     const s16* coeffs)
 {
-  AcceleratorSetup(&pb);
+  AcceleratorSetup(accelerator, &pb);
 
   if (coeffs)
     coeffs += pb.coef_select * 0x200;
-  u32 curr_pos =
-      ResampleAudio([](u32) { return AcceleratorGetSample(); }, samples, count, pb.src.last_samples,
-                    pb.src.cur_addr_frac, HILO_TO_32(pb.src.ratio), pb.src_type, coeffs);
+  u32 curr_pos = ResampleAudio([accelerator](u32) { return AcceleratorGetSample(accelerator); },
+                               samples, count, pb.src.last_samples, pb.src.cur_addr_frac,
+                               HILO_TO_32(pb.src.ratio), pb.src_type, coeffs);
   pb.src.cur_addr_frac = (curr_pos & 0xFFFF);
 
   // Update current position, YN1, YN2 and pred scale in the PB.
-  pb.audio_addr.cur_addr_hi = static_cast<u16>(s_accelerator->GetCurrentAddress() >> 16);
-  pb.audio_addr.cur_addr_lo = static_cast<u16>(s_accelerator->GetCurrentAddress());
-  pb.adpcm.yn1 = s_accelerator->GetYn1();
-  pb.adpcm.yn2 = s_accelerator->GetYn2();
-  pb.adpcm.pred_scale = s_accelerator->GetPredScale();
+  pb.audio_addr.cur_addr_hi = static_cast<u16>(accelerator->GetCurrentAddress() >> 16);
+  pb.audio_addr.cur_addr_lo = static_cast<u16>(accelerator->GetCurrentAddress());
+  pb.adpcm.yn1 = accelerator->GetYn1();
+  pb.adpcm.yn2 = accelerator->GetYn2();
+  pb.adpcm.pred_scale = accelerator->GetPredScale();
+}
+
+s16 ClampS16(s64 sample)
+{
+  return std::clamp<s64>(sample, -0x8000, 0x7FFF);
 }
 
 // Add samples to an output buffer, with optional volume ramping.
@@ -377,28 +368,55 @@ void MixAdd(int* out, const s16* input, u32 count, VolumeData* vd, s16* dpop, bo
     s64 sample = input[i];
     sample *= volume;
     sample >>= 15;
-    sample = std::clamp((s32)sample, -32767, 32767);  // -32768 ?
+    s16 sample16 = ClampS16((s32)sample);
 
-    out[i] += (s16)sample;
+    out[i] += sample16;
     volume += volume_delta;
 
-    *dpop = (s16)sample;
+    *dpop = sample16;
   }
 }
 
-// Execute a low pass filter on the samples using one history value. Returns
-// the new history value.
-s16 LowPassFilter(s16* samples, u32 count, s16 yn1, u16 a0, u16 b0)
+// Execute a low pass filter on the samples using one history value.
+static void LowPassFilter(s16* samples, u32 count, PBLowPassFilter& f)
 {
   for (u32 i = 0; i < count; ++i)
-    yn1 = samples[i] = (a0 * (s32)samples[i] + b0 * (s32)yn1) >> 15;
-  return yn1;
+    f.yn1 = samples[i] = ClampS16((f.a0 * (s32)samples[i] + f.b0 * (s32)f.yn1) >> 15);
 }
+
+#ifdef AX_WII
+static void BiquadFilter(s16* samples, u32 count, PBBiquadFilter& f)
+{
+  for (u32 i = 0; i < count; ++i)
+  {
+    s16 xn0 = samples[i];
+    s64 tmp = 0;
+    tmp += f.b0 * s32(xn0);
+    tmp += f.b1 * s32(f.xn1);
+    tmp += f.b2 * s32(f.xn2);
+    tmp += f.a1 * s32(f.yn1);
+    tmp += f.a2 * s32(f.yn2);
+    tmp <<= 2;
+    // CLRL
+    if (tmp & 0x10000)
+      tmp += 0x8000;
+    else
+      tmp += 0x7FFF;
+    tmp >>= 16;
+    s16 yn0 = ClampS16(tmp);
+    f.xn2 = f.xn1;
+    f.yn2 = f.yn1;
+    f.xn1 = xn0;
+    f.yn1 = yn0;
+    samples[i] = yn0;
+  }
+}
+#endif
 
 // Process 1ms of audio (for AX GC) or 3ms of audio (for AX Wii) from a PB and
 // mix it to the output buffers.
-void ProcessVoice(PB_TYPE& pb, const AXBuffers& buffers, u16 count, AXMixControl mctrl,
-                  const s16* coeffs)
+void ProcessVoice(HLEAccelerator* accelerator, PB_TYPE& pb, const AXBuffers& buffers, u16 count,
+                  AXMixControl mctrl, const s16* coeffs, bool new_filter)
 {
   // If the voice is not running, nothing to do.
   if (pb.running != 1)
@@ -406,21 +424,35 @@ void ProcessVoice(PB_TYPE& pb, const AXBuffers& buffers, u16 count, AXMixControl
 
   // Read input samples, performing sample rate conversion if needed.
   s16 samples[MAX_SAMPLES_PER_FRAME];
-  GetInputSamples(pb, samples, count, coeffs);
+  GetInputSamples(accelerator, pb, samples, count, coeffs);
 
   // Apply a global volume ramp using the volume envelope parameters.
   for (u32 i = 0; i < count; ++i)
   {
-    const s32 sample = ((s32)samples[i] * pb.vol_env.cur_volume) >> 15;
-    samples[i] = std::clamp(sample, -32767, 32767);  // -32768 ?
+#ifdef AX_GC
+    // signed on GameCube
+    const s32 volume = (s16)pb.vol_env.cur_volume;
+#else
+    // unsigned on Wii
+    const s32 volume = (u16)pb.vol_env.cur_volume;
+#endif
+    const s32 sample = ((s32)samples[i] * volume) >> 15;
+    samples[i] = ClampS16(sample);
     pb.vol_env.cur_volume += pb.vol_env.cur_volume_delta;
   }
 
-  // Optionally, execute a low pass filter
-  if (pb.lpf.enabled)
+  // Optionally, execute a low-pass and/or biquad filter.
+  if (pb.lpf.on != 0)
   {
-    pb.lpf.yn1 = LowPassFilter(samples, count, pb.lpf.yn1, pb.lpf.a0, pb.lpf.b0);
+    LowPassFilter(samples, count, pb.lpf);
   }
+
+#ifdef AX_WII
+  if (new_filter && pb.biquad.on != 0)
+  {
+    BiquadFilter(samples, count, pb.biquad);
+  }
+#endif
 
   // Mix LRS, AUXA and AUXB depending on mixer_control
   // TODO: Handle DPL2 on AUXB.
@@ -508,6 +540,21 @@ void ProcessVoice(PB_TYPE& pb, const AXBuffers& buffers, u16 count, AXMixControl
   // Wiimote mixing.
   if (pb.remote)
   {
+    if (new_filter && pb.remote_iir.on != 0)
+    {
+      // Only one filter at most for Wiimotes.
+      if (pb.remote_iir.on == 2)
+      {
+        DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::USES_AX_WIIMOTE_BIQUAD);
+        BiquadFilter(samples, count, pb.remote_iir.biquad);
+      }
+      else
+      {
+        DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::USES_AX_WIIMOTE_LOWPASS);
+        LowPassFilter(samples, count, pb.remote_iir.lpf);
+      }
+    }
+
     // Old AXWii versions process ms per ms.
     u16 wm_count = count == 96 ? 18 : 6;
 

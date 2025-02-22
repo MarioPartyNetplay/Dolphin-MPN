@@ -93,9 +93,9 @@ struct pdlabel_t
 extern const std::array<pdlabel_t, 36> regnames;
 extern const std::array<pdlabel_t, 96> pdlabels;
 
-const char* pdname(u16 val);
-const char* pdregname(int val);
-const char* pdregnamelong(int val);
+std::string pdname(u16 val);
+std::string pdregname(int val);
+std::string pdregnamelong(int val);
 
 void InitInstructionTable();
 
@@ -113,8 +113,7 @@ const DSPOPCTemplate* GetExtOpTemplate(UDSPInstruction inst);
 template <typename T, size_t N>
 auto FindByOpcode(UDSPInstruction opcode, const std::array<T, N>& data)
 {
-  return std::find_if(data.cbegin(), data.cend(), [opcode](const auto& info) {
-    return (opcode & info.opcode_mask) == info.opcode;
-  });
+  return std::ranges::find_if(
+      data, [opcode](const auto& info) { return (opcode & info.opcode_mask) == info.opcode; });
 }
 }  // namespace DSP

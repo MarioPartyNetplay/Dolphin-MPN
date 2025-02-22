@@ -76,7 +76,7 @@ std::vector<File::IOFile> NFSFileReader::OpenFiles(const std::string& directory,
   std::vector<File::IOFile> files;
   files.reserve(file_count);
 
-  u64 raw_size = first_file.GetSize();
+  *raw_size_out = first_file.GetSize();
   files.emplace_back(std::move(first_file));
 
   for (u64 i = 1; i < file_count; ++i)
@@ -89,16 +89,16 @@ std::vector<File::IOFile> NFSFileReader::OpenFiles(const std::string& directory,
       return {};
     }
 
-    raw_size += child.GetSize();
+    *raw_size_out += child.GetSize();
     files.emplace_back(std::move(child));
   }
 
-  if (raw_size < expected_raw_size)
+  if (*raw_size_out < expected_raw_size)
   {
     ERROR_LOG_FMT(
         DISCIO,
         "Expected sum of NFS file sizes for {} to be at least {} bytes, but it was {} bytes",
-        directory, expected_raw_size, raw_size);
+        directory, expected_raw_size, *raw_size_out);
     return {};
   }
 
@@ -136,8 +136,8 @@ std::unique_ptr<NFSFileReader> NFSFileReader::Create(File::IOFile first_file,
     return nullptr;
 
   NFSHeader header;
-  if (!first_file.Seek(0, File::SeekOrigin::Begin) ||
-      !first_file.ReadArray(&header, 1) && header.magic != NFS_MAGIC)
+  if (!first_file.Seek(0, File::SeekOrigin::Begin) || !first_file.ReadArray(&header, 1) ||
+      header.magic != NFS_MAGIC)
   {
     return nullptr;
   }
@@ -160,9 +160,18 @@ std::unique_ptr<NFSFileReader> NFSFileReader::Create(File::IOFile first_file,
 NFSFileReader::NFSFileReader(std::vector<NFSLBARange> lba_ranges, std::vector<File::IOFile> files,
                              Key key, u64 raw_size)
     : m_lba_ranges(std::move(lba_ranges)), m_files(std::move(files)),
-      m_aes_context(Common::AES::CreateContextDecrypt(key.data())), m_raw_size(raw_size)
+      m_aes_context(Common::AES::CreateContextDecrypt(key.data())), m_raw_size(raw_size), m_key(key)
 {
   m_data_size = CalculateExpectedDataSize(m_lba_ranges);
+}
+
+std::unique_ptr<BlobReader> NFSFileReader::CopyReader() const
+{
+  std::vector<File::IOFile> new_files{};
+  for (const File::IOFile& file : m_files)
+    new_files.push_back(file.Duplicate("rb"));
+  return std::unique_ptr<NFSFileReader>(
+      new NFSFileReader(m_lba_ranges, std::move(new_files), m_key, m_raw_size));
 }
 
 u64 NFSFileReader::GetDataSize() const

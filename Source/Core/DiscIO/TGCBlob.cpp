@@ -28,8 +28,8 @@ void Replace(u64 offset, u64 size, u8* out_ptr, u64 replace_offset, u64 replace_
 
   if (replace_end > replace_start)
   {
-    std::copy(replace_ptr + (replace_start - replace_offset),
-              replace_ptr + (replace_end - replace_offset), out_ptr + (replace_start - offset));
+    std::copy_n(replace_ptr + (replace_start - replace_offset), replace_end - replace_start,
+                out_ptr + (replace_start - offset));
   }
 }
 
@@ -96,6 +96,11 @@ TGCFileReader::TGCFileReader(File::IOFile file) : m_file(std::move(file))
       Replace<u32>(0, m_fst.size(), m_fst.data(), i * FST_ENTRY_SIZE + 4, new_offset);
     }
   }
+}
+
+std::unique_ptr<BlobReader> TGCFileReader::CopyReader() const
+{
+  return Create(m_file.Duplicate("rb"));
 }
 
 u64 TGCFileReader::GetDataSize() const

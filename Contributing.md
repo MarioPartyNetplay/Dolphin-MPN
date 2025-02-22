@@ -1,17 +1,32 @@
-# <a name="main-heading"></a>Dolphin Coding Style & Licensing
+# <a name="main-section-overview"></a>Dolphin Coding Style & Legal Requirements
+
+- [Legal](#legal)
+- [Coding style introduction](#introduction)
+- [C++ coding style and formatting](#cpp-coding-style-and-formatting)
+- [C++ code-specific guidelines](#cpp-code-specific-guidelines)
+- [Android](#android)
+- [Help](#help)
+
+# <a name="legal"></a>Legal
+
+Summary:
+
+- [Trade secrets](#trade-secrets)
+- [Code licensing](#code-licensing)
+
+## <a name="trade-secrets"></a>Trade secrets
+
+Following all relevant laws is of utmost importance for an emulation project like Dolphin.
+
+If you know any confidential information related to the GameCube, Wii, or Triforce, either because you signed a non-disclosure agreement or because you looked at leaked materials, we ask that you don't contribute code to Dolphin **at all**. While accepting code from contributors who know confidential information is legal if the code is unrelated to the confidential information, we refuse to accept code from such contributors because it greatly increases our review burden and increases the legal risk we take.
+
+Also, this probably goes without saying, but piracy is strictly forbidden both on GitHub and in all other Dolphin channels.
+
+## <a name="code-licensing"></a>Code licensing
 
 If you make any contributions to Dolphin after December 1st, 2014, you are agreeing that any code you have contributed will be licensed under the GNU GPL version 2 (or any later version).
 
-# <a name="main-section-overview"></a>Main sections
-
-- [Introduction](#introduction)
-- [C++ coding style and formatting](#cpp-coding-style-and-formatting)
-- [C++ code-specific guidelines](#cpp-code-specific-guidelines)
-- [Android and Java](#android-and-java)
-- [Help](#help)
-
-
-# <a name="introduction"></a>Introduction
+# <a name="introduction"></a>Coding style introduction
 
 Summary:
 
@@ -20,11 +35,11 @@ Summary:
 
 ## <a name="intro-aims"></a>Aims
 
-This guide is for developers who wish to contribute to the Dolphin codebase. It will detail how to properly style and format code to fit this project. This guide also offers suggestions on specific functions and other varia that may be used in code.
+This guide is for developers who wish to contribute to the Dolphin codebase. It details how to properly style and format code for this project. This guide also offers suggestions on specific functions and other elements that may be used in code.
 
-Following this guide and formatting your code as detailed will likely get your pull request merged much faster than if you don't (assuming the written code has no mistakes in itself).
+Following this guide and formatting your code as detailed will likely get your pull request merged much faster than if you don't (assuming the code itself has no mistakes).
 
-This project uses clang-format (stable branch) to check for common style issues. In case of conflicts between this guide and clang-format rules, the latter should be followed instead of this guide.
+This project uses clang-format 13.0 to check for common style issues. In case of conflicts between this guide and clang-format rules, the latter should be followed instead of this guide.
 
 ## <a name="intro-formatting-issues"></a>Checking and fixing formatting issues
 
@@ -173,7 +188,8 @@ Summary:
 - [Classes and Structs](#cpp-code-classes-and-structs)
 
 ## <a name="cpp-code-general"></a>General
-- The codebase currently uses C++17.
+- The codebase currently uses C++20, though not all compilers support all C++20 features.
+  - See CMakeLists.txt "Enforce minimum compiler versions" for the currently supported compilers.
 - Use the [nullptr](https://en.cppreference.com/w/cpp/language/nullptr) type over the macro `NULL`.
 - If a [range-based for loop](https://en.cppreference.com/w/cpp/language/range-for) can be used instead of container iterators, use it.
 - Obviously, try not to use `goto` unless you have a *really* good reason for it.
@@ -211,7 +227,7 @@ Summary:
 
 ## <a name="cpp-code-functions"></a>Functions
 - If a function parameter is a pointer or reference and its value or data isn't intended to be changed, please mark that parameter as `const`.
-- Functions that specifically modify their parameters should have the respective parameter(s) marked as a pointer so that the variables being modified are syntaxically obvious.
+- Functions that specifically modify their parameters should have the respective parameter(s) marked as a pointer so that the variables being modified are syntactically obvious.
   - What not to do:
 
     ```c++
@@ -272,9 +288,15 @@ Summary:
   };
   ```
 
-# <a name="android-and-java"></a>Android and Java
+# <a name="android"></a>Android
 
-The Android project is currently written in Java. If you are using Android Studio to contribute, you can import the project's code style from `code-style-java.jar`, located in `[Dolphin Root]/Source/Android`. Please organize imports before committing.
+If you are using Kotlin, just use the built-in official Kotlin code style.
+
+To install the Java code style in Android Studio, select the gear icon in the Code Style settings as shown, select `Import Scheme...` and select `dolphin/Source/Android/code-style-java.xml`. The Code Style menu should look like this when complete. ![Code Style Window][code-style]
+
+You can now select any section of code and press `Ctrl + Alt + L` to automatically format it.
 
 # <a name="help"></a>Help
 If you have any questions about Dolphin's development or would like some help, Dolphin developers use `#dolphin-emu @ irc.libera.chat` to communicate. If you are new to IRC, [Libera.Chat has resources to get started chatting with IRC.](https://libera.chat/)
+
+[code-style]: https://i.imgur.com/3b3UBhb.png

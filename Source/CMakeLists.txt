@@ -13,8 +13,6 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
   add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
   add_definitions(-D_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING)
-  # The replacement for the old atomic shared_ptr functions was added in C++20, so we can't use it yet
-  add_definitions(-D_SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING)
 endif()
 
 if (NOT MSVC)
@@ -43,6 +41,7 @@ else()
   check_and_add_flag(UNINITIALIZED -Wuninitialized)
   check_and_add_flag(LOGICAL_OP -Wlogical-op)
   check_and_add_flag(SHADOW -Wshadow)
+  check_and_add_flag(SHADOW_FIELD_IN_CONSTRUCTOR -Wshadow-field-in-constructor)
   check_and_add_flag(INIT_SELF -Winit-self)
   check_and_add_flag(MISSING_DECLARATIONS -Wmissing-declarations)
   check_and_add_flag(MISSING_VARIABLE_DECLARATIONS -Wmissing-variable-declarations)
@@ -67,6 +66,11 @@ endif()
 # but some dependencies require them (LLVM, libav).
 add_definitions(-D__STDC_LIMIT_MACROS)
 add_definitions(-D__STDC_CONSTANT_MACROS)
+
+check_symbol_exists(elf_aux_info sys/auxv.h HAVE_ELF_AUX_INFO)
+if(HAVE_ELF_AUX_INFO)
+    add_definitions(-DHAVE_ELF_AUX_INFO)
+endif()
 
 add_subdirectory(Core)
 if (ANDROID)

@@ -18,10 +18,10 @@ import org.dolphinemu.dolphinemu.activities.EmulationActivity;
 import org.dolphinemu.dolphinemu.dialogs.AlertMessage;
 import org.dolphinemu.dolphinemu.utils.CompressCallback;
 import org.dolphinemu.dolphinemu.utils.Log;
-import org.dolphinemu.dolphinemu.utils.Rumble;
 
 import java.lang.ref.WeakReference;
 import java.util.LinkedHashMap;
+import java.util.concurrent.Semaphore;
 
 /**
  * Class which contains methods that interact
@@ -29,7 +29,7 @@ import java.util.LinkedHashMap;
  */
 public final class NativeLibrary
 {
-  private static final Object sAlertMessageLock = new Object();
+  private static final Semaphore sAlertMessageSemaphore = new Semaphore(0);
   private static boolean sIsShowingAlertMessage = false;
 
   private static WeakReference<EmulationActivity> sEmulationActivity = new WeakReference<>(null);
@@ -44,7 +44,7 @@ public final class NativeLibrary
   }
 
   /**
-   * Button type for use in onTouchEvent
+   * Button type, for legacy use only
    */
   public static final class ButtonType
   {
@@ -235,55 +235,6 @@ public final class NativeLibrary
   }
 
   /**
-   * Default touchscreen device
-   */
-  public static final String TouchScreenDevice = "Touchscreen";
-
-  /**
-   * Handles button press events for a gamepad.
-   *
-   * @param Device The input descriptor of the gamepad.
-   * @param Button Key code identifying which button was pressed.
-   * @param Action Mask identifying which action is happening (button pressed down, or button released).
-   * @return If we handled the button press.
-   */
-  public static native boolean onGamePadEvent(String Device, int Button, int Action);
-
-  /**
-   * Handles gamepad movement events.
-   *
-   * @param Device The device ID of the gamepad.
-   * @param Axis   The axis ID
-   * @param Value  The value of the axis represented by the given ID.
-   */
-  public static native void onGamePadMoveEvent(String Device, int Axis, float Value);
-
-  /**
-   * Rumble sent from native. Currently only supports phone rumble.
-   *
-   * @param padID Ignored for now. Future use would be to pass rumble to a connected controller
-   * @param state Ignored for now since phone rumble can't just be 'turned' on/off
-   */
-  @Keep
-  public static void rumble(int padID, double state)
-  {
-    final EmulationActivity emulationActivity = sEmulationActivity.get();
-    if (emulationActivity == null)
-    {
-      Log.warning("[NativeLibrary] EmulationActivity is null");
-      return;
-    }
-
-    Rumble.checkRumble(padID, state);
-  }
-
-  public static native void SetMotionSensorsEnabled(boolean accelerometerEnabled,
-          boolean gyroscopeEnabled);
-
-  // Angle is in radians and should be non-negative
-  public static native double GetInputRadiusAtAngle(int emu_pad_id, int stick, double angle);
-
-  /**
    * Gets the Dolphin version string.
    *
    * @return the Dolphin version string.
@@ -347,9 +298,11 @@ public final class NativeLibrary
 
   public static native void SetCacheDirectory(String directory);
 
+  public static native String GetCacheDirectory();
+
   public static native int DefaultCPUCore();
 
-  public static native String GetDefaultGraphicsBackendName();
+  public static native String GetDefaultGraphicsBackendConfigName();
 
   public static native int GetMaxLogLevel();
 
@@ -428,21 +381,25 @@ public final class NativeLibrary
    */
   public static native boolean IsRunning();
 
-  public static native boolean IsRunningAndStarted();
-
+  /**
+   * Returns true if emulation is running and not paused.
+   */
   public static native boolean IsRunningAndUnpaused();
 
   /**
-   * Enables or disables CPU block profiling
-   *
-   * @param enable
+   * Returns true if emulation is fully shut down.
    */
-  public static native void SetProfiling(boolean enable);
+  public static native boolean IsUninitialized();
 
   /**
-   * Writes out the block profile results
+   * Re-initialize software JitBlock profiling data
    */
-  public static native void WriteProfileResults();
+  public static native void WipeJitBlockProfilingData();
+
+  /**
+   * Writes out the JitBlock Cache log dump
+   */
+  public static native void WriteJitBlockLogDump();
 
   /**
    * Native EGL functions not exposed by Java bindings
@@ -453,8 +410,6 @@ public final class NativeLibrary
    * Provides a way to refresh the connections on Wiimotes
    */
   public static native void RefreshWiimotes();
-
-  public static native void ReloadWiimoteConfig();
 
   public static native LinkedHashMap<String, String> GetLogTypeNames();
 
@@ -505,65 +460,63 @@ public final class NativeLibrary
   private static native String GetCurrentTitleDescriptionUnchecked();
 
   @Keep
+  public static void displayToastMsg(final String text, final boolean long_length)
+  {
+    final int length = long_length ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT;
+    new Handler(Looper.getMainLooper())
+            .post(() -> Toast.makeText(DolphinApplication.getAppContext(), text, length).show());
+  }
+
+  @Keep
   public static boolean displayAlertMsg(final String caption, final String text,
           final boolean yesNo, final boolean isWarning, final boolean nonBlocking)
   {
     Log.error("[NativeLibrary] Alert: " + text);
     final EmulationActivity emulationActivity = sEmulationActivity.get();
     boolean result = false;
-    if (isWarning && emulationActivity != null && emulationActivity.isIgnoringWarnings())
+
+    // We can't use AlertMessages unless we have a non-null activity reference
+    // and are allowed to block. As a fallback, we can use toasts.
+    if (emulationActivity == null || nonBlocking)
     {
-      return true;
+      displayToastMsg(text, true);
     }
     else
     {
-      // We can't use AlertMessages unless we have a non-null activity reference
-      // and are allowed to block. As a fallback, we can use toasts.
-      if (emulationActivity == null || nonBlocking)
+      sIsShowingAlertMessage = true;
+
+      emulationActivity.runOnUiThread(() ->
       {
-        new Handler(Looper.getMainLooper()).post(
-                () -> Toast.makeText(DolphinApplication.getAppContext(), text, Toast.LENGTH_LONG)
-                        .show());
+        FragmentManager fragmentManager = emulationActivity.getSupportFragmentManager();
+        if (fragmentManager.isStateSaved())
+        {
+          // The activity is being destroyed, so we can't use it to display an AlertMessage.
+          // Fall back to a toast.
+          Toast.makeText(emulationActivity, text, Toast.LENGTH_LONG).show();
+          NotifyAlertMessageLock();
+        }
+        else
+        {
+          AlertMessage.newInstance(caption, text, yesNo, isWarning)
+                  .show(fragmentManager, "AlertMessage");
+        }
+      });
+
+      // Wait for the lock to notify that it is complete.
+      try
+      {
+        sAlertMessageSemaphore.acquire();
       }
-      else
+      catch (InterruptedException ignored)
       {
-        sIsShowingAlertMessage = true;
+      }
 
-        emulationActivity.runOnUiThread(() ->
-        {
-          FragmentManager fragmentManager = emulationActivity.getSupportFragmentManager();
-          if (fragmentManager.isStateSaved())
-          {
-            // The activity is being destroyed, so we can't use it to display an AlertMessage.
-            // Fall back to a toast.
-            Toast.makeText(emulationActivity, text, Toast.LENGTH_LONG).show();
-            NotifyAlertMessageLock();
-          }
-          else
-          {
-            AlertMessage.newInstance(caption, text, yesNo, isWarning)
-                    .show(fragmentManager, "AlertMessage");
-          }
-        });
-
-        // Wait for the lock to notify that it is complete.
-        synchronized (sAlertMessageLock)
-        {
-          try
-          {
-            sAlertMessageLock.wait();
-          }
-          catch (Exception ignored)
-          {
-          }
-        }
-
-        if (yesNo)
-        {
-          result = AlertMessage.getAlertResult();
-        }
+      if (yesNo)
+      {
+        result = AlertMessage.getAlertResult();
       }
     }
+
     sIsShowingAlertMessage = false;
     return result;
   }
@@ -575,10 +528,7 @@ public final class NativeLibrary
 
   public static void NotifyAlertMessageLock()
   {
-    synchronized (sAlertMessageLock)
-    {
-      sAlertMessageLock.notify();
-    }
+    sAlertMessageSemaphore.release();
   }
 
   public static void setEmulationActivity(EmulationActivity emulationActivity)

@@ -13,12 +13,8 @@ JitBlockCache::JitBlockCache(JitBase& jit) : JitBaseBlockCache{jit}
 
 void JitBlockCache::WriteLinkBlock(const JitBlock::LinkData& source, const JitBlock* dest)
 {
-  // Do not skip breakpoint check if debugging.
-  const u8* dispatcher = m_jit.IsDebuggingEnabled() ? m_jit.GetAsmRoutines()->dispatcher :
-                                                      m_jit.GetAsmRoutines()->dispatcher_no_check;
-
   u8* location = source.exitPtrs;
-  const u8* address = dest ? dest->checkedEntry : dispatcher;
+  const u8* address = dest ? dest->normalEntry : m_jit.GetAsmRoutines()->dispatcher_no_timing_check;
   if (source.call)
   {
     Gen::XEmitter emit(location, location + 5);
@@ -38,18 +34,16 @@ void JitBlockCache::WriteLinkBlock(const JitBlock::LinkData& source, const JitBl
     else
     {
       Gen::XEmitter emit(location, location + 5);
-      emit.JMP(address, true);
+      emit.JMP(address, Gen::XEmitter::Jump::Near);
     }
   }
 }
 
 void JitBlockCache::WriteDestroyBlock(const JitBlock& block)
 {
-  // Only clear the entry points as we might still be within this block.
-  Gen::XEmitter emit(block.checkedEntry, block.checkedEntry + 1);
+  // Only clear the entry point as we might still be within this block.
+  Gen::XEmitter emit(block.normalEntry, block.normalEntry + 1);
   emit.INT3();
-  Gen::XEmitter emit2(block.normalEntry, block.normalEntry + 1);
-  emit2.INT3();
 }
 
 void JitBlockCache::Init()

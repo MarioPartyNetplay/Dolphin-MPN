@@ -13,14 +13,15 @@
 #include <unordered_set>
 
 #include <mbedtls/md5.h>
-#include <mz_compat.h>
 #include <pugixml.hpp>
+#include <unzip.h>
 
 #include "Common/Align.h"
 #include "Common/Assert.h"
 #include "Common/CPUDetect.h"
 #include "Common/CommonPaths.h"
 #include "Common/CommonTypes.h"
+#include "Common/Contains.h"
 #include "Common/Crypto/SHA1.h"
 #include "Common/FileUtil.h"
 #include "Common/Hash.h"
@@ -143,11 +144,8 @@ RedumpVerifier::DownloadStatus RedumpVerifier::DownloadDatfile(const std::string
     if (File::Exists(output_path))
       return DownloadStatus::FailButOldCacheAvailable;
 
-    const std::string system_not_available_message = "System \"" + system + "\" doesn't exist.";
     const bool system_not_available_match =
-        result->end() != std::search(result->begin(), result->end(),
-                                     system_not_available_message.begin(),
-                                     system_not_available_message.end());
+        Common::ContainsSubrange(*result, "System \"" + system + "\" doesn't exist.");
     return system_not_available_match ? DownloadStatus::SystemNotAvailable : DownloadStatus::Fail;
   }
 
@@ -238,15 +236,16 @@ std::vector<RedumpVerifier::PotentialMatch> RedumpVerifier::ScanDatfile(const st
 
     const int version = version_string.empty() ? 0 : std::stoi(version_string);
 
+    const std::string serials = game.child("serial").text().as_string();
+    if (!serials.empty())
+      serials_exist = true;
+
     // The revisions for Korean GameCube games whose four-char game IDs end in E are numbered from
     // 0x30 in ring codes and in disc headers, but Redump switched to numbering them from 0 in 2019.
     if (version % 0x30 != m_revision % 0x30)
       continue;
 
-    const std::string serials = game.child("serial").text().as_string();
-    if (!serials.empty())
-      serials_exist = true;
-    if (serials.empty() || StringBeginsWith(serials, "DS"))
+    if (serials.empty() || serials.starts_with("DS"))
     {
       // GC Datel discs have no serials in Redump, Wii Datel discs have serials like "DS000101"
       if (!m_game_id.empty())
@@ -452,27 +451,23 @@ std::vector<Partition> VolumeVerifier::CheckPartitions()
       types.emplace_back(*type);
   }
 
-  if (std::find(types.cbegin(), types.cend(), PARTITION_UPDATE) == types.cend())
+  if (!Common::Contains(types, PARTITION_UPDATE))
     AddProblem(Severity::Low, Common::GetStringT("The update partition is missing."));
 
-  const bool has_data_partition =
-      std::find(types.cbegin(), types.cend(), PARTITION_DATA) != types.cend();
+  const bool has_data_partition = Common::Contains(types, PARTITION_DATA);
   if (!m_is_datel && !has_data_partition)
     AddProblem(Severity::High, Common::GetStringT("The data partition is missing."));
 
-  const bool has_channel_partition =
-      std::find(types.cbegin(), types.cend(), PARTITION_CHANNEL) != types.cend();
+  const bool has_channel_partition = Common::Contains(types, PARTITION_CHANNEL);
   if (ShouldHaveChannelPartition() && !has_channel_partition)
     AddProblem(Severity::Medium, Common::GetStringT("The channel partition is missing."));
 
-  const bool has_install_partition =
-      std::find(types.cbegin(), types.cend(), PARTITION_INSTALL) != types.cend();
+  const bool has_install_partition = Common::Contains(types, PARTITION_INSTALL);
   if (ShouldHaveInstallPartition() && !has_install_partition)
     AddProblem(Severity::High, Common::GetStringT("The install partition is missing."));
 
   if (ShouldHaveMasterpiecePartitions() &&
-      types.cend() ==
-          std::find_if(types.cbegin(), types.cend(), [](u32 type) { return type >= 0xFF; }))
+      types.cend() == std::ranges::find_if(types, [](u32 type) { return type >= 0xFF; }))
   {
     // i18n: This string is referring to a game mode in Super Smash Bros. Brawl called Masterpieces
     // where you play demos of NES/SNES/N64 games. Official translations:
@@ -574,18 +569,20 @@ bool VolumeVerifier::CheckPartition(const Partition& partition)
 
   if (!m_is_datel)
   {
-    IOS::HLE::Kernel ios;
-    const auto es = ios.GetES();
+    const auto console_type =
+        IsDebugSigned() ? IOS::HLE::IOSC::ConsoleType::RVT : IOS::HLE::IOSC::ConsoleType::Retail;
+    IOS::HLE::Kernel ios(console_type);
+    auto& es = ios.GetESCore();
     const std::vector<u8>& cert_chain = m_volume.GetCertificateChain(partition);
 
     if (IOS::HLE::IPC_SUCCESS !=
-            es->VerifyContainer(IOS::HLE::ESDevice::VerifyContainerType::Ticket,
-                                IOS::HLE::ESDevice::VerifyMode::DoNotUpdateCertStore,
-                                m_volume.GetTicket(partition), cert_chain) ||
+            es.VerifyContainer(IOS::HLE::ESCore::VerifyContainerType::Ticket,
+                               IOS::HLE::ESCore::VerifyMode::DoNotUpdateCertStore,
+                               m_volume.GetTicket(partition), cert_chain) ||
         IOS::HLE::IPC_SUCCESS !=
-            es->VerifyContainer(IOS::HLE::ESDevice::VerifyContainerType::TMD,
-                                IOS::HLE::ESDevice::VerifyMode::DoNotUpdateCertStore,
-                                m_volume.GetTMD(partition), cert_chain))
+            es.VerifyContainer(IOS::HLE::ESCore::VerifyContainerType::TMD,
+                               IOS::HLE::ESCore::VerifyMode::DoNotUpdateCertStore,
+                               m_volume.GetTMD(partition), cert_chain))
     {
       AddProblem(Severity::Low,
                  Common::FmtFormatT("The {0} partition is not correctly signed.", name));
@@ -663,7 +660,7 @@ bool VolumeVerifier::CheckPartition(const Partition& partition)
         {
           std::string file_name = f.GetName();
           Common::ToLower(&file_name);
-          if (StringBeginsWith(file_name, correct_ios))
+          if (file_name.starts_with(correct_ios))
           {
             has_correct_ios = true;
             break;
@@ -717,10 +714,9 @@ bool VolumeVerifier::ShouldHaveChannelPartition() const
       "RFNE01", "RFNJ01", "RFNK01", "RFNP01", "RFNW01", "RFPE01", "RFPJ01", "RFPK01", "RFPP01",
       "RFPW01", "RGWE41", "RGWJ41", "RGWP41", "RGWX41", "RMCE01", "RMCJ01", "RMCK01", "RMCP01",
   };
-  DEBUG_ASSERT(std::is_sorted(channel_discs.cbegin(), channel_discs.cend()));
+  static_assert(std::ranges::is_sorted(channel_discs));
 
-  return std::binary_search(channel_discs.cbegin(), channel_discs.cend(),
-                            std::string_view(m_volume.GetGameID()));
+  return std::ranges::binary_search(channel_discs, m_volume.GetGameID());
 }
 
 bool VolumeVerifier::ShouldHaveInstallPartition() const
@@ -728,16 +724,15 @@ bool VolumeVerifier::ShouldHaveInstallPartition() const
   static constexpr std::array<std::string_view, 4> dragon_quest_x = {"S4MJGD", "S4SJGD", "S6TJGD",
                                                                      "SDQJGD"};
   const std::string& game_id = m_volume.GetGameID();
-  return std::any_of(dragon_quest_x.cbegin(), dragon_quest_x.cend(),
-                     [&game_id](std::string_view x) { return x == game_id; });
+  return std::ranges::any_of(dragon_quest_x,
+                             [&game_id](std::string_view x) { return x == game_id; });
 }
 
 bool VolumeVerifier::ShouldHaveMasterpiecePartitions() const
 {
   static constexpr std::array<std::string_view, 4> ssbb = {"RSBE01", "RSBJ01", "RSBK01", "RSBP01"};
   const std::string& game_id = m_volume.GetGameID();
-  return std::any_of(ssbb.cbegin(), ssbb.cend(),
-                     [&game_id](std::string_view x) { return x == game_id; });
+  return std::ranges::any_of(ssbb, [&game_id](std::string_view x) { return x == game_id; });
 }
 
 bool VolumeVerifier::ShouldBeDualLayer() const
@@ -750,10 +745,9 @@ bool VolumeVerifier::ShouldBeDualLayer() const
       "SLSEXJ", "SLSP01", "SQIE4Q", "SQIP4Q", "SQIY4Q", "SR5E41", "SR5P41", "SUOE41", "SUOP41",
       "SVXX52", "SVXY52", "SX4E01", "SX4P01", "SZ3EGT", "SZ3PGT",
   };
-  DEBUG_ASSERT(std::is_sorted(dual_layer_discs.cbegin(), dual_layer_discs.cend()));
+  static_assert(std::ranges::is_sorted(dual_layer_discs));
 
-  return std::binary_search(dual_layer_discs.cbegin(), dual_layer_discs.cend(),
-                            std::string_view(m_volume.GetGameID()));
+  return std::ranges::binary_search(dual_layer_discs, m_volume.GetGameID());
 }
 
 void VolumeVerifier::CheckVolumeSize()
@@ -862,13 +856,13 @@ void VolumeVerifier::CheckMisc()
     bool inconsistent_game_id = true;
     if (game_id_encrypted == "RELSAB")
     {
-      if (StringBeginsWith(game_id_unencrypted, "410"))
+      if (game_id_unencrypted.starts_with("410"))
       {
         // This is the Wii Backup Disc (aka "pinkfish" disc),
         // which legitimately has an inconsistent game ID.
         inconsistent_game_id = false;
       }
-      else if (StringBeginsWith(game_id_unencrypted, "010"))
+      else if (game_id_unencrypted.starts_with("010"))
       {
         // Hacked version of the Wii Backup Disc (aka "pinkfish" disc).
         std::string proper_game_id = game_id_unencrypted;
@@ -978,22 +972,22 @@ void VolumeVerifier::CheckMisc()
 
   if (m_volume.GetVolumeType() == Platform::WiiWAD)
   {
-    IOS::HLE::Kernel ios;
-    const auto es = ios.GetES();
+    IOS::HLE::Kernel ios(m_ticket.GetConsoleType());
+    auto& es = ios.GetESCore();
     const std::vector<u8>& cert_chain = m_volume.GetCertificateChain(PARTITION_NONE);
 
     if (IOS::HLE::IPC_SUCCESS !=
-        es->VerifyContainer(IOS::HLE::ESDevice::VerifyContainerType::Ticket,
-                            IOS::HLE::ESDevice::VerifyMode::DoNotUpdateCertStore, m_ticket,
-                            cert_chain))
+        es.VerifyContainer(IOS::HLE::ESCore::VerifyContainerType::Ticket,
+                           IOS::HLE::ESCore::VerifyMode::DoNotUpdateCertStore, m_ticket,
+                           cert_chain))
     {
       // i18n: "Ticket" here is a kind of digital authorization to use a certain title (e.g. a game)
       AddProblem(Severity::Low, Common::GetStringT("The ticket is not correctly signed."));
     }
 
     if (IOS::HLE::IPC_SUCCESS !=
-        es->VerifyContainer(IOS::HLE::ESDevice::VerifyContainerType::TMD,
-                            IOS::HLE::ESDevice::VerifyMode::DoNotUpdateCertStore, tmd, cert_chain))
+        es.VerifyContainer(IOS::HLE::ESCore::VerifyContainerType::TMD,
+                           IOS::HLE::ESCore::VerifyMode::DoNotUpdateCertStore, tmd, cert_chain))
     {
       AddProblem(
           Severity::Medium,
@@ -1013,7 +1007,7 @@ void VolumeVerifier::CheckMisc()
                            "though the files are not identical."));
   }
 
-  if (IsDisc(m_volume.GetVolumeType()) && StringBeginsWith(game_id_unencrypted, "R8P"))
+  if (IsDisc(m_volume.GetVolumeType()) && game_id_unencrypted.starts_with("R8P"))
     CheckSuperPaperMario();
 }
 
@@ -1039,7 +1033,7 @@ void VolumeVerifier::CheckSuperPaperMario()
   if (!m_volume.Read(offset, length, data.data(), partition))
     return;
 
-  if (std::any_of(data.cbegin(), data.cend(), [](u8 x) { return x != 0; }))
+  if (std::ranges::any_of(data, [](u8 x) { return x != 0; }))
   {
     AddProblem(Severity::High,
                Common::GetStringT("Some padding data that should be zero is not zero. "
@@ -1056,7 +1050,7 @@ void VolumeVerifier::SetUpHashing()
   else if (m_volume.GetVolumeType() == Platform::WiiDisc)
   {
     // Set up a DiscScrubber for checking whether blocks with errors are unused
-    m_scrubber.SetupScrub(&m_volume);
+    m_scrubber.SetupScrub(m_volume);
   }
 
   std::sort(m_groups.begin(), m_groups.end(),
@@ -1298,8 +1292,7 @@ void VolumeVerifier::Finish()
     {
       m_result.hashes.crc32 = std::vector<u8>(4);
       const u32 crc32_be = Common::swap32(m_crc32_context);
-      const u8* crc32_be_ptr = reinterpret_cast<const u8*>(&crc32_be);
-      std::copy(crc32_be_ptr, crc32_be_ptr + 4, m_result.hashes.crc32.begin());
+      std::memcpy(m_result.hashes.crc32.data(), &crc32_be, 4);
     }
 
     if (m_hashes_to_calculate.md5)
@@ -1430,8 +1423,9 @@ void VolumeVerifier::Finish()
       }
       else
       {
-        Common::GetStringT("Problems with low severity were found. They will most "
-                           "likely not prevent the game from running.");
+        m_result.summary_text =
+            Common::GetStringT("Problems with low severity were found. They will most "
+                               "likely not prevent the game from running.");
       }
       break;
     case Severity::Medium:
@@ -1456,7 +1450,8 @@ void VolumeVerifier::Finish()
   {
     m_result.summary_text +=
         Common::GetStringT("\n\nBecause this title is not for retail Wii consoles, "
-                           "Dolphin cannot verify that it hasn't been tampered with.");
+                           "Dolphin cannot ensure that it hasn't been tampered with, even if "
+                           "signatures appear valid.");
   }
 }
 

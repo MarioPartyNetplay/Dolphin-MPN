@@ -16,13 +16,15 @@
 #include "Common/Common.h"
 #include "Common/MsgHandler.h"
 
+#include "VideoBackends/Metal/MTLBoundingBox.h"
+#include "VideoBackends/Metal/MTLGfx.h"
 #include "VideoBackends/Metal/MTLObjectCache.h"
 #include "VideoBackends/Metal/MTLPerfQuery.h"
-#include "VideoBackends/Metal/MTLRenderer.h"
 #include "VideoBackends/Metal/MTLStateTracker.h"
 #include "VideoBackends/Metal/MTLUtil.h"
 #include "VideoBackends/Metal/MTLVertexManager.h"
 
+#include "VideoCommon/AbstractGfx.h"
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
@@ -54,6 +56,7 @@ static bool WindowSystemTypeSupportsMetal(WindowSystemType type)
   switch (type)
   {
   case WindowSystemType::MacOS:
+  case WindowSystemType::Headless:
     return true;
   default:
     return false;
@@ -64,7 +67,8 @@ bool Metal::VideoBackend::Initialize(const WindowSystemInfo& wsi)
 {
   @autoreleasepool
   {
-    if (!WindowSystemTypeSupportsMetal(wsi.type) || !wsi.render_surface)
+    const bool surface_ok = wsi.type == WindowSystemType::Headless || wsi.render_surface;
+    if (!WindowSystemTypeSupportsMetal(wsi.type) || !surface_ok)
     {
       PanicAlertFmt("Bad WindowSystemInfo for Metal renderer.");
       return false;
@@ -91,58 +95,51 @@ bool Metal::VideoBackend::Initialize(const WindowSystemInfo& wsi)
     MRCOwned<id<MTLDevice>> adapter = std::move(devs[selected_adapter_index]);
     Util::PopulateBackendInfoFeatures(&g_Config, adapter);
 
-    // With the backend information populated, we can now initialize videocommon.
-    InitializeShared();
+#if TARGET_OS_OSX
+// This should be available on all macOS 13.3+ systems – but when using OCLP drivers, some devices
+// fail with "Unrecognized selector -[MTLIGAccelDevice setShouldMaximizeConcurrentCompilation:]"
+//
+// This concerns Intel Ivy Bridge, Haswell and Nvidia Kepler on macOS 13.3 or newer.
+// (See
+// https://github.com/dortania/OpenCore-Legacy-Patcher/blob/34676702f494a2a789c514cc76dba19b8b7206b1/docs/PATCHEXPLAIN.md?plain=1#L354C1-L354C83)
+//
+// Perform the feature detection dynamically instead.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability"
+
+    if ([adapter respondsToSelector:@selector(setShouldMaximizeConcurrentCompilation:)])
+    {
+      [adapter setShouldMaximizeConcurrentCompilation:YES];
+    }
+
+#pragma clang diagnostic pop
+#endif
+
+    UpdateActiveConfig();
 
     MRCOwned<CAMetalLayer*> layer = MRCRetain(static_cast<CAMetalLayer*>(wsi.render_surface));
     [layer setDevice:adapter];
     if (Util::ToAbstract([layer pixelFormat]) == AbstractTextureFormat::Undefined)
       [layer setPixelFormat:MTLPixelFormatBGRA8Unorm];
-    CGSize size = [layer bounds].size;
-    float scale = [layer contentsScale];
 
     ObjectCache::Initialize(std::move(adapter));
     g_state_tracker = std::make_unique<StateTracker>();
-    g_renderer = std::make_unique<Renderer>(std::move(layer), size.width * scale,
-                                            size.height * scale, scale);
-    g_vertex_manager = std::make_unique<VertexManager>();
-    g_perf_query = std::make_unique<PerfQuery>();
-    g_framebuffer_manager = std::make_unique<FramebufferManager>();
-    g_texture_cache = std::make_unique<TextureCacheBase>();
-    g_shader_cache = std::make_unique<VideoCommon::ShaderCache>();
 
-    if (!g_vertex_manager->Initialize() || !g_shader_cache->Initialize() ||
-        !g_renderer->Initialize() || !g_framebuffer_manager->Initialize() ||
-        !g_texture_cache->Initialize())
-    {
-      PanicAlertFmt("Failed to initialize renderer classes");
-      Shutdown();
-      return false;
-    }
-
-    g_shader_cache->InitializeShaderCache();
-
-    return true;
+    return InitializeShared(
+        std::make_unique<Metal::Gfx>(std::move(layer)), std::make_unique<Metal::VertexManager>(),
+        std::make_unique<Metal::PerfQuery>(), std::make_unique<Metal::BoundingBox>());
   }
 }
 
 void Metal::VideoBackend::Shutdown()
 {
-  g_shader_cache->Shutdown();
-  g_renderer->Shutdown();
+  ShutdownShared();
 
-  g_shader_cache.reset();
-  g_texture_cache.reset();
-  g_framebuffer_manager.reset();
-  g_perf_query.reset();
-  g_vertex_manager.reset();
-  g_renderer.reset();
   g_state_tracker.reset();
   ObjectCache::Shutdown();
-  ShutdownShared();
 }
 
-void Metal::VideoBackend::InitBackendInfo()
+void Metal::VideoBackend::InitBackendInfo(const WindowSystemInfo& wsi)
 {
   @autoreleasepool
   {
@@ -167,8 +164,23 @@ void Metal::VideoBackend::PrepareWindow(WindowSystemInfo& wsi)
     return;
   NSView* view = static_cast<NSView*>(wsi.render_surface);
   CAMetalLayer* layer = [CAMetalLayer layer];
+
+  Util::PopulateBackendInfo(&g_Config);
+
+  if (g_Config.backend_info.bSupportsHDROutput && g_Config.bHDR)
+  {
+    [layer setWantsExtendedDynamicRangeContent:YES];
+    [layer setPixelFormat:MTLPixelFormatRGBA16Float];
+
+    const CFStringRef name = kCGColorSpaceExtendedLinearSRGB;
+    CGColorSpaceRef colorspace = CGColorSpaceCreateWithName(name);
+    [layer setColorspace:colorspace];
+    CGColorSpaceRelease(colorspace);
+  }
+
   [view setWantsLayer:YES];
   [view setLayer:layer];
+
   wsi.render_surface = layer;
 #endif
 }

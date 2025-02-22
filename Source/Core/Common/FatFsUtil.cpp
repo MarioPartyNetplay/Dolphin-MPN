@@ -26,6 +26,8 @@
 #include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
 
+#include "Core/Config/MainSettings.h"
+
 enum : u32
 {
   SECTOR_SIZE = 512,
@@ -33,30 +35,21 @@ enum : u32
 };
 
 static std::mutex s_fatfs_mutex;
-static File::IOFile* s_image;
-static bool s_deterministic;
+static Common::FatFsCallbacks* s_callbacks;
 
-extern "C" DSTATUS disk_status(BYTE pdrv)
+namespace
 {
-  return 0;
-}
-
-extern "C" DSTATUS disk_initialize(BYTE pdrv)
-{
-  return 0;
-}
-
-extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
+int SDCardDiskRead(File::IOFile* image, u8 pdrv, u8* buff, u32 sector, unsigned int count)
 {
   const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
-  if (!s_image->Seek(offset, File::SeekOrigin::Begin))
+  if (!image->Seek(offset, File::SeekOrigin::Begin))
   {
     ERROR_LOG_FMT(COMMON, "SD image seek failed (offset={})", offset);
     return RES_ERROR;
   }
 
   const size_t size = static_cast<size_t>(count) * SECTOR_SIZE;
-  if (!s_image->ReadBytes(buff, size))
+  if (!image->ReadBytes(buff, size))
   {
     ERROR_LOG_FMT(COMMON, "SD image read failed (offset={}, size={})", offset, size);
     return RES_ERROR;
@@ -65,17 +58,17 @@ extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
   return RES_OK;
 }
 
-extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
+int SDCardDiskWrite(File::IOFile* image, u8 pdrv, const u8* buff, u32 sector, unsigned int count)
 {
   const u64 offset = static_cast<u64>(sector) * SECTOR_SIZE;
-  if (!s_image->Seek(offset, File::SeekOrigin::Begin))
+  if (!image->Seek(offset, File::SeekOrigin::Begin))
   {
     ERROR_LOG_FMT(COMMON, "SD image seek failed (offset={})", offset);
     return RES_ERROR;
   }
 
   const size_t size = static_cast<size_t>(count) * SECTOR_SIZE;
-  if (!s_image->WriteBytes(buff, size))
+  if (!image->WriteBytes(buff, size))
   {
     ERROR_LOG_FMT(COMMON, "SD image write failed (offset={}, size={})", offset, size);
     return RES_ERROR;
@@ -84,14 +77,14 @@ extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT co
   return RES_OK;
 }
 
-extern "C" DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
+int SDCardDiskIOCtl(File::IOFile* image, u8 pdrv, u8 cmd, void* buff)
 {
   switch (cmd)
   {
   case CTRL_SYNC:
     return RES_OK;
   case GET_SECTOR_COUNT:
-    *reinterpret_cast<LBA_t*>(buff) = s_image->GetSize() / SECTOR_SIZE;
+    *reinterpret_cast<LBA_t*>(buff) = image->GetSize() / SECTOR_SIZE;
     return RES_OK;
   default:
     WARN_LOG_FMT(COMMON, "Unexpected SD image ioctl {}", cmd);
@@ -99,11 +92,8 @@ extern "C" DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
   }
 }
 
-extern "C" DWORD get_fattime(void)
+u32 GetSystemTimeFAT()
 {
-  if (s_deterministic)
-    return 0;
-
   const std::time_t time = std::time(nullptr);
   std::tm tm;
 #ifdef _WIN32
@@ -121,7 +111,93 @@ extern "C" DWORD get_fattime(void)
   fattime |= std::min(tm.tm_sec, 59) >> 1;
   return fattime;
 }
+}  // namespace
 
+namespace Common
+{
+FatFsCallbacks::FatFsCallbacks() = default;
+FatFsCallbacks::~FatFsCallbacks() = default;
+
+u8 FatFsCallbacks::DiskInitialize(u8 pdrv)
+{
+  return 0;
+}
+
+u8 FatFsCallbacks::DiskStatus(u8 pdrv)
+{
+  return 0;
+}
+
+u32 FatFsCallbacks::GetCurrentTimeFAT()
+{
+  return GetSystemTimeFAT();
+}
+}  // namespace Common
+
+namespace
+{
+class SDCardFatFsCallbacks : public Common::FatFsCallbacks
+{
+public:
+  int DiskRead(u8 pdrv, u8* buff, u32 sector, unsigned int count) override
+  {
+    return SDCardDiskRead(m_image, pdrv, buff, sector, count);
+  }
+
+  int DiskWrite(u8 pdrv, const u8* buff, u32 sector, unsigned int count) override
+  {
+    return SDCardDiskWrite(m_image, pdrv, buff, sector, count);
+  }
+
+  int DiskIOCtl(u8 pdrv, u8 cmd, void* buff) override
+  {
+    return SDCardDiskIOCtl(m_image, pdrv, cmd, buff);
+  }
+
+  u32 GetCurrentTimeFAT() override
+  {
+    if (m_deterministic)
+      return 0;
+
+    return GetSystemTimeFAT();
+  }
+
+  File::IOFile* m_image = nullptr;
+  bool m_deterministic = false;
+};
+}  // namespace
+
+extern "C" DSTATUS disk_status(BYTE pdrv)
+{
+  return static_cast<DSTATUS>(s_callbacks->DiskStatus(pdrv));
+}
+
+extern "C" DSTATUS disk_initialize(BYTE pdrv)
+{
+  return static_cast<DSTATUS>(s_callbacks->DiskInitialize(pdrv));
+}
+
+extern "C" DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
+{
+  return static_cast<DRESULT>(s_callbacks->DiskRead(pdrv, buff, sector, count));
+}
+
+extern "C" DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
+{
+  return static_cast<DRESULT>(s_callbacks->DiskWrite(pdrv, buff, sector, count));
+}
+
+extern "C" DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
+{
+  return static_cast<DRESULT>(s_callbacks->DiskIOCtl(pdrv, cmd, buff));
+}
+
+extern "C" DWORD get_fattime(void)
+{
+  return static_cast<DWORD>(s_callbacks->GetCurrentTimeFAT());
+}
+
+#if FF_USE_LFN == 3  // match ff.h; currently unused by Dolphin
 extern "C" void* ff_memalloc(UINT msize)
 {
   return std::malloc(msize);
@@ -131,7 +207,9 @@ extern "C" void ff_memfree(void* mblock)
 {
   return std::free(mblock);
 }
+#endif
 
+#if FF_FS_REENTRANT
 extern "C" int ff_cre_syncobj(BYTE vol, FF_SYNC_t* sobj)
 {
   *sobj = new std::recursive_mutex();
@@ -156,6 +234,7 @@ extern "C" int ff_del_syncobj(FF_SYNC_t sobj)
   delete reinterpret_cast<std::recursive_mutex*>(sobj);
   return 1;
 }
+#endif
 
 static const char* FatFsErrorToString(FRESULT error_code)
 {
@@ -276,8 +355,12 @@ static u64 GetSize(const File::FSTEntry& entry)
   return size;
 }
 
-static bool Pack(const File::FSTEntry& entry, bool is_root, std::vector<u8>& tmp_buffer)
+static bool Pack(const std::function<bool()>& cancelled, const File::FSTEntry& entry, bool is_root,
+                 std::vector<u8>& tmp_buffer)
 {
+  if (cancelled())
+    return false;
+
   if (!entry.isDirectory)
   {
     File::IOFile src(entry.physicalName, "rb");
@@ -287,7 +370,7 @@ static bool Pack(const File::FSTEntry& entry, bool is_root, std::vector<u8>& tmp
       return false;
     }
 
-    FIL dst;
+    FIL dst{};
     const auto open_error_code =
         f_open(&dst, entry.virtualName.c_str(), FA_CREATE_ALWAYS | FA_WRITE);
     if (open_error_code != FR_OK)
@@ -315,6 +398,9 @@ static bool Pack(const File::FSTEntry& entry, bool is_root, std::vector<u8>& tmp
     u64 size = entry.size;
     while (size > 0)
     {
+      if (cancelled())
+        return false;
+
       u32 chunk_size = static_cast<u32>(std::min(size, static_cast<u64>(tmp_buffer.size())));
       if (!src.ReadBytes(tmp_buffer.data(), chunk_size))
       {
@@ -379,7 +465,7 @@ static bool Pack(const File::FSTEntry& entry, bool is_root, std::vector<u8>& tmp
 
   for (const File::FSTEntry& child : entry.children)
   {
-    if (!Pack(child, false, tmp_buffer))
+    if (!Pack(cancelled, child, false, tmp_buffer))
       return false;
   }
 
@@ -407,7 +493,7 @@ static void SortFST(File::FSTEntry* root)
     SortFST(&child);
 }
 
-bool SyncSDFolderToSDImage(bool deterministic)
+bool SyncSDFolderToSDImage(const std::function<bool()>& cancelled, bool deterministic)
 {
   const std::string source_dir = File::GetUserPath(D_WIISDCARDSYNCFOLDER_IDX);
   const std::string image_path = File::GetUserPath(F_WIISDCARDIMAGE_IDX);
@@ -429,17 +515,23 @@ bool SyncSDFolderToSDImage(bool deterministic)
   if (!CheckIfFATCompatible(root))
     return false;
 
-  u64 size = GetSize(root);
-  // Allocate a reasonable amount of free space
-  size += std::clamp(size / 2, MebibytesToBytes(512), GibibytesToBytes(8));
+  u64 size = Config::Get(Config::MAIN_WII_SD_CARD_FILESIZE);
+  if (size == 0)
+  {
+    size = GetSize(root);
+    // Allocate a reasonable amount of free space
+    size += std::clamp(size / 2, MebibytesToBytes(512), GibibytesToBytes(8));
+  }
   size = AlignUp(size, MAX_CLUSTER_SIZE);
 
   std::lock_guard lk(s_fatfs_mutex);
+  SDCardFatFsCallbacks callbacks;
+  s_callbacks = &callbacks;
+  Common::ScopeGuard callbacks_guard{[] { s_callbacks = nullptr; }};
 
   File::IOFile image;
-  s_image = &image;
-  Common::ScopeGuard image_guard{[] { s_image = nullptr; }};
-  s_deterministic = deterministic;
+  callbacks.m_image = &image;
+  callbacks.m_deterministic = deterministic;
 
   const std::string temp_image_path = File::GetTempFilenameForAtomicWrite(image_path);
   if (!image.Open(temp_image_path, "w+b"))
@@ -449,7 +541,10 @@ bool SyncSDFolderToSDImage(bool deterministic)
   }
 
   // delete temp file in failure case
-  Common::ScopeGuard image_delete_guard{[&] { File::Delete(temp_image_path); }};
+  Common::ScopeGuard image_delete_guard{[&] {
+    image.Close();
+    File::Delete(temp_image_path);
+  }};
 
   if (!image.Resize(size))
   {
@@ -458,7 +553,7 @@ bool SyncSDFolderToSDImage(bool deterministic)
   }
 
   MKFS_PARM options = {};
-  options.fmt = FM_FAT32;
+  options.fmt = FM_FAT32 | FM_SFD;
   options.n_fat = 0;    // Number of FATs: automatic
   options.align = 1;    // Alignment of the data region (in sectors)
   options.n_root = 0;   // Number of root directory entries: automatic (and unused for FAT32)
@@ -474,7 +569,7 @@ bool SyncSDFolderToSDImage(bool deterministic)
     return false;
   }
 
-  FATFS fs;
+  FATFS fs{};
   const auto mount_error_code = f_mount(&fs, "", 0);
   if (mount_error_code != FR_OK)
   {
@@ -484,7 +579,7 @@ bool SyncSDFolderToSDImage(bool deterministic)
   }
   Common::ScopeGuard unmount_guard{[] { f_unmount(""); }};
 
-  if (!Pack(root, true, tmp_buffer))
+  if (!Pack(cancelled, root, true, tmp_buffer))
   {
     ERROR_LOG_FMT(COMMON, "Failed to pack folder {} to SD image at {}", source_dir,
                   temp_image_path);
@@ -511,12 +606,15 @@ bool SyncSDFolderToSDImage(bool deterministic)
   return true;
 }
 
-static bool Unpack(const std::string path, bool is_directory, const char* name,
-                   std::vector<u8>& tmp_buffer)
+static bool Unpack(const std::function<bool()>& cancelled, const std::string path,
+                   bool is_directory, const char* name, std::vector<u8>& tmp_buffer)
 {
+  if (cancelled())
+    return false;
+
   if (!is_directory)
   {
-    FIL src;
+    FIL src{};
     const auto open_error_code = f_open(&src, name, FA_READ);
     if (open_error_code != FR_OK)
     {
@@ -535,6 +633,9 @@ static bool Unpack(const std::string path, bool is_directory, const char* name,
     u32 size = f_size(&src);
     while (size > 0)
     {
+      if (cancelled())
+        return false;
+
       u32 chunk_size = std::min(size, static_cast<u32>(tmp_buffer.size()));
       u32 read_size;
       const auto read_error_code = f_read(&src, tmp_buffer.data(), chunk_size, &read_size);
@@ -592,7 +693,7 @@ static bool Unpack(const std::string path, bool is_directory, const char* name,
     return false;
   }
 
-  DIR directory;
+  DIR directory{};
   const auto opendir_error_code = f_opendir(&directory, ".");
   if (opendir_error_code != FR_OK)
   {
@@ -601,7 +702,7 @@ static bool Unpack(const std::string path, bool is_directory, const char* name,
     return false;
   }
 
-  FILINFO entry;
+  FILINFO entry{};
   while (true)
   {
     const auto readdir_error_code = f_readdir(&directory, &entry);
@@ -628,7 +729,7 @@ static bool Unpack(const std::string path, bool is_directory, const char* name,
     const bool is_path_traversal_attack =
         (childname.find("\\") != std::string_view::npos) ||
         (childname.find('/') != std::string_view::npos) ||
-        std::all_of(childname.begin(), childname.end(), [](char c) { return c == '.'; });
+        std::ranges::all_of(childname, [](char c) { return c == '.'; });
     if (is_path_traversal_attack)
     {
       ERROR_LOG_FMT(
@@ -638,8 +739,8 @@ static bool Unpack(const std::string path, bool is_directory, const char* name,
       return false;
     }
 
-    if (!Unpack(fmt::format("{}/{}", path, childname), entry.fattrib & AM_DIR, entry.fname,
-                tmp_buffer))
+    if (!Unpack(cancelled, fmt::format("{}/{}", path, childname), entry.fattrib & AM_DIR,
+                entry.fname, tmp_buffer))
     {
       return false;
     }
@@ -664,7 +765,7 @@ static bool Unpack(const std::string path, bool is_directory, const char* name,
   return true;
 }
 
-bool SyncSDImageToSDFolder()
+bool SyncSDImageToSDFolder(const std::function<bool()>& cancelled)
 {
   const std::string image_path = File::GetUserPath(F_WIISDCARDIMAGE_IDX);
   const std::string target_dir = File::GetUserPath(D_WIISDCARDSYNCFOLDER_IDX);
@@ -672,17 +773,19 @@ bool SyncSDImageToSDFolder()
     return false;
 
   std::lock_guard lk(s_fatfs_mutex);
+  SDCardFatFsCallbacks callbacks;
+  s_callbacks = &callbacks;
+  Common::ScopeGuard callbacks_guard{[] { s_callbacks = nullptr; }};
 
   INFO_LOG_FMT(COMMON, "Starting SD card conversion from file {} to folder {}", image_path,
                target_dir);
 
   File::IOFile image;
-  s_image = &image;
-  Common::ScopeGuard image_guard{[] { s_image = nullptr; }};
+  callbacks.m_image = &image;
 
   // this shouldn't matter since we're not modifying the SD image here, but initialize it to
   // something consistent just in case
-  s_deterministic = true;
+  callbacks.m_deterministic = true;
 
   if (!image.Open(image_path, "r+b"))
   {
@@ -690,7 +793,7 @@ bool SyncSDImageToSDFolder()
     return false;
   }
 
-  FATFS fs;
+  FATFS fs{};
   const auto mount_error_code = f_mount(&fs, "", 0);
   if (mount_error_code != FR_OK)
   {
@@ -719,7 +822,7 @@ bool SyncSDImageToSDFolder()
   }
 
   std::vector<u8> tmp_buffer(MAX_CLUSTER_SIZE);
-  if (!Unpack(target_dir_without_slash, true, "", tmp_buffer))
+  if (!Unpack(cancelled, target_dir_without_slash, true, "", tmp_buffer))
   {
     ERROR_LOG_FMT(COMMON, "Failed to unpack SD image {} to {}", image_path, target_dir);
     File::DeleteDirRecursively(target_dir_without_slash);
@@ -739,5 +842,13 @@ bool SyncSDImageToSDFolder()
 
   INFO_LOG_FMT(COMMON, "Successfully unpacked SD image {} to {}", image_path, target_dir);
   return true;
+}
+
+void RunInFatFsContext(FatFsCallbacks& callbacks, const std::function<void()>& function)
+{
+  std::lock_guard lk(s_fatfs_mutex);
+  s_callbacks = &callbacks;
+  Common::ScopeGuard callbacks_guard{[] { s_callbacks = nullptr; }};
+  function();
 }
 }  // namespace Common

@@ -16,7 +16,6 @@
 #include "InputCommon/ControllerInterface/Xlib/XInput2.h"
 #endif
 #ifdef CIFACE_USE_OSX
-#include "InputCommon/ControllerInterface/OSX/OSX.h"
 #include "InputCommon/ControllerInterface/Quartz/Quartz.h"
 #endif
 #ifdef CIFACE_USE_SDL
@@ -34,6 +33,9 @@
 #ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
 #include "InputCommon/ControllerInterface/DualShockUDPClient/DualShockUDPClient.h"
 #endif
+#ifdef CIFACE_USE_STEAMDECK
+#include "InputCommon/ControllerInterface/SteamDeck/SteamDeck.h"
+#endif
 
 ControllerInterface g_controller_interface;
 
@@ -42,6 +44,8 @@ ControllerInterface g_controller_interface;
 // threads as hotkeys are updated from a worker thread, but UI can read from the main thread. This
 // will never interfere with game threads.
 static thread_local ciface::InputChannel tls_input_channel = ciface::InputChannel::Host;
+
+static thread_local bool tls_is_updating_devices = false;
 
 void ControllerInterface::Initialize(const WindowSystemInfo& wsi)
 {
@@ -55,28 +59,31 @@ void ControllerInterface::Initialize(const WindowSystemInfo& wsi)
   m_populating_devices_counter = 1;
 
 #ifdef CIFACE_USE_WIN32
-  ciface::Win32::Init(wsi.render_window);
+  m_input_backends.emplace_back(ciface::Win32::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_XLIB
-// nothing needed
+  m_input_backends.emplace_back(ciface::XInput2::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_OSX
-// nothing needed for OSX and Quartz
+  m_input_backends.emplace_back(ciface::Quartz::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_SDL
-  ciface::SDL::Init();
+  m_input_backends.emplace_back(ciface::SDL::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_ANDROID
-// nothing needed
+  m_input_backends.emplace_back(ciface::Android::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_EVDEV
-  ciface::evdev::Init();
+  m_input_backends.emplace_back(ciface::evdev::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_PIPES
-// nothing needed
+  m_input_backends.emplace_back(ciface::Pipes::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
-  ciface::DualShockUDPClient::Init();
+  m_input_backends.emplace_back(ciface::DualShockUDPClient::CreateInputBackend(this));
+#endif
+#ifdef CIFACE_USE_STEAMDECK
+  m_input_backends.emplace_back(ciface::SteamDeck::CreateInputBackend(this));
 #endif
 
   // Don't allow backends to add devices before the first RefreshDevices() as they will be cleaned
@@ -114,41 +121,27 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
   if (!m_is_init)
     return;
 
-#ifdef CIFACE_USE_OSX
-  if (m_wsi.type == WindowSystemType::MacOS)
-  {
-    std::lock_guard lk_pre_population(m_pre_population_mutex);
-    // This is needed to stop its threads before locking our mutexes, to avoid deadlocks
-    // (in case it tried to add a device after we had locked m_devices_population_mutex).
-    // There doesn't seem to be an easy to way to repopulate OSX devices without restarting its
-    // hotplug thread. This should not remove its devices, and if it did, calls should be ignored.
-    ciface::OSX::DeInit();
-  }
-#endif
-
   // We lock m_devices_population_mutex here to make everything simpler.
   // Multiple devices classes have their own "hotplug" thread, and can add/remove devices at any
   // time, while actual writes to "m_devices" are safe, the order in which they happen is not. That
-  // means a thread could be adding devices while we are removing them, or removing them as we are
-  // populating them (causing missing or duplicate devices).
+  // means a thread could be adding devices while we are removing them from a different thread,
+  // or removing them as we are populating them (causing missing or duplicate devices).
   std::lock_guard lk_population(m_devices_population_mutex);
 
-#if defined(CIFACE_USE_WIN32) && !defined(CIFACE_USE_XLIB) && !defined(CIFACE_USE_OSX)
   // If only the window changed, avoid removing and re-adding all devices.
   // Instead only refresh devices that require the window handle.
   if (reason == RefreshReason::WindowChangeOnly)
   {
     m_populating_devices_counter.fetch_add(1);
 
-    // No need to do anything else in this case.
-    // Only (Win32) DInput needs the window handle to be updated.
-    ciface::Win32::ChangeWindow(m_wsi.render_window);
+    for (auto& backend : m_input_backends)
+      backend->HandleWindowChange();
 
     if (m_populating_devices_counter.fetch_sub(1) == 1)
       InvokeDevicesChangedCallbacks();
+
     return;
   }
-#endif
 
   m_populating_devices_counter.fetch_add(1);
 
@@ -164,38 +157,8 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
   // do it async, to not risk the emulated controllers default config loading not finding a default
   // device.
 
-#ifdef CIFACE_USE_WIN32
-  ciface::Win32::PopulateDevices(m_wsi.render_window);
-#endif
-#ifdef CIFACE_USE_XLIB
-  if (m_wsi.type == WindowSystemType::X11)
-    ciface::XInput2::PopulateDevices(m_wsi.render_window);
-#endif
-#ifdef CIFACE_USE_OSX
-  if (m_wsi.type == WindowSystemType::MacOS)
-  {
-    {
-      std::lock_guard lk_pre_population(m_pre_population_mutex);
-      ciface::OSX::Init();
-    }
-    ciface::Quartz::PopulateDevices(m_wsi.render_window);
-  }
-#endif
-#ifdef CIFACE_USE_SDL
-  ciface::SDL::PopulateDevices();
-#endif
-#ifdef CIFACE_USE_ANDROID
-  ciface::Android::PopulateDevices();
-#endif
-#ifdef CIFACE_USE_EVDEV
-  ciface::evdev::PopulateDevices();
-#endif
-#ifdef CIFACE_USE_PIPES
-  ciface::Pipes::PopulateDevices();
-#endif
-#ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
-  ciface::DualShockUDPClient::PopulateDevices();
-#endif
+  for (auto& backend : m_input_backends)
+    backend->PopulateDevices();
 
   WiimoteReal::PopulateDevices();
 
@@ -232,28 +195,8 @@ void ControllerInterface::Shutdown()
   // Update control references so shared_ptr<Device>s are freed up BEFORE we shutdown the backends.
   ClearDevices();
 
-#ifdef CIFACE_USE_WIN32
-  ciface::Win32::DeInit();
-#endif
-#ifdef CIFACE_USE_XLIB
-// nothing needed
-#endif
-#ifdef CIFACE_USE_OSX
-  ciface::OSX::DeInit();
-  ciface::Quartz::DeInit();
-#endif
-#ifdef CIFACE_USE_SDL
-  ciface::SDL::DeInit();
-#endif
-#ifdef CIFACE_USE_ANDROID
-// nothing needed
-#endif
-#ifdef CIFACE_USE_EVDEV
-  ciface::evdev::Shutdown();
-#endif
-#ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
-  ciface::DualShockUDPClient::DeInit();
-#endif
+  // Empty the container of input backends to deconstruct and deinitialize them.
+  m_input_backends.clear();
 
   // Make sure no devices had been added within Shutdown() in the time
   // between checking they checked atomic m_is_init bool and we changed it.
@@ -295,13 +238,17 @@ bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device
   if (!m_is_init)
     return false;
 
+  ASSERT_MSG(CONTROLLERINTERFACE, !tls_is_updating_devices,
+             "Devices shouldn't be added within input update calls, there is a risk of deadlock "
+             "if another thread was already here");
+
   std::lock_guard lk_population(m_devices_population_mutex);
 
   {
     std::lock_guard lk(m_devices_mutex);
 
     const auto is_id_in_use = [&device, this](int id) {
-      return std::any_of(m_devices.begin(), m_devices.end(), [&device, &id](const auto& d) {
+      return std::ranges::any_of(m_devices, [&device, &id](const auto& d) {
         return d->GetSource() == device->GetSource() && d->GetName() == device->GetName() &&
                d->GetId() == id;
       });
@@ -352,12 +299,16 @@ void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::De
   if (!m_is_init)
     return;
 
+  ASSERT_MSG(CONTROLLERINTERFACE, !tls_is_updating_devices,
+             "Devices shouldn't be removed within input update calls, there is a risk of deadlock "
+             "if another thread was already here");
+
   std::lock_guard lk_population(m_devices_population_mutex);
 
   bool any_removed;
   {
     std::lock_guard lk(m_devices_mutex);
-    auto it = std::remove_if(m_devices.begin(), m_devices.end(), [&callback](const auto& dev) {
+    const size_t erased = std::erase_if(m_devices, [&callback](const auto& dev) {
       if (callback(dev.get()))
       {
         NOTICE_LOG_FMT(CONTROLLERINTERFACE, "Removed device: {}", dev->GetQualifiedName());
@@ -365,9 +316,7 @@ void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::De
       }
       return false;
     });
-    const size_t prev_size = m_devices.size();
-    m_devices.erase(it, m_devices.end());
-    any_removed = m_devices.size() != prev_size;
+    any_removed = erased != 0;
   }
 
   if (any_removed && (!m_populating_devices_counter || force_devices_release))
@@ -382,17 +331,46 @@ void ControllerInterface::UpdateInput()
   if (!m_is_init)
     return;
 
-  // TODO: if we are an emulation input channel, we should probably always lock
-  // Prefer outdated values over blocking UI or CPU thread (avoids short but noticeable frame drop)
-  if (m_devices_mutex.try_lock())
+  // We add the devices to remove while we still have the "m_devices_mutex" locked.
+  // This guarantees that:
+  // -We won't try to lock "m_devices_population_mutex" while it was already locked and waiting
+  //  for "m_devices_mutex", which would result in dead lock.
+  // -We don't keep shared ptrs on devices and thus unwillingly keep them alive even if somebody
+  //  is currently trying to remove them (and needs them destroyed on the spot).
+  // -If somebody else destroyed them in the meantime, we'll know which ones have been destroyed.
+  std::vector<std::weak_ptr<ciface::Core::Device>> devices_to_remove;
+
   {
-    std::lock_guard lk(m_devices_mutex, std::adopt_lock);
+    // TODO: if we are an emulation input channel, we should probably always lock.
+    // Prefer outdated values over blocking UI or CPU thread (this avoids short but noticeable frame
+    // drops)
+    if (!m_devices_mutex.try_lock())
+      return;
+
+    std::lock_guard lk_devices(m_devices_mutex, std::adopt_lock);
+
+    tls_is_updating_devices = true;
+
+    for (auto& backend : m_input_backends)
+      backend->UpdateInput(devices_to_remove);
+
     for (const auto& d : m_devices)
     {
       // Theoretically we could avoid updating input on devices that don't have any references to
       // them, but in practice a few devices types could break in different ways, so we don't
-      d->UpdateInput();
+      if (d->UpdateInput() == ciface::Core::DeviceRemoval::Remove)
+        devices_to_remove.push_back(d);
     }
+
+    tls_is_updating_devices = false;
+  }
+
+  if (devices_to_remove.size() > 0)
+  {
+    RemoveDevice([&](const ciface::Core::Device* device) {
+      return std::ranges::any_of(devices_to_remove,
+                                 [device](const auto& d) { return d.lock().get() == device; });
+    });
   }
 }
 
@@ -404,6 +382,11 @@ void ControllerInterface::SetCurrentInputChannel(ciface::InputChannel input_chan
 ciface::InputChannel ControllerInterface::GetCurrentInputChannel()
 {
   return tls_input_channel;
+}
+
+WindowSystemInfo ControllerInterface::GetWindowSystemInfo() const
+{
+  return m_wsi;
 }
 
 void ControllerInterface::SetAspectRatioAdjustment(float value)

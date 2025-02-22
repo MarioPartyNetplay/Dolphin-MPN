@@ -12,6 +12,8 @@
 #include "VideoCommon/NativeVertexFormat.h"
 #include "VideoCommon/VertexManagerBase.h"
 
+enum class ShaderAttrib : u32;
+
 namespace DX11
 {
 class D3DVertexFormat : public NativeVertexFormat
@@ -22,6 +24,8 @@ public:
   ID3D11InputLayout* GetInputLayout(const void* vs_bytecode, size_t vs_bytecode_size);
 
 private:
+  void AddAttribute(const AttributeFormat& format, ShaderAttrib semantic_index);
+
   std::array<D3D11_INPUT_ELEMENT_DESC, 32> m_elems{};
   UINT m_num_elems = 0;
 
@@ -63,6 +67,9 @@ private:
   ComPtr<ID3D11Buffer> m_vertex_constant_buffer = nullptr;
   ComPtr<ID3D11Buffer> m_geometry_constant_buffer = nullptr;
   ComPtr<ID3D11Buffer> m_pixel_constant_buffer = nullptr;
+
+  ComPtr<ID3D11Buffer> m_custom_pixel_constant_buffer = nullptr;
+  std::size_t m_last_custom_pixel_buffer_size = 0;
 
   ComPtr<ID3D11Buffer> m_texel_buffer = nullptr;
   std::array<ComPtr<ID3D11ShaderResourceView>, NUM_TEXEL_BUFFER_FORMATS> m_texel_buffer_views;

@@ -166,7 +166,20 @@ public:
   }
 
 private:
-  using WorkBlock = CyclicArray<__m128i, 4>;
+  struct XmmReg
+  {
+    // Allows aliasing attributes to be respected in the
+    // face of templates.
+    __m128i data;
+
+    XmmReg& operator=(const __m128i& d)
+    {
+      data = d;
+      return *this;
+    }
+    operator __m128i() const { return data; }
+  };
+  using WorkBlock = CyclicArray<XmmReg, 4>;
 
   ATTRIBUTE_TARGET("ssse3")
   static inline __m128i byterev_16B(__m128i x)
@@ -244,7 +257,7 @@ private:
 
   virtual bool HwAccelerated() const override { return true; }
 
-  std::array<__m128i, 2> state{};
+  std::array<XmmReg, 2> state{};
 };
 
 #endif
@@ -371,5 +384,21 @@ Digest CalculateDigest(const u8* msg, size_t len)
   auto ctx = CreateContext();
   ctx->Update(msg, len);
   return ctx->Finish();
+}
+
+std::string DigestToString(const Digest& digest)
+{
+  static constexpr std::array<char, 16> lookup = {'0', '1', '2', '3', '4', '5', '6', '7',
+                                                  '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+  std::string hash;
+  hash.reserve(digest.size() * 2);
+  for (size_t i = 0; i < digest.size(); ++i)
+  {
+    const u8 upper = static_cast<u8>((digest[i] >> 4) & 0xf);
+    const u8 lower = static_cast<u8>(digest[i] & 0xf);
+    hash.push_back(lookup[upper]);
+    hash.push_back(lookup[lower]);
+  }
+  return hash;
 }
 }  // namespace Common::SHA1

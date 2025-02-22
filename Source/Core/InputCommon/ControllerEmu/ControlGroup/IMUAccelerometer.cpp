@@ -15,18 +15,18 @@ namespace ControllerEmu
 IMUAccelerometer::IMUAccelerometer(std::string name_, std::string ui_name_)
     : ControlGroup(std::move(name_), std::move(ui_name_), GroupType::IMUAccelerometer)
 {
-  AddInput(Translate, _trans("Up"));
-  AddInput(Translate, _trans("Down"));
-  AddInput(Translate, _trans("Left"));
-  AddInput(Translate, _trans("Right"));
-  AddInput(Translate, _trans("Forward"));
-  AddInput(Translate, _trans("Backward"));
+  AddInput(Translatability::Translate, _trans("Up"));
+  AddInput(Translatability::Translate, _trans("Down"));
+  AddInput(Translatability::Translate, _trans("Left"));
+  AddInput(Translatability::Translate, _trans("Right"));
+  AddInput(Translatability::Translate, _trans("Forward"));
+  AddInput(Translatability::Translate, _trans("Backward"));
 }
 
 bool IMUAccelerometer::AreInputsBound() const
 {
-  return std::all_of(controls.begin(), controls.end(),
-                     [](const auto& control) { return control->control_ref->BoundCount() > 0; });
+  return std::ranges::all_of(
+      controls, [](const auto& control) { return control->control_ref->BoundCount() > 0; });
 }
 
 std::optional<IMUAccelerometer::StateData> IMUAccelerometer::GetState() const

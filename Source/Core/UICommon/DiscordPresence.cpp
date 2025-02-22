@@ -18,17 +18,27 @@
 #include <fmt/format.h>
 
 #include "Common/Hash.h"
+#include "Common/HttpRequest.h"
 #include "Common/StringUtil.h"
+
+#include "Core/AchievementManager.h"
+#include "Core/Config/AchievementSettings.h"
+#include "Core/System.h"
 
 #endif
 
 namespace Discord
 {
 #ifdef USE_DISCORD_PRESENCE
+static bool s_using_custom_client = false;
+
 namespace
 {
 Handler* event_handler = nullptr;
 const char* username = "";
+static int64_t s_start_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count();
 
 void HandleDiscordReady(const DiscordUser* user)
 {
@@ -89,88 +99,14 @@ void HandleDiscordJoin(const char* join_secret)
   event_handler->DiscordJoin();
 }
 
-std::string ArtworkForGameId(const std::string& gameid)
+std::string ArtworkForGameId()
 {
-  static const std::set<std::string> REGISTERED_GAMES{
-      "GAF",  // GAFE01: Animal Crossing
-      "RUU",  // RUUE01: Animal Crossing: City Folk
-      "SF8",  // SF8E01: Donkey Kong Country Returns
-      "RDB",  // RDBE70: Dragon Ball Z: Budokai Tenkaichi 2
-      "RDS",  // RDSE70: Dragon Ball Z: Budokai Tenkaichi 3
-      "GFZ",  // GFZE01: F-Zero GX
-      "GFE",  // GFEE01: Fire Emblem: Path of Radiance
-      "RFE",  // RFEE01: Fire Emblem: Radiant Dawn
-      "S5S",  // S5SJHF: Inazuma Eleven GO: Strikers 2013
-      "GKY",  // GKYE01: Kirby Air Ride
-      "SUK",  // SUKE01: Kirby's Return to Dream Land
-      "GLM",  // GLME01: Luigi's Mansion
-      "GFT",  // GFTE01: Mario Golf: Toadstool Tour
-      "RMC",  // RMCE01: Mario Kart Wii
-      "GM4",  // GM4E01: Mario Kart: Double Dash!!
-      "GMP",  // GMPE01: Mario Party 4
-      "GP5",  // GP5E01: Mario Party 5
-      "GP6",  // GP6E01: Mario Party 6
-      "GP7",  // GP7E01: Mario Party 7
-      "RM8",  // RM8E01: Mario Party 8
-      "SSQ",  // SSQE01: Mario Party 9
-      "GOM",  // GOME01: Mario Power Tennis
-      "GYQ",  // GYQE01: Mario Superstar Baseball
-      "GGS",  // GGSE01: Metal Gear Solid: The Twin Snakes
-      "GM8",  // GM8E01: Metroid Prime
-      "G2M",  // G2ME01: Metroid Prime 2: Echoes
-      "RM3",  // RM3E01: Metroid Prime 3: Corruption
-      "R3M",  // R3ME01: Metroid Prime: Trilogy
-      "SMN",  // SMNE01: New Super Mario Bros. Wii
-      "G8M",  // G8ME01: Paper Mario: The Thousand-Year Door
-      "GPI",  // GPIE01: Pikmin (GC)
-      "R9I",  // R9IE01: Pikmin (Wii)
-      "GPV",  // GPVE01: Pikmin 2 (GC)
-      "R92",  // R92E01: Pikmin 2 (Wii)
-      "GC6",  // GC6E01: Pokemon Colosseum
-      "GXX",  // GXXE01: Pokemon XD: Gale of Darkness
-      "GBI",  // GBIE08: Resident Evil
-      "GHA",  // GHAE08: Resident Evil 2
-      "GLE",  // GLEE08: Resident Evil 3: Nemesis
-      "G4B",  // G4BE08: Resident Evil 4
-      "GSN",  // GSNE8P: Sonic Adventure 2: Battle
-      "GXS",  // GXSE8P: Sonic Adventure DX: Director's Cut
-      "SNC",  // SNCE8P: Sonic Colors
-      "G9S",  // G9SE8P: Sonic Heroes
-      "GRS",  // GRSEAF: SoulCalibur II
-      "RSL",  // RSLEAF: SoulCalibur Legends
-      "GK2",  // GK2E52: Spider-Man 2
-      "GQP",  // GQPE78: SpongeBob SquarePants: Battle for Bikini Bottom
-      "SVM",  // SVME01: Super Mario All-Stars: 25th Anniversary Edition
-      "RMG",  // RMGE01: Super Mario Galaxy
-      "SB4",  // SB4E01: Super Mario Galaxy 2
-      "G4Q",  // G4QE01: Super Mario Strikers
-      "GMS",  // GMSE01: Super Mario Sunshine
-      "GMB",  // GMBE8P: Super Monkey Ball
-      "GM2",  // GM2E8P: Super Monkey Ball 2
-      "R8P",  // R8PE01: Super Paper Mario
-      "RSB",  // RSBE01: Super Smash Bros. Brawl
-      "GAL",  // GALE01: Super Smash Bros. Melee
-      "PZL",  // PZLE01: The Legend of Zelda: Collector's Edition
-      "G4S",  // G4SE01: The Legend of Zelda: Four Swords Adventures
-      "D43",  // D43E01: The Legend of Zelda: Ocarina of Time / Master Quest
-      "SOU",  // SOUE01: The Legend of Zelda: Skyward Sword
-      "GZL",  // GZLE01: The Legend of Zelda: The Wind Waker
-      "GZ2",  // GZ2E01: The Legend of Zelda: Twilight Princess (GC)
-      "RZD",  // RZDE01: The Legend of Zelda: Twilight Princess (Wii)
-      "GHQ",  // GHQE7D: The Simpsons: Hit & Run
-      "RSP",  // RSPE01: Wii Sports
-      "RZT",  // RZTE01: Wii Sports Resort
-      "SX4",  // SX4E01: Xenoblade Chronicles
-  };
+  const DiscIO::Region region = SConfig::GetInstance().m_region;
+  const bool is_wii = Core::System::GetInstance().IsWii();
+  const std::string region_code = SConfig::GetInstance().GetGameTDBImageRegionCode(is_wii, region);
 
-  std::string region_neutral_gameid = gameid.substr(0, 3);
-  if (REGISTERED_GAMES.count(region_neutral_gameid) != 0)
-  {
-    // Discord asset keys can only be lowercase.
-    Common::ToLower(&region_neutral_gameid);
-    return "game_" + region_neutral_gameid;
-  }
-  return "";
+  static constexpr char cover_url[] = "https://discord.dolphin-emu.org/cover-art/{}/{}.png";
+  return fmt::format(cover_url, region_code, SConfig::GetInstance().GetGameTDBID());
 }
 
 }  // namespace
@@ -258,11 +194,13 @@ bool UpdateDiscordPresenceRaw(const std::string& details, const std::string& sta
   Discord_UpdatePresence(&discord_presence);
 
   return true;
+#else
+  return false;
 #endif
 }
 
 void UpdateDiscordPresence(int party_size, SecretType type, const std::string& secret,
-                           const std::string& current_game)
+                           const std::string& current_game, bool reset_timer)
 {
 #ifdef USE_DISCORD_PRESENCE
   if (!Config::Get(Config::MAIN_USE_DISCORD_PRESENCE))
@@ -274,7 +212,8 @@ void UpdateDiscordPresence(int party_size, SecretType type, const std::string& s
 
   const std::string& title =
       current_game.empty() ? SConfig::GetInstance().GetTitleDescription() : current_game;
-  std::string game_artwork = ArtworkForGameId(SConfig::GetInstance().GetGameID());
+  std::string game_artwork =
+      SConfig::GetInstance().GetGameTDBID().empty() ? "" : ArtworkForGameId();
 
   DiscordRichPresence discord_presence = {};
   if (game_artwork.empty())
@@ -290,8 +229,17 @@ void UpdateDiscordPresence(int party_size, SecretType type, const std::string& s
     discord_presence.smallImageText = "Dolphin is an emulator for the GameCube and the Wii.";
   }
   discord_presence.details = title.empty() ? "Not in-game" : title.c_str();
-  discord_presence.startTimestamp = std::time(nullptr);
+  if (reset_timer)
+  {
+    s_start_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+  }
+  discord_presence.startTimestamp = s_start_timestamp;
 
+#ifdef USE_RETRO_ACHIEVEMENTS
+  std::string state_string;
+#endif  // USE_RETRO_ACHIEVEMENTS
   if (party_size > 0)
   {
     if (party_size < 4)
@@ -308,6 +256,19 @@ void UpdateDiscordPresence(int party_size, SecretType type, const std::string& s
       // Note: joining still works without partyMax
     }
   }
+#ifdef USE_RETRO_ACHIEVEMENTS
+  else if (Config::Get(Config::RA_ENABLED) && Config::Get(Config::RA_DISCORD_PRESENCE_ENABLED))
+  {
+    state_string = AchievementManager::GetInstance().GetRichPresence().data();
+    if (state_string.length() >= 128)
+    {
+      // 124 characters + 3 dots + null terminator - thanks to Stenzek for format
+      state_string.resize(124);
+      state_string += "...";
+    }
+    discord_presence.state = state_string.c_str();
+  }
+#endif  // USE_RETRO_ACHIEVEMENTS
 
   std::string party_id;
   std::string secret_final;

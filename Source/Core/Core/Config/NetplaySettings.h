@@ -16,6 +16,7 @@ namespace Config
 
 extern const Info<std::string> NETPLAY_TRAVERSAL_SERVER;
 extern const Info<u16> NETPLAY_TRAVERSAL_PORT;
+extern const Info<u16> NETPLAY_TRAVERSAL_PORT_ALT;
 extern const Info<std::string> NETPLAY_TRAVERSAL_CHOICE;
 extern const Info<std::string> NETPLAY_HOST_CODE;
 extern const Info<std::string> NETPLAY_INDEX_URL;
@@ -41,14 +42,13 @@ extern const Info<u32> NETPLAY_CHUNKED_UPLOAD_LIMIT;
 extern const Info<u32> NETPLAY_BUFFER_SIZE;
 extern const Info<u32> NETPLAY_CLIENT_BUFFER_SIZE;
 
-extern const Info<bool> NETPLAY_WRITE_SAVE_DATA;
-extern const Info<bool> NETPLAY_LOAD_WII_SAVE;
-extern const Info<bool> NETPLAY_SYNC_SAVES;
+extern const Info<bool> NETPLAY_SAVEDATA_LOAD;
+extern const Info<bool> NETPLAY_SAVEDATA_WRITE;
+extern const Info<bool> NETPLAY_SAVEDATA_SYNC_ALL_WII;
 extern const Info<bool> NETPLAY_SYNC_CODES;
 extern const Info<bool> NETPLAY_RECORD_INPUTS;
 extern const Info<bool> NETPLAY_STRICT_SETTINGS_SYNC;
 extern const Info<std::string> NETPLAY_NETWORK_MODE;
-extern const Info<bool> NETPLAY_SYNC_ALL_WII_SAVES;
 extern const Info<bool> NETPLAY_GOLF_MODE_OVERLAY;
 extern const Info<bool> NETPLAY_HIDE_REMOTE_GBAS;
 

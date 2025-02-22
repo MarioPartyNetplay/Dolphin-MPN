@@ -19,12 +19,13 @@
 #include "Common/StringUtil.h"
 #include "Core/CheatSearch.h"
 #include "Core/Config/MainSettings.h"
-#include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/HW/Memmap.h"
 #include "Core/PowerPC/MMU.h"
+#include "Core/System.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
+#include "DolphinQt/QtUtils/WrapInScrollArea.h"
 
 CheatSearchFactoryWidget::CheatSearchFactoryWidget()
 {
@@ -122,7 +123,9 @@ void CheatSearchFactoryWidget::CreateWidgets()
   m_new_search = new NonDefaultQPushButton(tr("New Search"));
   layout->addWidget(m_new_search);
 
-  setLayout(layout);
+  layout->addStretch();
+
+  WrapInScrollArea(this, layout);
 }
 
 void CheatSearchFactoryWidget::ConnectWidgets()
@@ -155,8 +158,8 @@ void CheatSearchFactoryWidget::OnNewSearchClicked()
   PowerPC::RequestedAddressSpace address_space;
   if (m_standard_address_space->isChecked())
   {
-    const Core::State core_state = Core::GetState();
-    if (core_state != Core::State::Running && core_state != Core::State::Paused)
+    auto& system = Core::System::GetInstance();
+    if (!Core::IsRunning(system))
     {
       ModalMessageBox::warning(
           this, tr("No game running."),
@@ -164,9 +167,10 @@ void CheatSearchFactoryWidget::OnNewSearchClicked()
       return;
     }
 
-    memory_ranges.emplace_back(0x80000000, Memory::GetRamSizeReal());
-    if (SConfig::GetInstance().bWii)
-      memory_ranges.emplace_back(0x90000000, Memory::GetExRamSizeReal());
+    auto& memory = system.GetMemory();
+    memory_ranges.emplace_back(0x80000000, memory.GetRamSizeReal());
+    if (system.IsWii())
+      memory_ranges.emplace_back(0x90000000, memory.GetExRamSizeReal());
     address_space = PowerPC::RequestedAddressSpace::Virtual;
   }
   else

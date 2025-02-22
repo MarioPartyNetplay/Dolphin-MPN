@@ -74,6 +74,11 @@ CompressedBlobReader::~CompressedBlobReader()
 {
 }
 
+std::unique_ptr<BlobReader> CompressedBlobReader::CopyReader() const
+{
+  return Create(m_file.Duplicate("rb"), m_file_name);
+}
+
 // IMPORTANT: Calling this function invalidates all earlier pointers gotten from this function.
 u64 CompressedBlobReader::GetBlockCompressedSize(u64 block_num) const
 {
@@ -125,7 +130,7 @@ bool CompressedBlobReader::GetBlock(u64 block_num, u8* out_ptr)
 
   if (uncompressed)
   {
-    std::copy(m_zlib_buffer.begin(), m_zlib_buffer.begin() + comp_block_size, out_ptr);
+    std::copy_n(m_zlib_buffer.begin(), comp_block_size, out_ptr);
   }
   else
   {
@@ -267,7 +272,7 @@ static ConversionResultCode Output(OutputParameters parameters, File::IOFile* ou
   }
 
   return ConversionResultCode::Success;
-};
+}
 
 bool ConvertToGCZ(BlobReader* infile, const std::string& infile_path,
                   const std::string& outfile_path, u32 sub_type, int block_size,

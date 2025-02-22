@@ -13,9 +13,11 @@
 
 #include "VideoBackends/Vulkan/CommandBufferManager.h"
 #include "VideoBackends/Vulkan/StateTracker.h"
-#include "VideoBackends/Vulkan/VKRenderer.h"
+#include "VideoBackends/Vulkan/VKGfx.h"
 #include "VideoBackends/Vulkan/VulkanContext.h"
+#include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/VideoCommon.h"
+#include "VideoCommon/VideoConfig.h"
 
 namespace Vulkan
 {
@@ -35,10 +37,13 @@ bool PerfQuery::Initialize()
     return false;
   }
 
+  // Vulkan requires query pools to be reset after creation
+  ResetQuery();
+
   return true;
 }
 
-void PerfQuery::EnableQuery(PerfQueryGroup type)
+void PerfQuery::EnableQuery(PerfQueryGroup group)
 {
   // Block if there are no free slots.
   // Otherwise, try to keep half of them available.
@@ -50,11 +55,12 @@ void PerfQuery::EnableQuery(PerfQueryGroup type)
   // a buffer with open queries.
   StateTracker::GetInstance()->Bind();
 
-  if (type == PQG_ZCOMP_ZCOMPLOC || type == PQG_ZCOMP)
+  if (group == PQG_ZCOMP_ZCOMPLOC || group == PQG_ZCOMP)
   {
     ActiveQuery& entry = m_query_buffer[m_query_next_pos];
     DEBUG_ASSERT(!entry.has_value);
     entry.has_value = true;
+    entry.query_group = group;
 
     // Use precise queries if supported, otherwise boolean (which will be incorrect).
     VkQueryControlFlags flags =
@@ -67,11 +73,14 @@ void PerfQuery::EnableQuery(PerfQueryGroup type)
   }
 }
 
-void PerfQuery::DisableQuery(PerfQueryGroup type)
+void PerfQuery::DisableQuery(PerfQueryGroup group)
 {
-  if (type == PQG_ZCOMP_ZCOMPLOC || type == PQG_ZCOMP)
+  if (group == PQG_ZCOMP_ZCOMPLOC || group == PQG_ZCOMP)
   {
     vkCmdEndQuery(g_command_buffer_mgr->GetCurrentCommandBuffer(), m_query_pool, m_query_next_pos);
+    ActiveQuery& entry = m_query_buffer[m_query_next_pos];
+    entry.fence_counter = g_command_buffer_mgr->GetCurrentFenceCounter();
+
     m_query_next_pos = (m_query_next_pos + 1) % PERF_QUERY_BUFFER_SIZE;
     m_query_count.fetch_add(1, std::memory_order_relaxed);
   }
@@ -119,8 +128,10 @@ u32 PerfQuery::GetQueryResult(PerfQueryType type)
 
 void PerfQuery::FlushResults()
 {
-  while (!IsFlushed())
+  if (!IsFlushed())
     PartialFlush(true);
+
+  ASSERT(IsFlushed());
 }
 
 bool PerfQuery::IsFlushed() const
@@ -185,12 +196,16 @@ void PerfQuery::ReadbackQueries(u32 query_count)
          (m_query_readback_pos + query_count) <= PERF_QUERY_BUFFER_SIZE);
 
   // Read back from the GPU.
-  VkResult res =
-      vkGetQueryPoolResults(g_vulkan_context->GetDevice(), m_query_pool, m_query_readback_pos,
-                            query_count, query_count * sizeof(PerfQueryDataType),
-                            m_query_result_buffer.data(), sizeof(PerfQueryDataType), 0);
+  VkResult res = vkGetQueryPoolResults(
+      g_vulkan_context->GetDevice(), m_query_pool, m_query_readback_pos, query_count,
+      query_count * sizeof(PerfQueryDataType), m_query_result_buffer.data(),
+      sizeof(PerfQueryDataType), VK_QUERY_RESULT_WAIT_BIT);
   if (res != VK_SUCCESS)
     LOG_VULKAN_ERROR(res, "vkGetQueryPoolResults failed: ");
+
+  StateTracker::GetInstance()->EndRenderPass();
+  vkCmdResetQueryPool(g_command_buffer_mgr->GetCurrentCommandBuffer(), m_query_pool,
+                      m_query_readback_pos, query_count);
 
   // Remove pending queries.
   for (u32 i = 0; i < query_count; i++)
@@ -204,11 +219,13 @@ void PerfQuery::ReadbackQueries(u32 query_count)
     entry.has_value = false;
 
     // NOTE: Reported pixel metrics should be referenced to native resolution
-    const u64 native_res_result = static_cast<u64>(m_query_result_buffer[i]) * EFB_WIDTH /
-                                  g_renderer->GetTargetWidth() * EFB_HEIGHT /
-                                  g_renderer->GetTargetHeight();
-    m_results[entry.query_type].fetch_add(static_cast<u32>(native_res_result),
-                                          std::memory_order_relaxed);
+    u64 native_res_result = static_cast<u64>(m_query_result_buffer[i]) * EFB_WIDTH /
+                            g_framebuffer_manager->GetEFBWidth() * EFB_HEIGHT /
+                            g_framebuffer_manager->GetEFBHeight();
+    if (g_ActiveConfig.iMultisamples > 1)
+      native_res_result /= g_ActiveConfig.iMultisamples;
+    m_results[entry.query_group].fetch_add(static_cast<u32>(native_res_result),
+                                           std::memory_order_relaxed);
   }
 
   m_query_readback_pos = (m_query_readback_pos + query_count) % PERF_QUERY_BUFFER_SIZE;
@@ -221,7 +238,7 @@ void PerfQuery::PartialFlush(bool blocking)
   if (blocking || m_query_buffer[m_query_readback_pos].fence_counter ==
                       g_command_buffer_mgr->GetCurrentFenceCounter())
   {
-    Renderer::GetInstance()->ExecuteCommandBuffer(true, blocking);
+    VKGfx::GetInstance()->ExecuteCommandBuffer(true, blocking);
   }
 
   ReadbackQueries();

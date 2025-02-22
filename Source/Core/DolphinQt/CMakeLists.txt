@@ -3,26 +3,21 @@ if(POLICY CMP0084)
   cmake_policy(SET CMP0084 NEW)
 endif()
 
-if (NOT QT_DIR AND MSVC)
+if (MSVC)
   if(_M_ARM_64)
-    set(QT_DIR "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.3.0/ARM64/lib/cmake/Qt6")
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.5.1/ARM64")
   else()
-    set(QT_DIR "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.3.0/x64/lib/cmake/Qt6")
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.5.1/x64")
   endif()
 endif()
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
-# For some reason the method in Qt6 documentation is not working (at least on ubuntu jammy)
-# When Qt5 and Qt6 are given in same NAMES entry, only Qt5 is ever found.
-find_package(QT NAMES Qt6 COMPONENTS Core Gui Widgets)
-if(NOT QT_DIR)
-  find_package(QT NAMES Qt5 COMPONENTS Core Gui Widgets)
-endif()
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets)
-message(STATUS "Found Qt version ${QT_VERSION}")
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
+message(STATUS "Found Qt version ${Qt6_VERSION}")
 
-set_property(TARGET Qt${QT_VERSION_MAJOR}::Core PROPERTY INTERFACE_COMPILE_FEATURES "")
+set_property(TARGET Qt6::Core PROPERTY INTERFACE_COMPILE_FEATURES "")
 
 add_executable(dolphin-emu
   AboutDialog.cpp
@@ -33,41 +28,18 @@ add_executable(dolphin-emu
   CheatSearchWidget.h
   CheatsManager.cpp
   CheatsManager.h
-  ConvertDialog.cpp
-  ConvertDialog.h
-  DiscordHandler.cpp
-  DiscordHandler.h
-  DiscordJoinRequestDialog.cpp
-  DiscordJoinRequestDialog.h
-  FIFO/FIFOPlayerWindow.cpp
-  FIFO/FIFOPlayerWindow.h
-  FIFO/FIFOAnalyzer.cpp
-  FIFO/FIFOAnalyzer.h
-  Host.cpp
-  Host.h
-  HotkeyScheduler.cpp
-  HotkeyScheduler.h
-  Main.cpp
-  MainWindow.cpp
-  MainWindow.h
-  MenuBar.cpp
-  MenuBar.h
-  NKitWarningDialog.cpp
-  NKitWarningDialog.h
-  RenderWidget.cpp
-  RenderWidget.h
-  Resources.cpp
-  Resources.h
-  SearchBar.cpp
-  SearchBar.h
-  Settings.cpp
-  Settings.h
-  ToolBar.cpp
-  ToolBar.h
-  Translation.cpp
-  Translation.h
-  WiiUpdate.cpp
-  WiiUpdate.h
+  Achievements/AchievementBox.cpp
+  Achievements/AchievementBox.h
+  Achievements/AchievementHeaderWidget.cpp
+  Achievements/AchievementHeaderWidget.h
+  Achievements/AchievementLeaderboardWidget.cpp
+  Achievements/AchievementLeaderboardWidget.h
+  Achievements/AchievementProgressWidget.cpp
+  Achievements/AchievementProgressWidget.h
+  Achievements/AchievementSettingsWidget.cpp
+  Achievements/AchievementSettingsWidget.h
+  Achievements/AchievementsWindow.cpp
+  Achievements/AchievementsWindow.h
   Config/ARCodeWidget.cpp
   Config/ARCodeWidget.h
   Config/CheatCodeEditor.cpp
@@ -76,12 +48,25 @@ add_executable(dolphin-emu
   Config/CheatWarningWidget.h
   Config/CommonControllersWidget.cpp
   Config/CommonControllersWidget.h
+  Config/ConfigControls/ConfigBool.cpp
+  Config/ConfigControls/ConfigBool.h
+  Config/ConfigControls/ConfigChoice.cpp
+  Config/ConfigControls/ConfigChoice.h
+  Config/ConfigControls/ConfigControl.h
+  Config/ConfigControls/ConfigInteger.cpp
+  Config/ConfigControls/ConfigInteger.h
+  Config/ConfigControls/ConfigRadio.cpp
+  Config/ConfigControls/ConfigRadio.h
+  Config/ConfigControls/ConfigFloatSlider.cpp
+  Config/ConfigControls/ConfigFloatSlider.h
+  Config/ConfigControls/ConfigSlider.cpp
+  Config/ConfigControls/ConfigSlider.h
+  Config/ControllerInterface/ControllerInterfaceWindow.cpp
+  Config/ControllerInterface/ControllerInterfaceWindow.h
   Config/ControllerInterface/DualShockUDPClientAddServerDialog.cpp
   Config/ControllerInterface/DualShockUDPClientAddServerDialog.h
   Config/ControllerInterface/DualShockUDPClientWidget.cpp
   Config/ControllerInterface/DualShockUDPClientWidget.h
-  Config/ControllerInterface/ControllerInterfaceWindow.cpp
-  Config/ControllerInterface/ControllerInterfaceWindow.h
   Config/ControllerInterface/ServerStringValidator.cpp
   Config/ControllerInterface/ServerStringValidator.h
   Config/ControllersWindow.cpp
@@ -92,47 +77,36 @@ add_executable(dolphin-emu
   Config/FreeLookWidget.h
   Config/FreeLookWindow.cpp
   Config/FreeLookWindow.h
-  Config/GamecubeControllersWidget.cpp
-  Config/GamecubeControllersWidget.h
   Config/GameConfigEdit.cpp
   Config/GameConfigEdit.h
   Config/GameConfigHighlighter.cpp
   Config/GameConfigHighlighter.h
   Config/GameConfigWidget.cpp
   Config/GameConfigWidget.h
+  Config/GamecubeControllersWidget.cpp
+  Config/GamecubeControllersWidget.h
   Config/GeckoCodeWidget.cpp
   Config/GeckoCodeWidget.h
   Config/Graphics/AdvancedWidget.cpp
   Config/Graphics/AdvancedWidget.h
-  Config/Graphics/BalloonTip.cpp
-  Config/Graphics/BalloonTip.h
   Config/Graphics/EnhancementsWidget.cpp
   Config/Graphics/EnhancementsWidget.h
   Config/Graphics/GeneralWidget.cpp
   Config/Graphics/GeneralWidget.h
-  Config/Graphics/GraphicsBool.cpp
-  Config/Graphics/GraphicsBool.h
-  Config/Graphics/GraphicsChoice.cpp
-  Config/Graphics/GraphicsChoice.h
-  Config/Graphics/GraphicsInteger.cpp
-  Config/Graphics/GraphicsInteger.h
-  Config/Graphics/GraphicsRadio.cpp
-  Config/Graphics/GraphicsRadio.h
-  Config/Graphics/GraphicsSlider.cpp
-  Config/Graphics/GraphicsSlider.h
-  Config/Graphics/GraphicsWidget.h
   Config/Graphics/GraphicsWindow.cpp
   Config/Graphics/GraphicsWindow.h
   Config/Graphics/HacksWidget.cpp
   Config/Graphics/HacksWidget.h
+  Config/Graphics/ColorCorrectionConfigWindow.cpp
+  Config/Graphics/ColorCorrectionConfigWindow.h
   Config/Graphics/PostProcessingConfigWindow.cpp
   Config/Graphics/PostProcessingConfigWindow.h
-  Config/Graphics/SoftwareRendererWidget.cpp
-  Config/Graphics/SoftwareRendererWidget.h
   Config/GraphicsModListWidget.cpp
   Config/GraphicsModListWidget.h
   Config/GraphicsModWarningWidget.cpp
   Config/GraphicsModWarningWidget.h
+  Config/HardcoreWarningWidget.cpp
+  Config/HardcoreWarningWidget.h
   Config/InfoWidget.cpp
   Config/InfoWidget.h
   Config/LogConfigWidget.cpp
@@ -171,6 +145,8 @@ add_executable(dolphin-emu
   Config/Mapping/HotkeyStatesOther.h
   Config/Mapping/HotkeyTAS.cpp
   Config/Mapping/HotkeyTAS.h
+  Config/Mapping/HotkeyUSBEmu.cpp
+  Config/Mapping/HotkeyUSBEmu.h
   Config/Mapping/HotkeyWii.cpp
   Config/Mapping/HotkeyWii.h
   Config/Mapping/IOWindow.cpp
@@ -206,10 +182,14 @@ add_executable(dolphin-emu
   Config/PropertiesDialog.h
   Config/SettingsWindow.cpp
   Config/SettingsWindow.h
+  Config/ToolTipControls/BalloonTip.cpp
+  Config/ToolTipControls/BalloonTip.h
   Config/ToolTipControls/ToolTipCheckBox.cpp
   Config/ToolTipControls/ToolTipCheckBox.h
   Config/ToolTipControls/ToolTipComboBox.cpp
   Config/ToolTipControls/ToolTipComboBox.h
+  Config/ToolTipControls/ToolTipPushButton.cpp
+  Config/ToolTipControls/ToolTipPushButton.h
   Config/ToolTipControls/ToolTipRadioButton.cpp
   Config/ToolTipControls/ToolTipRadioButton.h
   Config/ToolTipControls/ToolTipSlider.cpp
@@ -221,14 +201,30 @@ add_executable(dolphin-emu
   Config/VerifyWidget.h
   Config/WiimoteControllersWidget.cpp
   Config/WiimoteControllersWidget.h
+  ConvertDialog.cpp
+  ConvertDialog.h
+  Debugger/AssembleInstructionDialog.cpp
+  Debugger/AssembleInstructionDialog.h
+  Debugger/AssemblerWidget.cpp
+  Debugger/AssemblerWidget.h
+  Debugger/AssemblyEditor.cpp
+  Debugger/AssemblyEditor.h
+  Debugger/BranchWatchDialog.cpp
+  Debugger/BranchWatchDialog.h
+  Debugger/BranchWatchTableModel.cpp
+  Debugger/BranchWatchTableModel.h
+  Debugger/BreakpointDialog.cpp
+  Debugger/BreakpointDialog.h
   Debugger/BreakpointWidget.cpp
   Debugger/BreakpointWidget.h
-  Debugger/CodeDiffDialog.cpp
-  Debugger/CodeDiffDialog.h
   Debugger/CodeViewWidget.cpp
   Debugger/CodeViewWidget.h
   Debugger/CodeWidget.cpp
   Debugger/CodeWidget.h
+  Debugger/GekkoSyntaxHighlight.cpp
+  Debugger/GekkoSyntaxHighlight.h
+  Debugger/JitBlockTableModel.cpp
+  Debugger/JitBlockTableModel.h
   Debugger/JITWidget.cpp
   Debugger/JITWidget.h
   Debugger/MemoryViewWidget.cpp
@@ -237,8 +233,6 @@ add_executable(dolphin-emu
   Debugger/MemoryWidget.h
   Debugger/NetworkWidget.cpp
   Debugger/NetworkWidget.h
-  Debugger/NewBreakpointDialog.cpp
-  Debugger/NewBreakpointDialog.h
   Debugger/PatchInstructionDialog.cpp
   Debugger/PatchInstructionDialog.h
   Debugger/RegisterColumn.cpp
@@ -249,6 +243,14 @@ add_executable(dolphin-emu
   Debugger/ThreadWidget.h
   Debugger/WatchWidget.cpp
   Debugger/WatchWidget.h
+  DiscordHandler.cpp
+  DiscordHandler.h
+  DiscordJoinRequestDialog.cpp
+  DiscordJoinRequestDialog.h
+  FIFO/FIFOAnalyzer.cpp
+  FIFO/FIFOAnalyzer.h
+  FIFO/FIFOPlayerWindow.cpp
+  FIFO/FIFOPlayerWindow.h
   GameList/GameList.cpp
   GameList/GameList.h
   GameList/GameListModel.cpp
@@ -263,14 +265,23 @@ add_executable(dolphin-emu
   GCMemcardCreateNewDialog.h
   GCMemcardManager.cpp
   GCMemcardManager.h
-  QtUtils/BlockUserInputFilter.cpp
-  QtUtils/BlockUserInputFilter.h
+  Host.cpp
+  Host.h
+  HotkeyScheduler.cpp
+  HotkeyScheduler.h
+  InfinityBase/InfinityBaseWindow.cpp
+  InfinityBase/InfinityBaseWindow.h
+  Main.cpp
+  MainWindow.cpp
+  MainWindow.h
+  MenuBar.cpp
+  MenuBar.h
   NetPlay/ChunkedProgressDialog.cpp
   NetPlay/ChunkedProgressDialog.h
+  NetPlay/GameDigestDialog.cpp
+  NetPlay/GameDigestDialog.h
   NetPlay/GameListDialog.cpp
   NetPlay/GameListDialog.h
-  NetPlay/MD5Dialog.cpp
-  NetPlay/MD5Dialog.h
   NetPlay/NetPlayBrowser.cpp
   NetPlay/NetPlayBrowser.h
   NetPlay/NetPlayDialog.cpp
@@ -279,6 +290,17 @@ add_executable(dolphin-emu
   NetPlay/NetPlaySetupDialog.h
   NetPlay/PadMappingDialog.cpp
   NetPlay/PadMappingDialog.h
+  NANDRepairDialog.cpp
+  NANDRepairDialog.h
+  NKitWarningDialog.cpp
+  NKitWarningDialog.h
+  QtUtils/AspectRatioWidget.cpp
+  QtUtils/AspectRatioWidget.h
+  QtUtils/BlockUserInputFilter.cpp
+  QtUtils/BlockUserInputFilter.h
+  QtUtils/ClearLayoutRecursively.cpp
+  QtUtils/ClearLayoutRecursively.h
+  QtUtils/ClickableStatusBar.h
   QtUtils/DolphinFileDialog.cpp
   QtUtils/DolphinFileDialog.h
   QtUtils/DoubleClickEventFilter.cpp
@@ -287,32 +309,39 @@ add_executable(dolphin-emu
   QtUtils/ElidedButton.h
   QtUtils/FileOpenEventFilter.cpp
   QtUtils/FileOpenEventFilter.h
-  QtUtils/FlowLayout.cpp
-  QtUtils/FlowLayout.h
+  QtUtils/FromStdString.h
+  QtUtils/ImageConverter.cpp
+  QtUtils/ImageConverter.h
   QtUtils/ModalMessageBox.cpp
   QtUtils/ModalMessageBox.h
+  QtUtils/NonDefaultQPushButton.cpp
+  QtUtils/NonDefaultQPushButton.h
   QtUtils/ParallelProgressDialog.h
   QtUtils/PartiallyClosableTabWidget.cpp
   QtUtils/PartiallyClosableTabWidget.h
-  QtUtils/ImageConverter.cpp
-  QtUtils/ImageConverter.h
+  QtUtils/QtUtils.cpp
+  QtUtils/QtUtils.h
+  QtUtils/SetWindowDecorations.cpp
+  QtUtils/SetWindowDecorations.h
   QtUtils/SignalBlocking.h
   QtUtils/UTF8CodePointCountValidator.cpp
   QtUtils/UTF8CodePointCountValidator.h
   QtUtils/WindowActivationEventFilter.cpp
   QtUtils/WindowActivationEventFilter.h
-  QtUtils/WinIconHelper.cpp
-  QtUtils/WinIconHelper.h
   QtUtils/WrapInScrollArea.cpp
   QtUtils/WrapInScrollArea.h
-  QtUtils/AspectRatioWidget.cpp
-  QtUtils/AspectRatioWidget.h
-  QtUtils/NonDefaultQPushButton.cpp
-  QtUtils/NonDefaultQPushButton.h
+  RenderWidget.cpp
+  RenderWidget.h
   ResourcePackManager.cpp
   ResourcePackManager.h
+  Resources.cpp
+  Resources.h
   RiivolutionBootWidget.cpp
   RiivolutionBootWidget.h
+  SearchBar.cpp
+  SearchBar.h
+  Settings.cpp
+  Settings.h
   Settings/AdvancedPane.cpp
   Settings/AdvancedPane.h
   Settings/AudioPane.cpp
@@ -327,27 +356,49 @@ add_executable(dolphin-emu
   Settings/InterfacePane.h
   Settings/PathPane.cpp
   Settings/PathPane.h
-  Settings/WiiPane.cpp
-  Settings/WiiPane.h
   Settings/USBDeviceAddToWhitelistDialog.cpp
   Settings/USBDeviceAddToWhitelistDialog.h
+  Settings/WiiPane.cpp
+  Settings/WiiPane.h
+  SkylanderPortal/SkylanderModifyDialog.cpp
+  SkylanderPortal/SkylanderModifyDialog.h
+  SkylanderPortal/SkylanderPortalWindow.cpp
+  SkylanderPortal/SkylanderPortalWindow.h
   TAS/GCTASInputWindow.cpp
   TAS/GCTASInputWindow.h
-  TAS/WiiTASInputWindow.cpp
-  TAS/WiiTASInputWindow.h
+  TAS/GBATASInputWindow.cpp
+  TAS/GBATASInputWindow.h
+  TAS/IRWidget.cpp
+  TAS/IRWidget.h
+  TAS/StickWidget.cpp
+  TAS/StickWidget.h
   TAS/TASCheckBox.cpp
   TAS/TASCheckBox.h
+  TAS/TASControlState.cpp
+  TAS/TASControlState.h
   TAS/TASInputWindow.cpp
   TAS/TASInputWindow.h
   TAS/TASSlider.cpp
   TAS/TASSlider.h
-  TAS/StickWidget.cpp
-  TAS/StickWidget.h
-  TAS/IRWidget.cpp
-  TAS/IRWidget.h
+  TAS/TASSpinBox.cpp
+  TAS/TASSpinBox.h
+  TAS/WiiTASInputWindow.cpp
+  TAS/WiiTASInputWindow.h
+  ToolBar.cpp
+  ToolBar.h
+  Translation.cpp
+  Translation.h
   Updater.cpp
   Updater.h
+  WiiUpdate.cpp
+  WiiUpdate.h
 )
+
+if (WIN32)
+  target_sources(dolphin-emu PRIVATE
+    Styles/Dark/dark.qrc
+  )
+endif()
 
 if (NOT WIN32)
   target_sources(dolphin-emu PRIVATE
@@ -366,15 +417,16 @@ PRIVATE
 target_include_directories(dolphin-emu
 PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}
-  ${Qt${QT_VERSION_MAJOR}Gui_PRIVATE_INCLUDE_DIRS}
+  ${Qt6Gui_PRIVATE_INCLUDE_DIRS}
 )
 
 target_link_libraries(dolphin-emu
 PRIVATE
   core
-  Qt${QT_VERSION_MAJOR}::Widgets
+  Qt6::Widgets
   uicommon
   imgui
+  implot
 )
 
 if (WIN32)
@@ -382,6 +434,7 @@ if (WIN32)
   PRIVATE
     gdi32.lib
     shell32.lib
+    dwmapi.lib # Needed to set window decorations for dark theme
   )
 endif()
 
@@ -399,14 +452,9 @@ if (MSVC)
   # Qt 6.3.0 headers use std::aligned_storage instead of alignas
   target_compile_definitions(dolphin-emu PRIVATE _SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING)
 
-  if ("${QT_VERSION_MAJOR}" GREATER_EQUAL 6)
-    # Qt6 requires RTTI
-    remove_cxx_flag_from_target(dolphin-emu "/GR-")
-    target_compile_options(dolphin-emu PRIVATE "/GR")
-  else()
-    # Add precompiled header
-    target_link_libraries(audiocommon PRIVATE use_pch)
-  endif()
+  # Qt6 requires RTTI
+  remove_cxx_flag_from_target(dolphin-emu "/GR-")
+  target_compile_options(dolphin-emu PRIVATE "/GR")
 endif()
 
 if(WIN32)
@@ -420,6 +468,7 @@ if(WIN32)
 
   # Copy Sys dir
   add_custom_command(TARGET dolphin-emu POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sys"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/Data/Sys" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sys"
   )
 
@@ -439,16 +488,9 @@ if(WIN32)
   )
 
   # Delegate to Qt's official deployment binary on Windows to copy over the necessary Qt-specific libraries, etc.
-  get_target_property(MOC_EXECUTABLE_LOCATION Qt${QT_VERSION_MAJOR}::moc IMPORTED_LOCATION)
+  get_target_property(MOC_EXECUTABLE_LOCATION Qt6::moc IMPORTED_LOCATION)
   get_filename_component(QT_BINARY_DIRECTORY "${MOC_EXECUTABLE_LOCATION}" DIRECTORY)
   find_program(WINDEPLOYQT_EXE windeployqt HINTS "${QT_BINARY_DIRECTORY}")
-
-  if ("${QT_VERSION_MAJOR}" LESS 6)
-    set(NO_ANGLE_PARAM "--no-angle")
-  else()
-    # parameter no longer exists in Qt6
-    set(NO_ANGLE_PARAM "")
-  endif()
 
   # Note: We set the PATH for the duration of this command so that the
   #       deployment application is able to locate the Qt libraries to copy.
@@ -472,7 +514,6 @@ if(WIN32)
                                  --no-translations
                                  --no-compiler-runtime
                                  --no-system-d3d-compiler
-                                 "${NO_ANGLE_PARAM}"
                                  --no-opengl-sw
                                  "$<TARGET_FILE:dolphin-emu>"
   )
@@ -532,15 +573,13 @@ endif()
 
 if(APPLE)
   include(BundleUtilities)
-  set(BUNDLE_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Dolphin.app)
 
   # Ask for an application bundle.
   set_target_properties(dolphin-emu PROPERTIES
     MACOSX_BUNDLE true
-    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
-    XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/DolphinEmu.entitlements"
-    XCODE_ATTRIBUTE_OTHER_CODE_SIGN_FLAGS "--deep --options=runtime"
-    OUTPUT_NAME Dolphin
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+    OUTPUT_NAME DolphinQt
     )
 
   # Copy qt.conf into the bundle
@@ -551,18 +590,16 @@ if(APPLE)
   target_sources(dolphin-emu PRIVATE "${CMAKE_SOURCE_DIR}/Data/Dolphin.icns")
   set_source_files_properties("${CMAKE_SOURCE_DIR}/Data/Dolphin.icns" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
-  # Plugins have to be manually included with Qt 6
-  if (QT_VERSION_MAJOR EQUAL 6)
-    find_package(Qt6QMacStylePlugin REQUIRED PATHS ${Qt6Widgets_DIR})
-    find_package(Qt6QCocoaIntegrationPlugin REQUIRED PATHS ${Qt6Gui_DIR})
-  endif()
+  # Manually include plugins
+  find_package(Qt6QMacStylePlugin REQUIRED PATHS ${Qt6Widgets_DIR})
+  find_package(Qt6QCocoaIntegrationPlugin REQUIRED PATHS ${Qt6Gui_DIR})
 
   # Copy Qt plugins into the bundle
-  get_target_property(qtcocoa_location Qt${QT_VERSION_MAJOR}::QCocoaIntegrationPlugin LOCATION)
+  get_target_property(qtcocoa_location Qt6::QCocoaIntegrationPlugin LOCATION)
   target_sources(dolphin-emu PRIVATE "${qtcocoa_location}")
   set_source_files_properties("${qtcocoa_location}" PROPERTIES MACOSX_PACKAGE_LOCATION MacOS/platforms)
 
-  get_target_property(qtmacstyle_location Qt${QT_VERSION_MAJOR}::QMacStylePlugin LOCATION)
+  get_target_property(qtmacstyle_location Qt6::QMacStylePlugin LOCATION)
   target_sources(dolphin-emu PRIVATE "${qtmacstyle_location}")
   set_source_files_properties("${qtmacstyle_location}" PROPERTIES MACOSX_PACKAGE_LOCATION MacOS/styles)
 
@@ -577,13 +614,16 @@ if(APPLE)
     source_group("Resources" FILES "${CMAKE_SOURCE_DIR}/Data/${res}")
   endforeach()
 
+  include(DolphinInjectVersionInfo)
+  dolphin_inject_version_info(dolphin-emu)
+
   # Copy MoltenVK into the bundle
   if(ENABLE_VULKAN)
     if(USE_BUNDLED_MOLTENVK)
       add_dependencies(dolphin-emu MoltenVK)
       ExternalProject_Get_Property(MoltenVK SOURCE_DIR)
-      target_sources(dolphin-emu PRIVATE "${SOURCE_DIR}/Package/Release/MoltenVK/dylib/macOS/libMoltenVK.dylib")
-      set_source_files_properties("${SOURCE_DIR}/Package/Release/MoltenVK/dylib/macOS/libMoltenVK.dylib" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks GENERATED ON)
+      target_sources(dolphin-emu PRIVATE "${SOURCE_DIR}/Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib")
+      set_source_files_properties("${SOURCE_DIR}/Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks GENERATED ON)
     else()
       find_file(MOLTENVK_DYLIB NAMES libMoltenVK.dylib PATH_SUFFIXES lib)
       if(NOT MOLTENVK_DYLIB)
@@ -606,63 +646,16 @@ if(APPLE)
   endif()
 
   if(MACOS_CODE_SIGNING)
-    # Code sign make file builds
     add_custom_command(TARGET dolphin-emu
-      POST_BUILD COMMAND
-      /usr/bin/codesign -f -s "${MACOS_CODE_SIGNING_IDENTITY}" --deep --options=runtime --entitlements "${CMAKE_SOURCE_DIR}/Source/Core/DolphinQt/DolphinEmu$<$<CONFIG:Debug>:Debug>.entitlements" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Dolphin.app" || true)
-    
-    # Code sign builds for build systems that do have release/debug variants (Xcode)
-    add_custom_command(TARGET dolphin-emu
-      POST_BUILD COMMAND
-      /usr/bin/codesign -f -s "${MACOS_CODE_SIGNING_IDENTITY}" --deep --options=runtime --entitlements "${CMAKE_SOURCE_DIR}/Source/Core/DolphinQt/DolphinEmuDebug.entitlements" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG}/Dolphin.app" || true)
-      
-    add_custom_command(TARGET dolphin-emu
-      POST_BUILD COMMAND
-      /usr/bin/codesign -f -s "${MACOS_CODE_SIGNING_IDENTITY}" --deep --options=runtime --entitlements "${CMAKE_SOURCE_DIR}/Source/Core/DolphinQt/DolphinEmu.entitlements" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}/Dolphin.app" || true)
+      POST_BUILD
+      COMMAND "${CMAKE_SOURCE_DIR}/Tools/mac-codesign.sh"
+      "-e" "${CMAKE_CURRENT_SOURCE_DIR}/DolphinEmu$<$<CONFIG:Debug>:Debug>.entitlements"
+      "${MACOS_CODE_SIGNING_IDENTITY}"
+      "$<TARGET_BUNDLE_DIR:dolphin-emu>"
+    )
   endif()
 else()
-  install(TARGETS dolphin-emu RUNTIME DESTINATION ${bindir})
-endif()
-
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND STEAM)
-  # Set that we want ORIGIN in FLAGS.
-  # We also want RPATH, not RUNPATH, so disable the new tags.
-  target_link_options(dolphin-emu
-  PRIVATE
-    LINKER:-z,origin
-    LINKER:--disable-new-dtags
-  )
-
-  # For Steam Runtime builds, our Qt shared libraries will be in a "lib" folder.
-  set_target_properties(dolphin-emu PROPERTIES
-    BUILD_WITH_INSTALL_RPATH true
-    INSTALL_RPATH "\$ORIGIN/lib"
-  )
-
-  add_custom_command(TARGET dolphin-emu POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/lib"
-    COMMAND cp -P "${QT_DIR}/../../*.so*" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/lib"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${QT_DIR}/../../../plugins/platforms" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/platforms"
-  )
-
-  # Copy qt.conf
-  target_sources(dolphin-emu PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/qt.conf")
-  add_custom_command(TARGET dolphin-emu POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/qt.conf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/qt.conf"
-  )
-
-  # Mark all data files as resources
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/Data/Sys")
-  file(GLOB_RECURSE resources RELATIVE "${CMAKE_SOURCE_DIR}/Data" "${CMAKE_SOURCE_DIR}/Data/Sys/*")
-  foreach(res ${resources})
-    target_sources(dolphin-emu PRIVATE "${CMAKE_SOURCE_DIR}/Data/${res}")
-    source_group("Resources" FILES "${CMAKE_SOURCE_DIR}/Data/${res}")
-  endforeach()
-
-  # Copy Sys folder
-  add_custom_command(TARGET dolphin-emu POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/Data/Sys" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Sys"
-  )
+  install(TARGETS dolphin-emu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 if(USE_MGBA)
@@ -676,4 +669,9 @@ endif()
 
 if(USE_DISCORD_PRESENCE)
   target_compile_definitions(dolphin-emu PRIVATE -DUSE_DISCORD_PRESENCE)
+endif()
+
+if(USE_RETRO_ACHIEVEMENTS)
+  target_link_libraries(dolphin-emu PRIVATE rcheevos)
+  target_compile_definitions(dolphin-emu PRIVATE -DUSE_RETRO_ACHIEVEMENTS)
 endif()

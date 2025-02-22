@@ -10,7 +10,6 @@
 #include <iterator>
 #include <map>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -18,6 +17,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <pugixml.hpp>
 
 #include "Common/BitUtils.h"
@@ -67,16 +67,6 @@ bool UseGameCovers()
 DiscIO::Language GameFile::GetConfigLanguage() const
 {
   return SConfig::GetInstance().GetLanguageAdjustedForRegion(DiscIO::IsWii(m_platform), m_region);
-}
-
-bool operator==(const GameBanner& lhs, const GameBanner& rhs)
-{
-  return std::tie(lhs.buffer, lhs.width, lhs.height) == std::tie(rhs.buffer, rhs.width, rhs.height);
-}
-
-bool operator!=(const GameBanner& lhs, const GameBanner& rhs)
-{
-  return !operator==(lhs, rhs);
 }
 
 const std::string& GameFile::Lookup(DiscIO::Language language,
@@ -144,6 +134,7 @@ GameFile::GameFile(std::string path) : m_file_path(std::move(path))
       m_maker_id = volume->GetMakerID();
       m_revision = volume->GetRevision().value_or(0);
       m_disc_number = volume->GetDiscNumber().value_or(0);
+      m_is_two_disc_game = CheckIfTwoDiscGame(m_game_id);
       m_apploader_date = volume->GetApploaderDate();
 
       m_volume_banner.buffer = volume->GetBanner(&m_volume_banner.width, &m_volume_banner.height);
@@ -245,49 +236,8 @@ void GameFile::DownloadDefaultCover()
   if (File::Exists(png_path))
     return;
 
-  std::string region_code;
-  switch (m_region)
-  {
-  case DiscIO::Region::NTSC_J:
-    region_code = "JA";
-    break;
-  case DiscIO::Region::NTSC_U:
-    region_code = "US";
-    break;
-  case DiscIO::Region::NTSC_K:
-    region_code = "KO";
-    break;
-  case DiscIO::Region::PAL:
-  {
-    const auto user_lang = SConfig::GetInstance().GetCurrentLanguage(DiscIO::IsWii(GetPlatform()));
-    switch (user_lang)
-    {
-    case DiscIO::Language::German:
-      region_code = "DE";
-      break;
-    case DiscIO::Language::French:
-      region_code = "FR";
-      break;
-    case DiscIO::Language::Spanish:
-      region_code = "ES";
-      break;
-    case DiscIO::Language::Italian:
-      region_code = "IT";
-      break;
-    case DiscIO::Language::Dutch:
-      region_code = "NL";
-      break;
-    case DiscIO::Language::English:
-    default:
-      region_code = "EN";
-      break;
-    }
-    break;
-  }
-  case DiscIO::Region::Unknown:
-    region_code = "EN";
-    break;
-  }
+  const std::string region_code =
+      SConfig::GetInstance().GetGameTDBImageRegionCode(DiscIO::IsWii(GetPlatform()), m_region);
 
   Common::HttpRequest request;
   static constexpr char cover_url[] = "https://art.gametdb.com/wii/cover/{}/{}.png";
@@ -371,6 +321,7 @@ void GameFile::DoState(PointerWrap& p)
   p.Do(m_compression_method);
   p.Do(m_revision);
   p.Do(m_disc_number);
+  p.Do(m_is_two_disc_game);
   p.Do(m_apploader_date);
 
   p.Do(m_custom_name);
@@ -572,6 +523,76 @@ std::vector<DiscIO::Language> GameFile::GetLanguages() const
   return languages;
 }
 
+bool GameFile::CheckIfTwoDiscGame(const std::string& game_id) const
+{
+  constexpr size_t GAME_ID_PREFIX_SIZE = 3;
+  if (game_id.size() < GAME_ID_PREFIX_SIZE)
+    return false;
+
+  static constexpr std::array<std::string_view, 30> two_disc_game_id_prefixes = {
+      // Resident Evil
+      "DBJ",
+      // The Lord of the Rings: The Third Age
+      "G3A",
+      // Teenage Mutant Ninja Turtles 3: Mutant Nightmare
+      "G3Q",
+      // Resident Evil 4
+      "G4B",
+      // Tiger Woods PGA Tour 2005
+      "G5T",
+      // Resident Evil
+      "GBI",
+      // Resident Evil Zero
+      "GBZ",
+      // Conan
+      "GC9",
+      // Resident Evil Code: Veronica X
+      "GCD",
+      // Tom Clancy's Splinter Cell: Chaos Theory
+      "GCJ",
+      // Freaky Flyers
+      "GFF",
+      // GoldenEye: Rogue Agent
+      "GGI",
+      // Metal Gear Solid: The Twin Snakes
+      "GGS",
+      // Baten Kaitos Origins
+      "GK4",
+      // Killer7
+      "GK7",
+      // Baten Kaitos: Eternal Wings and the Lost Ocean
+      "GKB",
+      // Lupin the 3rd: Lost Treasure by the Sea
+      "GL3",
+      // Enter the Matrix
+      "GMX",
+      // Teenage Mutant Ninja Turtles 2: Battle Nexus
+      "GNI",
+      // GoldenEye: Rogue Agent
+      "GOY",
+      // Tales of Symphonia
+      "GQS",
+      // Medal of Honor: Rising Sun
+      "GR8",
+      "GRZ",
+      // Tales of Symphonia
+      "GTO",
+      // Tiger Woods PGA Tour 2004
+      "GW4",
+      // Tom Clancy's Splinter Cell: Double Agent (GC)
+      "GWY",
+      // Dragon Quest X: Mezameshi Itsutsu no Shuzoku Online
+      "S4M",
+      "S4S",
+      "S6T",
+      "SDQ",
+  };
+  static_assert(std::ranges::is_sorted(two_disc_game_id_prefixes));
+
+  std::string_view game_id_prefix(game_id.data(), GAME_ID_PREFIX_SIZE);
+  return std::ranges::binary_search(two_disc_game_id_prefixes, game_id_prefix);
+}
+
 std::string GameFile::GetNetPlayName(const Core::TitleDatabase& title_database) const
 {
   std::vector<std::string> info;
@@ -595,10 +616,7 @@ std::string GameFile::GetNetPlayName(const Core::TitleDatabase& title_database) 
   }
   if (info.empty())
     return name;
-  std::ostringstream ss;
-  std::copy(info.begin(), info.end() - 1, std::ostream_iterator<std::string>(ss, ", "));
-  ss << info.back();
-  return name + " (" + ss.str() + ")";
+  return fmt::format("{} ({})", name, fmt::join(info, ", "));
 }
 
 static Common::SHA1::Digest GetHash(u32 value)
@@ -746,7 +764,7 @@ GameFile::CompareSyncIdentifier(const NetPlay::SyncIdentifier& sync_identifier) 
 std::string GameFile::GetWiiFSPath() const
 {
   ASSERT(DiscIO::IsWii(m_platform));
-  return Common::GetTitleDataPath(m_title_id, Common::FROM_CONFIGURED_ROOT);
+  return Common::GetTitleDataPath(m_title_id, Common::FromWhichRoot::Configured);
 }
 
 bool GameFile::ShouldShowFileFormatDetails() const

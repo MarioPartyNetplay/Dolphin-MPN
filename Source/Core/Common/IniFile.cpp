@@ -15,6 +15,8 @@
 #include "Common/FileUtil.h"
 #include "Common/StringUtil.h"
 
+namespace Common
+{
 void IniFile::ParseLine(std::string_view line, std::string* keyOut, std::string* valueOut)
 {
   if (line.empty() || line.front() == '#')
@@ -73,7 +75,7 @@ bool IniFile::Section::Get(std::string_view key, std::string* value,
 
 bool IniFile::Section::Exists(std::string_view key) const
 {
-  return values.find(key) != values.end();
+  return values.contains(key);
 }
 
 bool IniFile::Section::Delete(std::string_view key)
@@ -83,7 +85,8 @@ bool IniFile::Section::Delete(std::string_view key)
     return false;
 
   values.erase(it);
-  keys_order.erase(std::find(keys_order.begin(), keys_order.end(), key));
+  keys_order.erase(std::ranges::find_if(
+      keys_order, [&](std::string_view v) { return CaseInsensitiveEquals(key, v); }));
   return true;
 }
 
@@ -128,7 +131,7 @@ const IniFile::Section* IniFile::GetSection(std::string_view section_name) const
 {
   for (const Section& sect : sections)
   {
-    if (CaseInsensitiveStringCompare::IsEqual(sect.name, section_name))
+    if (CaseInsensitiveEquals(sect.name, section_name))
       return &sect;
   }
 
@@ -139,7 +142,7 @@ IniFile::Section* IniFile::GetSection(std::string_view section_name)
 {
   for (Section& sect : sections)
   {
-    if (CaseInsensitiveStringCompare::IsEqual(sect.name, section_name))
+    if (CaseInsensitiveEquals(sect.name, section_name))
       return &sect;
   }
 
@@ -369,3 +372,4 @@ bool IniFile::Save(const std::string& filename)
     return 0;
    }
  */
+}  // namespace Common

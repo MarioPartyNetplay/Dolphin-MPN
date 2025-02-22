@@ -70,6 +70,7 @@ enum class Language
 
 std::string GetName(Country country, bool translate);
 std::string GetName(Language language, bool translate);
+std::string GetName(Region region, bool translate);
 
 bool IsDisc(Platform volume_type);
 bool IsWii(Platform volume_type);
@@ -88,7 +89,7 @@ Country CountryCodeToCountry(u8 country_code, Platform platform, Region region =
                              std::optional<u16> revision = {});
 
 Region GetSysMenuRegion(u16 title_version);
-std::string GetSysMenuVersionString(u16 title_version);
+std::string GetSysMenuVersionString(u16 title_version, bool is_vwii);
 
 const std::string& GetCompanyFromID(const std::string& company_id);
 }  // namespace DiscIO

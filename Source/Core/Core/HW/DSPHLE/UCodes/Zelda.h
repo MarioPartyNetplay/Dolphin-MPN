@@ -9,6 +9,11 @@
 #include "Common/CommonTypes.h"
 #include "Core/HW/DSPHLE/UCodes/UCodes.h"
 
+namespace Core
+{
+class System;
+}
+
 namespace DSP::HLE
 {
 class DSPHLE;
@@ -16,6 +21,13 @@ class DSPHLE;
 class ZeldaAudioRenderer
 {
 public:
+  explicit ZeldaAudioRenderer(Core::System& system);
+  ZeldaAudioRenderer(const ZeldaAudioRenderer&) = delete;
+  ZeldaAudioRenderer(ZeldaAudioRenderer&&) = delete;
+  ZeldaAudioRenderer& operator=(const ZeldaAudioRenderer&) = delete;
+  ZeldaAudioRenderer& operator=(ZeldaAudioRenderer&&) = delete;
+  ~ZeldaAudioRenderer();
+
   void PrepareFrame();
   void AddVoice(u16 voice_id);
   void FinalizeFrame();
@@ -154,11 +166,9 @@ private:
   // Coefficients used for resampling.
   std::array<s16, 0x100> m_resampling_coeffs{};
 
-  // If non zero, base MRAM address for sound data transfers from ARAM. On
-  // the Wii, this points to some MRAM location since there is no ARAM to be
-  // used. If zero, use the top of ARAM.
+  // On the Wii, base address of the MRAM or ExRAM region replacing ARAM.
   u32 m_aram_base_addr = 0;
-  void* GetARAMPtr() const;
+  void* GetARAMPtr(u32 offset) const;
 
   // Downloads PCM encoded samples from ARAM. Handles looping and other
   // parameters appropriately.
@@ -175,6 +185,9 @@ private:
   // behavior.
   void DownloadRawSamplesFromMRAM(s16* dst, VPB* vpb, u16 requested_samples_count);
 
+  void ApplyLowPassFilter(MixingBuffer* buf, VPB* vpb);
+  void ApplyBiquadFilter(MixingBuffer* buf, VPB* vpb);
+
   // Applies the reverb effect to Dolby mixed voices based on a set of
   // per-buffer parameters. Is called twice: once before frame rendering and
   // once after.
@@ -185,6 +198,8 @@ private:
   std::array<s16, 8> m_buf_front_left_reverb_last8{};
   std::array<s16, 8> m_buf_front_right_reverb_last8{};
   u32 m_reverb_pb_base_addr = 0;
+
+  Core::System& m_system;
 };
 
 class ZeldaUCode final : public UCodeInterface

@@ -8,6 +8,7 @@
 
 #include "Common/Assert.h"
 #include "Common/CommonFuncs.h"
+#include "Common/Contains.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 
@@ -15,7 +16,7 @@
 #include "VideoBackends/Vulkan/ObjectCache.h"
 #include "VideoBackends/Vulkan/VKTexture.h"
 #include "VideoBackends/Vulkan/VulkanContext.h"
-#include "VideoCommon/RenderBase.h"
+#include "VideoCommon/Present.h"
 
 #if defined(VK_USE_PLATFORM_XLIB_KHR)
 #include <X11/Xlib.h>
@@ -154,7 +155,7 @@ bool SwapChain::SelectSurfaceFormat()
                                              &format_count, surface_formats.data());
   ASSERT(res == VK_SUCCESS);
 
-  // If there is a single undefined surface format, the device doesn't care, so we'll just use RGBA
+  // If there is a single undefined surface format, the device doesn't care, so we'll just use RGBA8
   if (surface_formats[0].format == VK_FORMAT_UNDEFINED)
   {
     m_surface_format.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -162,22 +163,63 @@ bool SwapChain::SelectSurfaceFormat()
     return true;
   }
 
-  // Try to find a suitable format.
+  const VkSurfaceFormatKHR* surface_format_RGBA8 = nullptr;
+  const VkSurfaceFormatKHR* surface_format_BGRA8 = nullptr;
+  const VkSurfaceFormatKHR* surface_format_RGB10_A2 = nullptr;
+  const VkSurfaceFormatKHR* surface_format_RGBA16F_scRGB = nullptr;
+
+  // Try to find all suitable formats.
   for (const VkSurfaceFormatKHR& surface_format : surface_formats)
   {
-    // Some drivers seem to return a SRGB format here (Intel Mesa).
-    // This results in gamma correction when presenting to the screen, which we don't want.
-    // Use a linear format instead, if this is the case.
+    // Some drivers seem to return a RGBA8 SRGB format here (Intel Mesa).
+    // Some other drivers return both a RGBA8 SRGB and UNORM formats (Nvidia).
+    // This results in gamma correction when presenting to the screen, which we don't want,
+    // because we already apply gamma ourselves, and we might not use sRGB gamma.
+    // Force using a linear format instead, if this is the case.
     VkFormat format = VKTexture::GetLinearFormat(surface_format.format);
+    if (surface_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+    {
+      if (format == VK_FORMAT_R8G8B8A8_UNORM)
+        surface_format_RGBA8 = &surface_format;
+      else if (format == VK_FORMAT_B8G8R8A8_UNORM)
+        surface_format_BGRA8 = &surface_format;
+      else if (format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)
+        surface_format_RGB10_A2 = &surface_format;
+    }
+    else if (format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+             surface_format.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT)
+    {
+      surface_format_RGBA16F_scRGB = &surface_format;
+    }
+  }
+
+  const VkSurfaceFormatKHR* surface_format = nullptr;
+
+  // Pick the best format.
+  // "g_ActiveConfig" might not have been been updated yet.
+  if (g_Config.bHDR && surface_format_RGBA16F_scRGB)
+    surface_format = surface_format_RGBA16F_scRGB;
+  else if (surface_format_RGB10_A2)
+    surface_format = surface_format_RGB10_A2;
+  else if (surface_format_RGBA8)
+    surface_format = surface_format_RGBA8;
+  else if (surface_format_BGRA8)
+    surface_format = surface_format_BGRA8;
+
+  if (surface_format)
+  {
+    const VkFormat format = VKTexture::GetLinearFormat(surface_format->format);
     if (format == VK_FORMAT_R8G8B8A8_UNORM)
       m_texture_format = AbstractTextureFormat::RGBA8;
     else if (format == VK_FORMAT_B8G8R8A8_UNORM)
       m_texture_format = AbstractTextureFormat::BGRA8;
-    else
-      continue;
+    else if (format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)
+      m_texture_format = AbstractTextureFormat::RGB10_A2;
+    else if (format == VK_FORMAT_R16G16B16A16_SFLOAT)
+      m_texture_format = AbstractTextureFormat::RGBA16F;
 
     m_surface_format.format = format;
-    m_surface_format.colorSpace = surface_format.colorSpace;
+    m_surface_format.colorSpace = surface_format->colorSpace;
     return true;
   }
 
@@ -202,31 +244,24 @@ bool SwapChain::SelectPresentMode()
                                                   &mode_count, present_modes.data());
   ASSERT(res == VK_SUCCESS);
 
-  // Checks if a particular mode is supported, if it is, returns that mode.
-  auto CheckForMode = [&present_modes](VkPresentModeKHR check_mode) {
-    auto it = std::find_if(present_modes.begin(), present_modes.end(),
-                           [check_mode](VkPresentModeKHR mode) { return check_mode == mode; });
-    return it != present_modes.end();
-  };
-
   // If vsync is enabled, use VK_PRESENT_MODE_FIFO_KHR.
   // This check should not fail with conforming drivers, as the FIFO present mode is mandated by
   // the specification (VK_KHR_swapchain). In case it isn't though, fall through to any other mode.
-  if (m_vsync_enabled && CheckForMode(VK_PRESENT_MODE_FIFO_KHR))
+  if (m_vsync_enabled && Common::Contains(present_modes, VK_PRESENT_MODE_FIFO_KHR))
   {
     m_present_mode = VK_PRESENT_MODE_FIFO_KHR;
     return true;
   }
 
   // Prefer screen-tearing, if possible, for lowest latency.
-  if (CheckForMode(VK_PRESENT_MODE_IMMEDIATE_KHR))
+  if (Common::Contains(present_modes, VK_PRESENT_MODE_IMMEDIATE_KHR))
   {
     m_present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
     return true;
   }
 
   // Use optimized-vsync above vsync.
-  if (CheckForMode(VK_PRESENT_MODE_MAILBOX_KHR))
+  if (Common::Contains(present_modes, VK_PRESENT_MODE_MAILBOX_KHR))
   {
     m_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
     return true;
@@ -265,8 +300,8 @@ bool SwapChain::CreateSwapChain()
   VkExtent2D size = surface_capabilities.currentExtent;
   if (size.width == UINT32_MAX)
   {
-    size.width = std::max(g_renderer->GetBackbufferWidth(), 1);
-    size.height = std::max(g_renderer->GetBackbufferHeight(), 1);
+    size.width = std::max(g_presenter->GetBackbufferWidth(), 1);
+    size.height = std::max(g_presenter->GetBackbufferHeight(), 1);
   }
   size.width = std::clamp(size.width, surface_capabilities.minImageExtent.width,
                           surface_capabilities.maxImageExtent.width);
@@ -389,8 +424,9 @@ bool SwapChain::SetupSwapChainImages()
                                 images.data());
   ASSERT(res == VK_SUCCESS);
 
-  const TextureConfig texture_config(TextureConfig(
-      m_width, m_height, 1, m_layers, 1, m_texture_format, AbstractTextureFlag_RenderTarget));
+  const TextureConfig texture_config(
+      TextureConfig(m_width, m_height, 1, m_layers, 1, m_texture_format,
+                    AbstractTextureFlag_RenderTarget, AbstractTextureType::Texture_2DArray));
   const VkRenderPass load_render_pass = g_object_cache->GetRenderPass(
       m_surface_format.format, VK_FORMAT_UNDEFINED, 1, VK_ATTACHMENT_LOAD_OP_LOAD);
   const VkRenderPass clear_render_pass = g_object_cache->GetRenderPass(
@@ -415,7 +451,7 @@ bool SwapChain::SetupSwapChainImages()
     if (!image.texture)
       return false;
 
-    image.framebuffer = VKFramebuffer::Create(image.texture.get(), nullptr);
+    image.framebuffer = VKFramebuffer::Create(image.texture.get(), nullptr, {});
     if (!image.framebuffer)
     {
       image.texture.reset();
@@ -457,6 +493,9 @@ VkResult SwapChain::AcquireNextImage()
   VkResult res = vkAcquireNextImageKHR(g_vulkan_context->GetDevice(), m_swap_chain, UINT64_MAX,
                                        g_command_buffer_mgr->GetCurrentCommandBufferSemaphore(),
                                        VK_NULL_HANDLE, &m_current_swap_chain_image_index);
+  m_current_swap_chain_image_is_valid = res >= 0;
+  if (IsCurrentImageValid())
+    g_command_buffer_mgr->MarkCurrentCommandBufferSemaphoreUsed();
   if (res != VK_SUCCESS && res != VK_ERROR_OUT_OF_DATE_KHR && res != VK_SUBOPTIMAL_KHR)
     LOG_VULKAN_ERROR(res, "vkAcquireNextImageKHR failed: ");
 

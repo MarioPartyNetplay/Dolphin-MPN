@@ -170,22 +170,13 @@ bool VolumeWAD::CheckContentIntegrity(const IOS::ES::Content& content,
   return Common::SHA1::CalculateDigest(decrypted_data.data(), content.size) == content.sha1;
 }
 
-bool VolumeWAD::CheckContentIntegrity(const IOS::ES::Content& content, u64 content_offset,
-                                      const IOS::ES::TicketReader& ticket) const
-{
-  std::vector<u8> encrypted_data(Common::AlignUp(content.size, 0x40));
-  if (!m_reader->Read(content_offset, encrypted_data.size(), encrypted_data.data()))
-    return false;
-  return CheckContentIntegrity(content, encrypted_data, ticket);
-}
-
 IOS::ES::TicketReader VolumeWAD::GetTicketWithFixedCommonKey() const
 {
   if (!m_ticket.IsValid() || !m_tmd.IsValid())
     return m_ticket;
 
   const std::vector<u8> sig = m_ticket.GetSignatureData();
-  if (!std::all_of(sig.cbegin(), sig.cend(), [](u8 a) { return a == 0; }))
+  if (!std::ranges::all_of(sig, [](u8 a) { return a == 0; }))
   {
     // This does not look like a typical "invalid common key index" ticket, so let's assume
     // the index is correct. This saves some time when reading properly signed titles.
@@ -256,7 +247,7 @@ std::string VolumeWAD::GetMakerID(const Partition& partition) const
     return "00";
 
   // Some weird channels use 0x0000 in place of the MakerID, so we need a check here
-  if (!IsPrintableCharacter(temp[0]) || !IsPrintableCharacter(temp[1]))
+  if (!Common::IsPrintableCharacter(temp[0]) || !Common::IsPrintableCharacter(temp[1]))
     return "00";
 
   return DecodeString(temp);

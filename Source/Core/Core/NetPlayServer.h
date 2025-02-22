@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <sstream>
 #include <thread>
@@ -28,8 +29,9 @@
 namespace NetPlay
 {
 class NetPlayUI;
+struct SaveSyncInfo;
 
-class NetPlayServer : public TraversalClientClient
+class NetPlayServer : public Common::TraversalClientClient
 {
 public:
   void ThreadFunc();
@@ -45,8 +47,8 @@ public:
   ~NetPlayServer();
 
   bool ChangeGame(const SyncIdentifier& sync_identifier, const std::string& netplay_name);
-  bool ComputeMD5(const SyncIdentifier& sync_identifier);
-  bool AbortMD5();
+  bool ComputeGameDigest(const SyncIdentifier& sync_identifier);
+  bool AbortGameDigest();
   void SendChatMessage(const std::string& msg);
 
   bool DoAllPlayersHaveIPLDump() const;
@@ -120,7 +122,8 @@ private:
   };
 
   bool SetupNetSettings();
-  bool SyncSaveData();
+  std::optional<SaveSyncInfo> CollectSaveSyncInfo();
+  bool SyncSaveData(const SaveSyncInfo& sync_info);
   bool SyncCodes();
   void CheckSyncAndStartGame();
 
@@ -140,7 +143,8 @@ private:
 
   void OnTraversalStateChanged() override;
   void OnConnectReady(ENetAddress) override {}
-  void OnConnectFailed(TraversalConnectFailedReason) override {}
+  void OnConnectFailed(Common::TraversalConnectFailedReason) override {}
+  void OnTtlDetermined(u8 ttl) override;
   void UpdatePadMapping();
   void UpdateGBAConfig();
   void UpdateWiimoteMapping();
@@ -207,7 +211,7 @@ private:
   bool m_abort_chunked_data = false;
 
   ENetHost* m_server = nullptr;
-  TraversalClient* m_traversal_client = nullptr;
+  Common::TraversalClient* m_traversal_client = nullptr;
   NetPlayUI* m_dialog = nullptr;
   NetPlayIndex m_index;
 };

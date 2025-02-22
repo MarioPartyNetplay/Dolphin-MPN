@@ -19,9 +19,13 @@
 #include "Core/HW/Memmap.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/HW/Wiimote.h"
+#include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
 #include "Core/IOS/Device.h"
 #include "Core/IOS/IOS.h"
+#include "Core/NetPlayClient.h"
+#include "Core/NetPlayProto.h"
 #include "Core/SysConf.h"
+#include "Core/System.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 
 namespace IOS::HLE
@@ -32,7 +36,7 @@ SQueuedEvent::SQueuedEvent(u32 size_, u16 handle) : size(size_), connection_hand
     PanicAlertFmt("SQueuedEvent: The size is too large.");
 }
 
-BluetoothEmuDevice::BluetoothEmuDevice(Kernel& ios, const std::string& device_name)
+BluetoothEmuDevice::BluetoothEmuDevice(EmulationKernel& ios, const std::string& device_name)
     : BluetoothBaseDevice(ios, device_name)
 {
   SysConf sysconf{ios.GetFS()};
@@ -47,8 +51,8 @@ BluetoothEmuDevice::BluetoothEmuDevice(Kernel& ios, const std::string& device_na
     const bdaddr_t tmp_bd = {0x11, 0x02, 0x19, 0x79, 0, i};
 
     // Previous records can be safely overwritten, since they are backed up
-    std::copy(tmp_bd.begin(), tmp_bd.end(), std::rbegin(bt_dinf.active[i].bdaddr));
-    std::copy(tmp_bd.begin(), tmp_bd.end(), std::rbegin(bt_dinf.registered[i].bdaddr));
+    std::ranges::copy(tmp_bd, std::rbegin(bt_dinf.active[i].bdaddr));
+    std::ranges::copy(tmp_bd, std::rbegin(bt_dinf.registered[i].bdaddr));
 
     const auto& wm_name =
         (i == WIIMOTE_BALANCE_BOARD) ? "Nintendo RVL-WBC-01" : "Nintendo RVL-CNT-01";
@@ -58,7 +62,9 @@ BluetoothEmuDevice::BluetoothEmuDevice(Kernel& ios, const std::string& device_na
     DEBUG_LOG_FMT(IOS_WIIMOTE, "Wii Remote {} BT ID {:x},{:x},{:x},{:x},{:x},{:x}", i, tmp_bd[0],
                   tmp_bd[1], tmp_bd[2], tmp_bd[3], tmp_bd[4], tmp_bd[5]);
 
-    m_wiimotes.emplace_back(std::make_unique<WiimoteDevice>(this, i, tmp_bd));
+    const unsigned int hid_source_number =
+        NetPlay::IsNetPlayRunning() ? NetPlay::NetPlay_GetLocalWiimoteForSlot(i) : i;
+    m_wiimotes[i] = std::make_unique<WiimoteDevice>(this, tmp_bd, hid_source_number);
   }
 
   bt_dinf.num_registered = MAX_BBMOTES;
@@ -75,13 +81,13 @@ BluetoothEmuDevice::BluetoothEmuDevice(Kernel& ios, const std::string& device_na
 BluetoothEmuDevice::~BluetoothEmuDevice() = default;
 
 template <typename T>
-static void DoStateForMessage(Kernel& ios, PointerWrap& p, std::unique_ptr<T>& message)
+static void DoStateForMessage(EmulationKernel& ios, PointerWrap& p, std::unique_ptr<T>& message)
 {
   u32 request_address = (message != nullptr) ? message->ios_request.address : 0;
   p.Do(request_address);
   if (request_address != 0)
   {
-    IOCtlVRequest request{request_address};
+    IOCtlVRequest request{ios.GetSystem(), request_address};
     message = std::make_unique<T>(ios, request);
   }
 }
@@ -97,10 +103,10 @@ void BluetoothEmuDevice::DoState(PointerWrap& p)
     return;
   }
 
-  p.Do(m_is_active);
+  Device::DoState(p);
   p.Do(m_controller_bd);
-  DoStateForMessage(m_ios, p, m_hci_endpoint);
-  DoStateForMessage(m_ios, p, m_acl_endpoint);
+  DoStateForMessage(GetEmulationKernel(), p, m_hci_endpoint);
+  DoStateForMessage(GetEmulationKernel(), p, m_acl_endpoint);
   p.Do(m_last_ticks);
   p.DoArray(m_packet_count);
   p.Do(m_scan_enable);
@@ -146,33 +152,37 @@ std::optional<IPCReply> BluetoothEmuDevice::IOCtlV(const IOCtlVRequest& request)
   case USB::IOCTLV_USBV0_CTRLMSG:  // HCI command is received from the stack
   {
     // Replies are generated inside
-    ExecuteHCICommandMessage(USB::V0CtrlMessage(m_ios, request));
+    ExecuteHCICommandMessage(USB::V0CtrlMessage(GetEmulationKernel(), request));
     send_reply = false;
     break;
   }
 
   case USB::IOCTLV_USBV0_BLKMSG:
   {
-    const USB::V0BulkMessage ctrl{m_ios, request};
+    const USB::V0BulkMessage ctrl{GetEmulationKernel(), request};
     switch (ctrl.endpoint)
     {
     case ACL_DATA_OUT:  // ACL data is received from the stack
     {
+      auto& system = GetSystem();
+      auto& memory = system.GetMemory();
+
       // This is the ACL datapath from CPU to Wii Remote
-      const auto* acl_header =
-          reinterpret_cast<hci_acldata_hdr_t*>(Memory::GetPointer(ctrl.data_address));
+      const auto* acl_header = reinterpret_cast<hci_acldata_hdr_t*>(
+          memory.GetPointerForRange(ctrl.data_address, sizeof(hci_acldata_hdr_t)));
 
       DEBUG_ASSERT(HCI_BC_FLAG(acl_header->con_handle) == HCI_POINT2POINT);
       DEBUG_ASSERT(HCI_PB_FLAG(acl_header->con_handle) == HCI_PACKET_START);
 
       SendToDevice(HCI_CON_HANDLE(acl_header->con_handle),
-                   Memory::GetPointer(ctrl.data_address + sizeof(hci_acldata_hdr_t)),
+                   memory.GetPointerForRange(ctrl.data_address + sizeof(hci_acldata_hdr_t),
+                                             acl_header->length),
                    acl_header->length);
       break;
     }
     case ACL_DATA_IN:  // We are given an ACL buffer to fill
     {
-      m_acl_endpoint = std::make_unique<USB::V0BulkMessage>(m_ios, request);
+      m_acl_endpoint = std::make_unique<USB::V0BulkMessage>(GetEmulationKernel(), request);
       DEBUG_LOG_FMT(IOS_WIIMOTE, "ACL_DATA_IN: {:#010x}", request.address);
       send_reply = false;
       break;
@@ -185,10 +195,10 @@ std::optional<IPCReply> BluetoothEmuDevice::IOCtlV(const IOCtlVRequest& request)
 
   case USB::IOCTLV_USBV0_INTRMSG:
   {
-    const USB::V0IntrMessage ctrl{m_ios, request};
+    const USB::V0IntrMessage ctrl{GetEmulationKernel(), request};
     if (ctrl.endpoint == HCI_EVENT)  // We are given a HCI buffer to fill
     {
-      m_hci_endpoint = std::make_unique<USB::V0IntrMessage>(m_ios, request);
+      m_hci_endpoint = std::make_unique<USB::V0IntrMessage>(GetEmulationKernel(), request);
       DEBUG_LOG_FMT(IOS_WIIMOTE, "HCI_EVENT: {:#010x}", request.address);
       send_reply = false;
     }
@@ -200,7 +210,7 @@ std::optional<IPCReply> BluetoothEmuDevice::IOCtlV(const IOCtlVRequest& request)
   }
 
   default:
-    request.DumpUnknown(GetDeviceName(), Common::Log::LogType::IOS_WIIMOTE);
+    request.DumpUnknown(GetSystem(), GetDeviceName(), Common::Log::LogType::IOS_WIIMOTE);
   }
 
   if (!send_reply)
@@ -238,15 +248,19 @@ void BluetoothEmuDevice::SendACLPacket(const bdaddr_t& source, const u8* data, u
     DEBUG_LOG_FMT(IOS_WIIMOTE, "ACL endpoint valid, sending packet to {:08x}",
                   m_acl_endpoint->ios_request.address);
 
-    hci_acldata_hdr_t* header =
-        reinterpret_cast<hci_acldata_hdr_t*>(Memory::GetPointer(m_acl_endpoint->data_address));
+    auto& system = GetSystem();
+    auto& memory = system.GetMemory();
+
+    hci_acldata_hdr_t* header = reinterpret_cast<hci_acldata_hdr_t*>(
+        memory.GetPointerForRange(m_acl_endpoint->data_address, sizeof(hci_acldata_hdr_t)));
     header->con_handle = HCI_MK_CON_HANDLE(connection_handle, HCI_PACKET_START, HCI_POINT2POINT);
     header->length = size;
 
     // Write the packet to the buffer
     memcpy(reinterpret_cast<u8*>(header) + sizeof(hci_acldata_hdr_t), data, header->length);
 
-    m_ios.EnqueueIPCReply(m_acl_endpoint->ios_request, sizeof(hci_acldata_hdr_t) + size);
+    GetEmulationKernel().EnqueueIPCReply(m_acl_endpoint->ios_request,
+                                         sizeof(hci_acldata_hdr_t) + size);
     m_acl_endpoint.reset();
   }
   else
@@ -275,7 +289,7 @@ void BluetoothEmuDevice::AddEventToQueue(const SQueuedEvent& event)
       m_hci_endpoint->FillBuffer(event.buffer, event.size);
 
       // Send a reply to indicate HCI buffer is filled
-      m_ios.EnqueueIPCReply(m_hci_endpoint->ios_request, event.size);
+      GetEmulationKernel().EnqueueIPCReply(m_hci_endpoint->ios_request, event.size);
       m_hci_endpoint.reset();
     }
     else  // push new one, pop oldest
@@ -292,7 +306,7 @@ void BluetoothEmuDevice::AddEventToQueue(const SQueuedEvent& event)
       m_hci_endpoint->FillBuffer(queued_event.buffer, queued_event.size);
 
       // Send a reply to indicate HCI buffer is filled
-      m_ios.EnqueueIPCReply(m_hci_endpoint->ios_request, queued_event.size);
+      GetEmulationKernel().EnqueueIPCReply(m_hci_endpoint->ios_request, queued_event.size);
       m_hci_endpoint.reset();
       m_event_queue.pop_front();
     }
@@ -318,7 +332,7 @@ void BluetoothEmuDevice::Update()
     m_hci_endpoint->FillBuffer(event.buffer, event.size);
 
     // Send a reply to indicate HCI buffer is filled
-    m_ios.EnqueueIPCReply(m_hci_endpoint->ios_request, event.size);
+    GetEmulationKernel().EnqueueIPCReply(m_hci_endpoint->ios_request, event.size);
     m_hci_endpoint.reset();
     m_event_queue.pop_front();
   }
@@ -333,15 +347,52 @@ void BluetoothEmuDevice::Update()
   for (auto& wiimote : m_wiimotes)
     wiimote->Update();
 
-  const u64 interval = SystemTimers::GetTicksPerSecond() / Wiimote::UPDATE_FREQ;
-  const u64 now = CoreTiming::GetTicks();
+  const u64 interval = GetSystem().GetSystemTimers().GetTicksPerSecond() / Wiimote::UPDATE_FREQ;
+  const u64 now = GetSystem().GetCoreTiming().GetTicks();
 
   if (now - m_last_ticks > interval)
   {
     g_controller_interface.SetCurrentInputChannel(ciface::InputChannel::Bluetooth);
     g_controller_interface.UpdateInput();
-    for (auto& wiimote : m_wiimotes)
-      wiimote->UpdateInput();
+
+    std::array<WiimoteEmu::DesiredWiimoteState, MAX_BBMOTES> wiimote_states;
+    std::array<WiimoteDevice::NextUpdateInputCall, MAX_BBMOTES> next_call;
+
+    for (size_t i = 0; i < m_wiimotes.size(); ++i)
+      next_call[i] = m_wiimotes[i]->PrepareInput(&wiimote_states[i]);
+
+    if (NetPlay::IsNetPlayRunning())
+    {
+      std::array<WiimoteEmu::SerializedWiimoteState, MAX_BBMOTES> serialized;
+      std::array<NetPlay::NetPlayClient::WiimoteDataBatchEntry, MAX_BBMOTES> batch;
+      size_t batch_count = 0;
+      for (size_t i = 0; i < 4; ++i)
+      {
+        if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
+          continue;
+        serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
+        batch[batch_count].state = &serialized[i];
+        batch[batch_count].wiimote = static_cast<int>(i);
+        ++batch_count;
+      }
+
+      if (batch_count > 0)
+      {
+        NetPlay::NetPlay_GetWiimoteData(
+            std::span<NetPlay::NetPlayClient::WiimoteDataBatchEntry>(batch.data(), batch_count));
+
+        for (size_t i = 0; i < batch_count; ++i)
+        {
+          const int wiimote = batch[i].wiimote;
+          if (!WiimoteEmu::DeserializeDesiredState(&wiimote_states[wiimote], serialized[wiimote]))
+            PanicAlertFmtT("Received invalid Wii Remote data from Netplay.");
+        }
+      }
+    }
+
+    for (size_t i = 0; i < m_wiimotes.size(); ++i)
+      m_wiimotes[i]->UpdateInput(next_call[i], wiimote_states[i]);
+
     m_last_ticks = now;
   }
 
@@ -362,7 +413,7 @@ void BluetoothEmuDevice::ACLPool::Store(const u8* data, const u16 size, const u1
   m_queue.push_back(Packet());
   auto& packet = m_queue.back();
 
-  std::copy(data, data + size, packet.data);
+  std::copy_n(data, size, packet.data);
   packet.size = size;
   packet.conn_handle = conn_handle;
 }
@@ -378,12 +429,16 @@ void BluetoothEmuDevice::ACLPool::WriteToEndpoint(const USB::V0BulkMessage& endp
   DEBUG_LOG_FMT(IOS_WIIMOTE, "ACL packet being written from queue to {:08x}",
                 endpoint.ios_request.address);
 
-  hci_acldata_hdr_t* header = (hci_acldata_hdr_t*)Memory::GetPointer(endpoint.data_address);
+  auto& system = m_ios.GetSystem();
+  auto& memory = system.GetMemory();
+
+  hci_acldata_hdr_t* header = (hci_acldata_hdr_t*)memory.GetPointerForRange(
+      endpoint.data_address, sizeof(hci_acldata_hdr_t));
   header->con_handle = HCI_MK_CON_HANDLE(conn_handle, HCI_PACKET_START, HCI_POINT2POINT);
   header->length = size;
 
   // Write the packet to the buffer
-  std::copy(data, data + size, (u8*)header + sizeof(hci_acldata_hdr_t));
+  std::copy_n(data, size, (u8*)header + sizeof(hci_acldata_hdr_t));
 
   m_queue.pop_front();
 
@@ -418,8 +473,7 @@ bool BluetoothEmuDevice::SendEventInquiryResponse()
   static_assert(
       sizeof(SHCIEventInquiryResult) - 2 + (num_responses * sizeof(hci_inquiry_response)) < 256);
 
-  const auto iter = std::find_if(m_wiimotes.begin(), m_wiimotes.end(),
-                                 std::mem_fn(&WiimoteDevice::IsInquiryScanEnabled));
+  const auto iter = std::ranges::find_if(m_wiimotes, &WiimoteDevice::IsInquiryScanEnabled);
   if (iter == m_wiimotes.end())
   {
     // No remotes are discoverable.
@@ -835,7 +889,7 @@ bool BluetoothEmuDevice::SendEventLinkKeyNotification(const u8 num_to_send)
   AddEventToQueue(event);
 
   return true;
-};
+}
 
 bool BluetoothEmuDevice::SendEventRequestLinkKey(const bdaddr_t& bd)
 {
@@ -856,7 +910,7 @@ bool BluetoothEmuDevice::SendEventRequestLinkKey(const bdaddr_t& bd)
   AddEventToQueue(event);
 
   return true;
-};
+}
 
 bool BluetoothEmuDevice::SendEventReadClockOffsetComplete(u16 connection_handle)
 {
@@ -914,10 +968,13 @@ bool BluetoothEmuDevice::SendEventConPacketTypeChange(u16 connection_handle, u16
 // This is called from the USB::IOCTLV_USBV0_CTRLMSG Ioctlv
 void BluetoothEmuDevice::ExecuteHCICommandMessage(const USB::V0CtrlMessage& ctrl_message)
 {
-  const u8* input = Memory::GetPointer(ctrl_message.data_address + 3);
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
+  const u32 input_address = ctrl_message.data_address + 3;
 
   SCommandMessage msg;
-  std::memcpy(&msg, Memory::GetPointer(ctrl_message.data_address), sizeof(msg));
+  memory.CopyFromEmu(&msg, ctrl_message.data_address, sizeof(msg));
 
   const u16 ocf = HCI_OCF(msg.Opcode);
   const u16 ogf = HCI_OGF(msg.Opcode);
@@ -932,144 +989,144 @@ void BluetoothEmuDevice::ExecuteHCICommandMessage(const USB::V0CtrlMessage& ctrl
   // --- read commands ---
   //
   case HCI_CMD_RESET:
-    CommandReset(input);
+    CommandReset(input_address);
     break;
 
   case HCI_CMD_READ_BUFFER_SIZE:
-    CommandReadBufferSize(input);
+    CommandReadBufferSize(input_address);
     break;
 
   case HCI_CMD_READ_LOCAL_VER:
-    CommandReadLocalVer(input);
+    CommandReadLocalVer(input_address);
     break;
 
   case HCI_CMD_READ_BDADDR:
-    CommandReadBDAdrr(input);
+    CommandReadBDAdrr(input_address);
     break;
 
   case HCI_CMD_READ_LOCAL_FEATURES:
-    CommandReadLocalFeatures(input);
+    CommandReadLocalFeatures(input_address);
     break;
 
   case HCI_CMD_READ_STORED_LINK_KEY:
-    CommandReadStoredLinkKey(input);
+    CommandReadStoredLinkKey(input_address);
     break;
 
   case HCI_CMD_WRITE_UNIT_CLASS:
-    CommandWriteUnitClass(input);
+    CommandWriteUnitClass(input_address);
     break;
 
   case HCI_CMD_WRITE_LOCAL_NAME:
-    CommandWriteLocalName(input);
+    CommandWriteLocalName(input_address);
     break;
 
   case HCI_CMD_WRITE_PIN_TYPE:
-    CommandWritePinType(input);
+    CommandWritePinType(input_address);
     break;
 
   case HCI_CMD_HOST_BUFFER_SIZE:
-    CommandHostBufferSize(input);
+    CommandHostBufferSize(input_address);
     break;
 
   case HCI_CMD_WRITE_PAGE_TIMEOUT:
-    CommandWritePageTimeOut(input);
+    CommandWritePageTimeOut(input_address);
     break;
 
   case HCI_CMD_WRITE_SCAN_ENABLE:
-    CommandWriteScanEnable(input);
+    CommandWriteScanEnable(input_address);
     break;
 
   case HCI_CMD_WRITE_INQUIRY_MODE:
-    CommandWriteInquiryMode(input);
+    CommandWriteInquiryMode(input_address);
     break;
 
   case HCI_CMD_WRITE_PAGE_SCAN_TYPE:
-    CommandWritePageScanType(input);
+    CommandWritePageScanType(input_address);
     break;
 
   case HCI_CMD_SET_EVENT_FILTER:
-    CommandSetEventFilter(input);
+    CommandSetEventFilter(input_address);
     break;
 
   case HCI_CMD_INQUIRY:
-    CommandInquiry(input);
+    CommandInquiry(input_address);
     break;
 
   case HCI_CMD_WRITE_INQUIRY_SCAN_TYPE:
-    CommandWriteInquiryScanType(input);
+    CommandWriteInquiryScanType(input_address);
     break;
 
   // vendor specific...
   case 0xFC4C:
-    CommandVendorSpecific_FC4C(input, ctrl_message.length - 3);
+    CommandVendorSpecific_FC4C(input_address, ctrl_message.length - 3);
     break;
 
   case 0xFC4F:
-    CommandVendorSpecific_FC4F(input, ctrl_message.length - 3);
+    CommandVendorSpecific_FC4F(input_address, ctrl_message.length - 3);
     break;
 
   case HCI_CMD_INQUIRY_CANCEL:
-    CommandInquiryCancel(input);
+    CommandInquiryCancel(input_address);
     break;
 
   case HCI_CMD_REMOTE_NAME_REQ:
-    CommandRemoteNameReq(input);
+    CommandRemoteNameReq(input_address);
     break;
 
   case HCI_CMD_CREATE_CON:
-    CommandCreateCon(input);
+    CommandCreateCon(input_address);
     break;
 
   case HCI_CMD_ACCEPT_CON:
-    CommandAcceptCon(input);
+    CommandAcceptCon(input_address);
     break;
 
   case HCI_CMD_CHANGE_CON_PACKET_TYPE:
-    CommandChangeConPacketType(input);
+    CommandChangeConPacketType(input_address);
     break;
 
   case HCI_CMD_READ_CLOCK_OFFSET:
-    CommandReadClockOffset(input);
+    CommandReadClockOffset(input_address);
     break;
 
   case HCI_CMD_READ_REMOTE_VER_INFO:
-    CommandReadRemoteVerInfo(input);
+    CommandReadRemoteVerInfo(input_address);
     break;
 
   case HCI_CMD_READ_REMOTE_FEATURES:
-    CommandReadRemoteFeatures(input);
+    CommandReadRemoteFeatures(input_address);
     break;
 
   case HCI_CMD_WRITE_LINK_POLICY_SETTINGS:
-    CommandWriteLinkPolicy(input);
+    CommandWriteLinkPolicy(input_address);
     break;
 
   case HCI_CMD_AUTH_REQ:
-    CommandAuthenticationRequested(input);
+    CommandAuthenticationRequested(input_address);
     break;
 
   case HCI_CMD_SNIFF_MODE:
-    CommandSniffMode(input);
+    CommandSniffMode(input_address);
     break;
 
   case HCI_CMD_DISCONNECT:
-    CommandDisconnect(input);
+    CommandDisconnect(input_address);
     break;
 
   case HCI_CMD_WRITE_LINK_SUPERVISION_TIMEOUT:
-    CommandWriteLinkSupervisionTimeout(input);
+    CommandWriteLinkSupervisionTimeout(input_address);
     break;
 
   case HCI_CMD_LINK_KEY_NEG_REP:
-    CommandLinkKeyNegRep(input);
+    CommandLinkKeyNegRep(input_address);
     break;
 
   case HCI_CMD_LINK_KEY_REP:
-    CommandLinkKeyRep(input);
+    CommandLinkKeyRep(input_address);
     break;
 
   case HCI_CMD_DELETE_STORED_LINK_KEY:
-    CommandDeleteStoredLinkKey(input);
+    CommandDeleteStoredLinkKey(input_address);
     break;
 
   default:
@@ -1081,7 +1138,7 @@ void BluetoothEmuDevice::ExecuteHCICommandMessage(const USB::V0CtrlMessage& ctrl
       ERROR_LOG_FMT(IOS_WIIMOTE, "Command: vendor specific: {:#06x} (ocf: {:#x})", msg.Opcode, ocf);
       for (int i = 0; i < msg.len; i++)
       {
-        ERROR_LOG_FMT(IOS_WIIMOTE, "  0x02{:#x}", input[i]);
+        ERROR_LOG_FMT(IOS_WIIMOTE, "  0x02{:#x}", memory.Read_U8(input_address + i));
       }
     }
     else
@@ -1094,7 +1151,7 @@ void BluetoothEmuDevice::ExecuteHCICommandMessage(const USB::V0CtrlMessage& ctrl
   }
 
   // HCI command is finished, send a reply to command
-  m_ios.EnqueueIPCReply(ctrl_message.ios_request, ctrl_message.length);
+  GetEmulationKernel().EnqueueIPCReply(ctrl_message.ios_request, ctrl_message.length);
 }
 
 //
@@ -1102,11 +1159,14 @@ void BluetoothEmuDevice::ExecuteHCICommandMessage(const USB::V0CtrlMessage& ctrl
 // --- command helper
 //
 //
-void BluetoothEmuDevice::CommandInquiry(const u8* input)
+void BluetoothEmuDevice::CommandInquiry(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   // Inquiry should not be called normally
   hci_inquiry_cp inquiry;
-  std::memcpy(&inquiry, input, sizeof(inquiry));
+  memory.CopyFromEmu(&inquiry, input_address, sizeof(inquiry));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_INQUIRY:");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "write:");
@@ -1120,7 +1180,7 @@ void BluetoothEmuDevice::CommandInquiry(const u8* input)
   SendEventInquiryResponse();
 }
 
-void BluetoothEmuDevice::CommandInquiryCancel(const u8* input)
+void BluetoothEmuDevice::CommandInquiryCancel(u32 input_address)
 {
   hci_inquiry_cancel_rp reply;
   reply.status = 0x00;
@@ -1130,10 +1190,13 @@ void BluetoothEmuDevice::CommandInquiryCancel(const u8* input)
   SendEventCommandComplete(HCI_CMD_INQUIRY_CANCEL, &reply, sizeof(hci_inquiry_cancel_rp));
 }
 
-void BluetoothEmuDevice::CommandCreateCon(const u8* input)
+void BluetoothEmuDevice::CommandCreateCon(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_create_con_cp create_connection;
-  std::memcpy(&create_connection, input, sizeof(create_connection));
+  memory.CopyFromEmu(&create_connection, input_address, sizeof(create_connection));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_CREATE_CON");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "Input:");
@@ -1156,10 +1219,13 @@ void BluetoothEmuDevice::CommandCreateCon(const u8* input)
   SendEventConnectionComplete(create_connection.bdaddr, successful ? 0x00 : 0x08);
 }
 
-void BluetoothEmuDevice::CommandDisconnect(const u8* input)
+void BluetoothEmuDevice::CommandDisconnect(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_discon_cp disconnect;
-  std::memcpy(&disconnect, input, sizeof(disconnect));
+  memory.CopyFromEmu(&disconnect, input_address, sizeof(disconnect));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_DISCONNECT");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#06x}", disconnect.con_handle);
@@ -1173,10 +1239,13 @@ void BluetoothEmuDevice::CommandDisconnect(const u8* input)
     wiimote->EventDisconnect(disconnect.reason);
 }
 
-void BluetoothEmuDevice::CommandAcceptCon(const u8* input)
+void BluetoothEmuDevice::CommandAcceptCon(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_accept_con_cp accept_connection;
-  std::memcpy(&accept_connection, input, sizeof(accept_connection));
+  memory.CopyFromEmu(&accept_connection, input_address, sizeof(accept_connection));
 
   static constexpr const char* roles[] = {
       "Master (0x00)",
@@ -1211,10 +1280,13 @@ void BluetoothEmuDevice::CommandAcceptCon(const u8* input)
   }
 }
 
-void BluetoothEmuDevice::CommandLinkKeyRep(const u8* input)
+void BluetoothEmuDevice::CommandLinkKeyRep(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_link_key_rep_cp key_rep;
-  std::memcpy(&key_rep, input, sizeof(key_rep));
+  memory.CopyFromEmu(&key_rep, input_address, sizeof(key_rep));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_LINK_KEY_REP");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  bd: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", key_rep.bdaddr[0],
@@ -1228,10 +1300,13 @@ void BluetoothEmuDevice::CommandLinkKeyRep(const u8* input)
   SendEventCommandComplete(HCI_CMD_LINK_KEY_REP, &reply, sizeof(hci_link_key_rep_rp));
 }
 
-void BluetoothEmuDevice::CommandLinkKeyNegRep(const u8* input)
+void BluetoothEmuDevice::CommandLinkKeyNegRep(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_link_key_neg_rep_cp key_neg;
-  std::memcpy(&key_neg, input, sizeof(key_neg));
+  memory.CopyFromEmu(&key_neg, input_address, sizeof(key_neg));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_LINK_KEY_NEG_REP");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  bd: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", key_neg.bdaddr[0],
@@ -1245,10 +1320,13 @@ void BluetoothEmuDevice::CommandLinkKeyNegRep(const u8* input)
   SendEventCommandComplete(HCI_CMD_LINK_KEY_NEG_REP, &reply, sizeof(hci_link_key_neg_rep_rp));
 }
 
-void BluetoothEmuDevice::CommandChangeConPacketType(const u8* input)
+void BluetoothEmuDevice::CommandChangeConPacketType(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_change_con_pkt_type_cp change_packet_type;
-  std::memcpy(&change_packet_type, input, sizeof(change_packet_type));
+  memory.CopyFromEmu(&change_packet_type, input_address, sizeof(change_packet_type));
 
   // ntd stack sets packet type 0xcc18, which is HCI_PKT_DH5 | HCI_PKT_DM5 | HCI_PKT_DH1 |
   // HCI_PKT_DM1
@@ -1261,10 +1339,13 @@ void BluetoothEmuDevice::CommandChangeConPacketType(const u8* input)
   SendEventConPacketTypeChange(change_packet_type.con_handle, change_packet_type.pkt_type);
 }
 
-void BluetoothEmuDevice::CommandAuthenticationRequested(const u8* input)
+void BluetoothEmuDevice::CommandAuthenticationRequested(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_auth_req_cp auth_req;
-  std::memcpy(&auth_req, input, sizeof(auth_req));
+  memory.CopyFromEmu(&auth_req, input_address, sizeof(auth_req));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_AUTH_REQ");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#06x}", auth_req.con_handle);
@@ -1273,10 +1354,13 @@ void BluetoothEmuDevice::CommandAuthenticationRequested(const u8* input)
   SendEventAuthenticationCompleted(auth_req.con_handle);
 }
 
-void BluetoothEmuDevice::CommandRemoteNameReq(const u8* input)
+void BluetoothEmuDevice::CommandRemoteNameReq(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_remote_name_req_cp remote_name_req;
-  std::memcpy(&remote_name_req, input, sizeof(remote_name_req));
+  memory.CopyFromEmu(&remote_name_req, input_address, sizeof(remote_name_req));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_REMOTE_NAME_REQ");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  bd: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -1290,10 +1374,13 @@ void BluetoothEmuDevice::CommandRemoteNameReq(const u8* input)
   SendEventRemoteNameReq(remote_name_req.bdaddr);
 }
 
-void BluetoothEmuDevice::CommandReadRemoteFeatures(const u8* input)
+void BluetoothEmuDevice::CommandReadRemoteFeatures(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_read_remote_features_cp read_remote_features;
-  std::memcpy(&read_remote_features, input, sizeof(read_remote_features));
+  memory.CopyFromEmu(&read_remote_features, input_address, sizeof(read_remote_features));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_READ_REMOTE_FEATURES");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#06x}", read_remote_features.con_handle);
@@ -1302,10 +1389,13 @@ void BluetoothEmuDevice::CommandReadRemoteFeatures(const u8* input)
   SendEventReadRemoteFeatures(read_remote_features.con_handle);
 }
 
-void BluetoothEmuDevice::CommandReadRemoteVerInfo(const u8* input)
+void BluetoothEmuDevice::CommandReadRemoteVerInfo(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_read_remote_ver_info_cp read_remote_ver_info;
-  std::memcpy(&read_remote_ver_info, input, sizeof(read_remote_ver_info));
+  memory.CopyFromEmu(&read_remote_ver_info, input_address, sizeof(read_remote_ver_info));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_READ_REMOTE_VER_INFO");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#04x}", read_remote_ver_info.con_handle);
@@ -1314,10 +1404,13 @@ void BluetoothEmuDevice::CommandReadRemoteVerInfo(const u8* input)
   SendEventReadRemoteVerInfo(read_remote_ver_info.con_handle);
 }
 
-void BluetoothEmuDevice::CommandReadClockOffset(const u8* input)
+void BluetoothEmuDevice::CommandReadClockOffset(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_read_clock_offset_cp read_clock_offset;
-  std::memcpy(&read_clock_offset, input, sizeof(read_clock_offset));
+  memory.CopyFromEmu(&read_clock_offset, input_address, sizeof(read_clock_offset));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_READ_CLOCK_OFFSET");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#04x}", read_clock_offset.con_handle);
@@ -1326,10 +1419,13 @@ void BluetoothEmuDevice::CommandReadClockOffset(const u8* input)
   SendEventReadClockOffsetComplete(read_clock_offset.con_handle);
 }
 
-void BluetoothEmuDevice::CommandSniffMode(const u8* input)
+void BluetoothEmuDevice::CommandSniffMode(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_sniff_mode_cp sniff_mode;
-  std::memcpy(&sniff_mode, input, sizeof(sniff_mode));
+  memory.CopyFromEmu(&sniff_mode, input_address, sizeof(sniff_mode));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_SNIFF_MODE");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#06x}", sniff_mode.con_handle);
@@ -1342,10 +1438,13 @@ void BluetoothEmuDevice::CommandSniffMode(const u8* input)
   SendEventModeChange(sniff_mode.con_handle, 0x02, sniff_mode.max_interval);  // 0x02 - sniff mode
 }
 
-void BluetoothEmuDevice::CommandWriteLinkPolicy(const u8* input)
+void BluetoothEmuDevice::CommandWriteLinkPolicy(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_link_policy_settings_cp link_policy;
-  std::memcpy(&link_policy, input, sizeof(link_policy));
+  memory.CopyFromEmu(&link_policy, input_address, sizeof(link_policy));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_WRITE_LINK_POLICY_SETTINGS");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  ConnectionHandle: {:#06x}", link_policy.con_handle);
@@ -1354,7 +1453,7 @@ void BluetoothEmuDevice::CommandWriteLinkPolicy(const u8* input)
   SendEventCommandStatus(HCI_CMD_WRITE_LINK_POLICY_SETTINGS);
 }
 
-void BluetoothEmuDevice::CommandReset(const u8* input)
+void BluetoothEmuDevice::CommandReset(u32 input_address)
 {
   hci_status_rp reply;
   reply.status = 0x00;
@@ -1365,10 +1464,13 @@ void BluetoothEmuDevice::CommandReset(const u8* input)
   // TODO: We should actually reset connections and channels and everything here.
 }
 
-void BluetoothEmuDevice::CommandSetEventFilter(const u8* input)
+void BluetoothEmuDevice::CommandSetEventFilter(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_set_event_filter_cp set_event_filter;
-  std::memcpy(&set_event_filter, input, sizeof(set_event_filter));
+  memory.CopyFromEmu(&set_event_filter, input_address, sizeof(set_event_filter));
 
   // It looks like software only ever sets a "new device inquiry response" filter.
   // This is one we can safely ignore because of our fake inquiry implementation
@@ -1386,10 +1488,13 @@ void BluetoothEmuDevice::CommandSetEventFilter(const u8* input)
   SendEventCommandComplete(HCI_CMD_SET_EVENT_FILTER, &reply, sizeof(hci_set_event_filter_rp));
 }
 
-void BluetoothEmuDevice::CommandWritePinType(const u8* input)
+void BluetoothEmuDevice::CommandWritePinType(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_pin_type_cp write_pin_type;
-  std::memcpy(&write_pin_type, input, sizeof(write_pin_type));
+  memory.CopyFromEmu(&write_pin_type, input_address, sizeof(write_pin_type));
 
   hci_write_pin_type_rp reply;
   reply.status = 0x00;
@@ -1400,10 +1505,13 @@ void BluetoothEmuDevice::CommandWritePinType(const u8* input)
   SendEventCommandComplete(HCI_CMD_WRITE_PIN_TYPE, &reply, sizeof(hci_write_pin_type_rp));
 }
 
-void BluetoothEmuDevice::CommandReadStoredLinkKey(const u8* input)
+void BluetoothEmuDevice::CommandReadStoredLinkKey(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_read_stored_link_key_cp read_stored_link_key;
-  std::memcpy(&read_stored_link_key, input, sizeof(read_stored_link_key));
+  memory.CopyFromEmu(&read_stored_link_key, input_address, sizeof(read_stored_link_key));
 
   hci_read_stored_link_key_rp reply;
   reply.status = 0x00;
@@ -1431,10 +1539,13 @@ void BluetoothEmuDevice::CommandReadStoredLinkKey(const u8* input)
                            sizeof(hci_read_stored_link_key_rp));
 }
 
-void BluetoothEmuDevice::CommandDeleteStoredLinkKey(const u8* input)
+void BluetoothEmuDevice::CommandDeleteStoredLinkKey(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_delete_stored_link_key_cp delete_stored_link_key;
-  std::memcpy(&delete_stored_link_key, input, sizeof(delete_stored_link_key));
+  memory.CopyFromEmu(&delete_stored_link_key, input_address, sizeof(delete_stored_link_key));
 
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_OCF_DELETE_STORED_LINK_KEY");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "  bd: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -1458,10 +1569,13 @@ void BluetoothEmuDevice::CommandDeleteStoredLinkKey(const u8* input)
                              "has failed. Could be a problem with loading the SCONF");
 }
 
-void BluetoothEmuDevice::CommandWriteLocalName(const u8* input)
+void BluetoothEmuDevice::CommandWriteLocalName(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_local_name_cp write_local_name;
-  std::memcpy(&write_local_name, input, sizeof(write_local_name));
+  memory.CopyFromEmu(&write_local_name, input_address, sizeof(write_local_name));
 
   hci_write_local_name_rp reply;
   reply.status = 0x00;
@@ -1472,10 +1586,13 @@ void BluetoothEmuDevice::CommandWriteLocalName(const u8* input)
   SendEventCommandComplete(HCI_CMD_WRITE_LOCAL_NAME, &reply, sizeof(hci_write_local_name_rp));
 }
 
-void BluetoothEmuDevice::CommandWritePageTimeOut(const u8* input)
+void BluetoothEmuDevice::CommandWritePageTimeOut(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_page_timeout_cp write_page_timeout;
-  std::memcpy(&write_page_timeout, input, sizeof(write_page_timeout));
+  memory.CopyFromEmu(&write_page_timeout, input_address, sizeof(write_page_timeout));
 
   hci_host_buffer_size_rp reply;
   reply.status = 0x00;
@@ -1486,10 +1603,13 @@ void BluetoothEmuDevice::CommandWritePageTimeOut(const u8* input)
   SendEventCommandComplete(HCI_CMD_WRITE_PAGE_TIMEOUT, &reply, sizeof(hci_host_buffer_size_rp));
 }
 
-void BluetoothEmuDevice::CommandWriteScanEnable(const u8* input)
+void BluetoothEmuDevice::CommandWriteScanEnable(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_scan_enable_cp write_scan_enable;
-  std::memcpy(&write_scan_enable, input, sizeof(write_scan_enable));
+  memory.CopyFromEmu(&write_scan_enable, input_address, sizeof(write_scan_enable));
 
   m_scan_enable = write_scan_enable.scan_enable;
 
@@ -1510,10 +1630,13 @@ void BluetoothEmuDevice::CommandWriteScanEnable(const u8* input)
   SendEventCommandComplete(HCI_CMD_WRITE_SCAN_ENABLE, &reply, sizeof(hci_write_scan_enable_rp));
 }
 
-void BluetoothEmuDevice::CommandWriteUnitClass(const u8* input)
+void BluetoothEmuDevice::CommandWriteUnitClass(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_unit_class_cp write_unit_class;
-  std::memcpy(&write_unit_class, input, sizeof(write_unit_class));
+  memory.CopyFromEmu(&write_unit_class, input_address, sizeof(write_unit_class));
 
   hci_write_unit_class_rp reply;
   reply.status = 0x00;
@@ -1526,10 +1649,13 @@ void BluetoothEmuDevice::CommandWriteUnitClass(const u8* input)
   SendEventCommandComplete(HCI_CMD_WRITE_UNIT_CLASS, &reply, sizeof(hci_write_unit_class_rp));
 }
 
-void BluetoothEmuDevice::CommandHostBufferSize(const u8* input)
+void BluetoothEmuDevice::CommandHostBufferSize(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_host_buffer_size_cp host_buffer_size;
-  std::memcpy(&host_buffer_size, input, sizeof(host_buffer_size));
+  memory.CopyFromEmu(&host_buffer_size, input_address, sizeof(host_buffer_size));
 
   hci_host_buffer_size_rp reply;
   reply.status = 0x00;
@@ -1543,10 +1669,13 @@ void BluetoothEmuDevice::CommandHostBufferSize(const u8* input)
   SendEventCommandComplete(HCI_CMD_HOST_BUFFER_SIZE, &reply, sizeof(hci_host_buffer_size_rp));
 }
 
-void BluetoothEmuDevice::CommandWriteLinkSupervisionTimeout(const u8* input)
+void BluetoothEmuDevice::CommandWriteLinkSupervisionTimeout(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_link_supervision_timeout_cp supervision;
-  std::memcpy(&supervision, input, sizeof(supervision));
+  memory.CopyFromEmu(&supervision, input_address, sizeof(supervision));
 
   // timeout of 0 means timing out is disabled
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: HCI_CMD_WRITE_LINK_SUPERVISION_TIMEOUT");
@@ -1561,10 +1690,13 @@ void BluetoothEmuDevice::CommandWriteLinkSupervisionTimeout(const u8* input)
                            sizeof(hci_write_link_supervision_timeout_rp));
 }
 
-void BluetoothEmuDevice::CommandWriteInquiryScanType(const u8* input)
+void BluetoothEmuDevice::CommandWriteInquiryScanType(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_inquiry_scan_type_cp set_event_filter;
-  std::memcpy(&set_event_filter, input, sizeof(set_event_filter));
+  memory.CopyFromEmu(&set_event_filter, input_address, sizeof(set_event_filter));
 
   hci_write_inquiry_scan_type_rp reply;
   reply.status = 0x00;
@@ -1576,10 +1708,13 @@ void BluetoothEmuDevice::CommandWriteInquiryScanType(const u8* input)
                            sizeof(hci_write_inquiry_scan_type_rp));
 }
 
-void BluetoothEmuDevice::CommandWriteInquiryMode(const u8* input)
+void BluetoothEmuDevice::CommandWriteInquiryMode(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_inquiry_mode_cp inquiry_mode;
-  std::memcpy(&inquiry_mode, input, sizeof(inquiry_mode));
+  memory.CopyFromEmu(&inquiry_mode, input_address, sizeof(inquiry_mode));
 
   hci_write_inquiry_mode_rp reply;
   reply.status = 0x00;
@@ -1597,10 +1732,13 @@ void BluetoothEmuDevice::CommandWriteInquiryMode(const u8* input)
   SendEventCommandComplete(HCI_CMD_WRITE_INQUIRY_MODE, &reply, sizeof(hci_write_inquiry_mode_rp));
 }
 
-void BluetoothEmuDevice::CommandWritePageScanType(const u8* input)
+void BluetoothEmuDevice::CommandWritePageScanType(u32 input_address)
 {
+  auto& system = GetSystem();
+  auto& memory = system.GetMemory();
+
   hci_write_page_scan_type_cp write_page_scan_type;
-  std::memcpy(&write_page_scan_type, input, sizeof(write_page_scan_type));
+  memory.CopyFromEmu(&write_page_scan_type, input_address, sizeof(write_page_scan_type));
 
   hci_write_page_scan_type_rp reply;
   reply.status = 0x00;
@@ -1617,7 +1755,7 @@ void BluetoothEmuDevice::CommandWritePageScanType(const u8* input)
                            sizeof(hci_write_page_scan_type_rp));
 }
 
-void BluetoothEmuDevice::CommandReadLocalVer(const u8* input)
+void BluetoothEmuDevice::CommandReadLocalVer(u32 input_address)
 {
   hci_read_local_ver_rp reply;
   reply.status = 0x00;
@@ -1638,7 +1776,7 @@ void BluetoothEmuDevice::CommandReadLocalVer(const u8* input)
   SendEventCommandComplete(HCI_CMD_READ_LOCAL_VER, &reply, sizeof(hci_read_local_ver_rp));
 }
 
-void BluetoothEmuDevice::CommandReadLocalFeatures(const u8* input)
+void BluetoothEmuDevice::CommandReadLocalFeatures(u32 input_address)
 {
   hci_read_local_features_rp reply;
   reply.status = 0x00;
@@ -1660,7 +1798,7 @@ void BluetoothEmuDevice::CommandReadLocalFeatures(const u8* input)
   SendEventCommandComplete(HCI_CMD_READ_LOCAL_FEATURES, &reply, sizeof(hci_read_local_features_rp));
 }
 
-void BluetoothEmuDevice::CommandReadBufferSize(const u8* input)
+void BluetoothEmuDevice::CommandReadBufferSize(u32 input_address)
 {
   hci_read_buffer_size_rp reply;
   reply.status = 0x00;
@@ -1682,7 +1820,7 @@ void BluetoothEmuDevice::CommandReadBufferSize(const u8* input)
   SendEventCommandComplete(HCI_CMD_READ_BUFFER_SIZE, &reply, sizeof(hci_read_buffer_size_rp));
 }
 
-void BluetoothEmuDevice::CommandReadBDAdrr(const u8* input)
+void BluetoothEmuDevice::CommandReadBDAdrr(u32 input_address)
 {
   hci_read_bdaddr_rp reply;
   reply.status = 0x00;
@@ -1697,7 +1835,7 @@ void BluetoothEmuDevice::CommandReadBDAdrr(const u8* input)
   SendEventCommandComplete(HCI_CMD_READ_BDADDR, &reply, sizeof(hci_read_bdaddr_rp));
 }
 
-void BluetoothEmuDevice::CommandVendorSpecific_FC4F(const u8* input, u32 size)
+void BluetoothEmuDevice::CommandVendorSpecific_FC4F(u32 input_address, u32 size)
 {
   // callstack...
   // BTM_VendorSpecificCommad()
@@ -1712,19 +1850,21 @@ void BluetoothEmuDevice::CommandVendorSpecific_FC4F(const u8* input, u32 size)
   INFO_LOG_FMT(IOS_WIIMOTE, "Command: CommandVendorSpecific_FC4F: (callstack WUDiRemovePatch)");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "Input (size {:#x}):", size);
 
-  Dolphin_Debugger::PrintDataBuffer(Common::Log::LogType::IOS_WIIMOTE, input, size, "Data: ");
+  Dolphin_Debugger::PrintDataBuffer(GetSystem(), Common::Log::LogType::IOS_WIIMOTE, input_address,
+                                    size, "Data: ");
 
   SendEventCommandComplete(0xFC4F, &reply, sizeof(hci_status_rp));
 }
 
-void BluetoothEmuDevice::CommandVendorSpecific_FC4C(const u8* input, u32 size)
+void BluetoothEmuDevice::CommandVendorSpecific_FC4C(u32 input_address, u32 size)
 {
   hci_status_rp reply;
   reply.status = 0x00;
 
   DEBUG_LOG_FMT(IOS_WIIMOTE, "Command: CommandVendorSpecific_FC4C:");
   DEBUG_LOG_FMT(IOS_WIIMOTE, "Input (size {:#x}):", size);
-  Dolphin_Debugger::PrintDataBuffer(Common::Log::LogType::IOS_WIIMOTE, input, size, "Data: ");
+  Dolphin_Debugger::PrintDataBuffer(GetSystem(), Common::Log::LogType::IOS_WIIMOTE, input_address,
+                                    size, "Data: ");
 
   SendEventCommandComplete(0xFC4C, &reply, sizeof(hci_status_rp));
 }

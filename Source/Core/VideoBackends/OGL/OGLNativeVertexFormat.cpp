@@ -6,7 +6,7 @@
 #include "Common/GL/GLUtil.h"
 #include "Common/MsgHandler.h"
 
-#include "VideoBackends/OGL/OGLRender.h"
+#include "VideoBackends/OGL/OGLGfx.h"
 #include "VideoBackends/OGL/OGLVertexManager.h"
 #include "VideoBackends/OGL/ProgramShaderCache.h"
 
@@ -19,31 +19,32 @@
 namespace OGL
 {
 std::unique_ptr<NativeVertexFormat>
-Renderer::CreateNativeVertexFormat(const PortableVertexDeclaration& vtx_decl)
+OGLGfx::CreateNativeVertexFormat(const PortableVertexDeclaration& vtx_decl)
 {
   return std::make_unique<GLVertexFormat>(vtx_decl);
 }
 
 static inline GLuint VarToGL(ComponentFormat t)
 {
-  static constexpr Common::EnumMap<GLuint, ComponentFormat::Float> lookup = {
-      GL_UNSIGNED_BYTE, GL_BYTE, GL_UNSIGNED_SHORT, GL_SHORT, GL_FLOAT,
+  static constexpr Common::EnumMap<GLuint, ComponentFormat::InvalidFloat7> lookup = {
+      GL_UNSIGNED_BYTE, GL_BYTE,  GL_UNSIGNED_SHORT, GL_SHORT,
+      GL_FLOAT,         GL_FLOAT, GL_FLOAT,          GL_FLOAT,
   };
   return lookup[t];
 }
 
-static void SetPointer(u32 attrib, u32 stride, const AttributeFormat& format)
+static void SetPointer(ShaderAttrib attrib, u32 stride, const AttributeFormat& format)
 {
   if (!format.enable)
     return;
 
-  glEnableVertexAttribArray(attrib);
+  glEnableVertexAttribArray(static_cast<GLuint>(attrib));
   if (format.integer)
-    glVertexAttribIPointer(attrib, format.components, VarToGL(format.type), stride,
-                           (u8*)nullptr + format.offset);
+    glVertexAttribIPointer(static_cast<GLuint>(attrib), format.components, VarToGL(format.type),
+                           stride, (u8*)nullptr + format.offset);
   else
-    glVertexAttribPointer(attrib, format.components, VarToGL(format.type), true, stride,
-                          (u8*)nullptr + format.offset);
+    glVertexAttribPointer(static_cast<GLuint>(attrib), format.components, VarToGL(format.type),
+                          true, stride, (u8*)nullptr + format.offset);
 }
 
 GLVertexFormat::GLVertexFormat(const PortableVertexDeclaration& vtx_decl)
@@ -59,24 +60,26 @@ GLVertexFormat::GLVertexFormat(const PortableVertexDeclaration& vtx_decl)
 
   glGenVertexArrays(1, &VAO);
   glBindVertexArray(VAO);
-  ProgramShaderCache::BindVertexFormat(this);
 
   // the element buffer is bound directly to the vao, so we must it set for every vao
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vm->GetIndexBufferHandle());
   glBindBuffer(GL_ARRAY_BUFFER, vm->GetVertexBufferHandle());
 
-  SetPointer(SHADER_POSITION_ATTRIB, vertex_stride, vtx_decl.position);
+  SetPointer(ShaderAttrib::Position, vertex_stride, vtx_decl.position);
 
-  for (int i = 0; i < 3; i++)
-    SetPointer(SHADER_NORMAL_ATTRIB + i, vertex_stride, vtx_decl.normals[i]);
+  for (u32 i = 0; i < 3; i++)
+    SetPointer(ShaderAttrib::Normal + i, vertex_stride, vtx_decl.normals[i]);
 
-  for (int i = 0; i < 2; i++)
-    SetPointer(SHADER_COLOR0_ATTRIB + i, vertex_stride, vtx_decl.colors[i]);
+  for (u32 i = 0; i < 2; i++)
+    SetPointer(ShaderAttrib::Color0 + i, vertex_stride, vtx_decl.colors[i]);
 
-  for (int i = 0; i < 8; i++)
-    SetPointer(SHADER_TEXTURE0_ATTRIB + i, vertex_stride, vtx_decl.texcoords[i]);
+  for (u32 i = 0; i < 8; i++)
+    SetPointer(ShaderAttrib::TexCoord0 + i, vertex_stride, vtx_decl.texcoords[i]);
 
-  SetPointer(SHADER_POSMTX_ATTRIB, vertex_stride, vtx_decl.posmtx);
+  SetPointer(ShaderAttrib::PositionMatrix, vertex_stride, vtx_decl.posmtx);
+
+  // Other code shouldn't have to worry about its vertex formats being randomly unbound
+  ProgramShaderCache::ReBindVertexFormat();
 }
 
 GLVertexFormat::~GLVertexFormat()

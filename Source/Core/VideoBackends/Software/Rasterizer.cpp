@@ -108,8 +108,6 @@ static std::vector<BPFunctions::ScissorRect> scissors;
 
 void Init()
 {
-  tev.Init();
-
   // The other slopes are set each for each primitive drawn, but zfreeze means that the z slope
   // needs to be set to an (untested) default value.
   ZSlope = Slope();
@@ -142,9 +140,9 @@ static inline int iround(float x)
   return t;
 }
 
-void SetTevReg(int reg, int comp, s16 color)
+void SetTevKonstColors()
 {
-  tev.SetRegColor(reg, comp, color);
+  tev.SetKonstColors();
 }
 
 static void Draw(s32 x, s32 y, s32 xi, s32 yi)
@@ -288,13 +286,10 @@ static void BuildBlock(s32 blockX, s32 blockY)
     }
   }
 
-  u32 indref = bpmem.tevindref.hex;
   for (unsigned int i = 0; i < bpmem.genMode.numindstages; i++)
   {
-    u32 texmap = indref & 3;
-    indref >>= 3;
-    u32 texcoord = indref & 3;
-    indref >>= 3;
+    u32 texmap = bpmem.tevindref.getTexMap(i);
+    u32 texcoord = bpmem.tevindref.getTexCoord(i);
 
     CalculateLOD(&rasterBlock.IndirectLod[i], &rasterBlock.IndirectLinear[i], texmap, texcoord);
   }
@@ -335,7 +330,7 @@ static void DrawTriangleFrontFace(const OutputVertexData* v0, const OutputVertex
 
   // adapted from http://devmaster.net/posts/6145/advanced-rasterization
 
-  // 28.4 fixed-pou32 coordinates. rounded to nearest and adjusted to match hardware output
+  // 28.4 fixed-point coordinates. rounded to nearest and adjusted to match hardware output
   // could also take floor and adjust -8
   const s32 Y1 = iround(16.0f * (v0->screenPosition.y - scissor.y_off)) - 9;
   const s32 Y2 = iround(16.0f * (v1->screenPosition.y - scissor.y_off)) - 9;
@@ -354,7 +349,7 @@ static void DrawTriangleFrontFace(const OutputVertexData* v0, const OutputVertex
   const s32 DY23 = Y2 - Y3;
   const s32 DY31 = Y3 - Y1;
 
-  // Fixed-pos32 deltas
+  // Fixed-point deltas
   const s32 FDX12 = DX12 * 16;
   const s32 FDX23 = DX23 * 16;
   const s32 FDX31 = DX31 * 16;

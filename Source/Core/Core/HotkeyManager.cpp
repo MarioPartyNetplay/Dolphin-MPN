@@ -9,12 +9,12 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include "Common/Common.h"
 #include "Common/CommonTypes.h"
 #include "Common/FileUtil.h"
 #include "Common/IniFile.h"
-#include "Common/StringUtil.h"
 
 #include "InputCommon/ControllerEmu/Control/Input.h"
 #include "InputCommon/ControllerEmu/ControlGroup/Buttons.h"
@@ -38,6 +38,9 @@ constexpr std::array<const char*, NUM_HOTKEYS> s_hotkey_labels{{
     _trans("Center Mouse"),
     _trans("Activate NetPlay Chat"),
     _trans("Control NetPlay Golf Mode"),
+#ifdef USE_RETRO_ACHIEVEMENTS
+    _trans("Open Achievements"),
+#endif  // USE_RETRO_ACHIEVEMENTS
 
     _trans("Volume Down"),
     _trans("Volume Up"),
@@ -194,6 +197,9 @@ constexpr std::array<const char*, NUM_HOTKEYS> s_hotkey_labels{{
     _trans("2x"),
     _trans("3x"),
     _trans("4x"),
+
+    _trans("Show Skylanders Portal"),
+    _trans("Show Infinity Base")
 }};
 // clang-format on
 static_assert(NUM_HOTKEYS == s_hotkey_labels.size(), "Wrong count of hotkey_labels");
@@ -204,7 +210,7 @@ static std::array<u32, NUM_HOTKEY_GROUPS> s_hotkey_down;
 static HotkeyStatus s_hotkey;
 static bool s_enabled;
 
-static InputConfig s_config("Hotkeys", _trans("Hotkeys"), "Hotkeys");
+static InputConfig s_config("Hotkeys", _trans("Hotkeys"), "Hotkeys", "Hotkeys");
 
 InputConfig* GetConfig()
 {
@@ -251,7 +257,7 @@ bool IsPressed(int id, bool held)
 // TODO: Remove this at a future date when we're confident most configs are migrated.
 static void LoadLegacyConfig(ControllerEmu::EmulatedController* controller)
 {
-  IniFile inifile;
+  Common::IniFile inifile;
   if (inifile.Load(File::GetUserPath(D_CONFIG_IDX) + "Hotkeys.ini"))
   {
     if (!inifile.Exists("Hotkeys") && inifile.Exists("Hotkeys1"))
@@ -301,7 +307,7 @@ void Initialize()
 
 void LoadConfig()
 {
-  s_config.LoadConfig(InputConfig::InputClass::GC);
+  s_config.LoadConfig();
   LoadLegacyConfig(s_config.GetController(0));
 }
 
@@ -327,7 +333,11 @@ struct HotkeyGroupInfo
 };
 
 constexpr std::array<HotkeyGroupInfo, NUM_HOTKEY_GROUPS> s_groups_info = {
+#ifdef USE_RETRO_ACHIEVEMENTS
+    {{_trans("General"), HK_OPEN, HK_OPEN_ACHIEVEMENTS},
+#else   // USE_RETRO_ACHIEVEMENTS
     {{_trans("General"), HK_OPEN, HK_REQUEST_GOLF_CONTROL},
+#endif  // USE_RETRO_ACHIEVEMENTS
      {_trans("Volume"), HK_VOLUME_DOWN, HK_VOLUME_TOGGLE_MUTE},
      {_trans("Emulation Speed"), HK_DECREASE_EMULATION_SPEED, HK_TOGGLE_THROTTLE},
      {_trans("Frame Advance"), HK_FRAME_ADVANCE, HK_FRAME_ADVANCE_RESET_SPEED},
@@ -354,7 +364,8 @@ constexpr std::array<HotkeyGroupInfo, NUM_HOTKEY_GROUPS> s_groups_info = {
      {_trans("Other State Hotkeys"), HK_SAVE_FIRST_STATE, HK_DECREMENT_SELECTED_STATE_SLOT},
      {_trans("GBA Core"), HK_GBA_LOAD, HK_GBA_RESET, true},
      {_trans("GBA Volume"), HK_GBA_VOLUME_DOWN, HK_GBA_TOGGLE_MUTE, true},
-     {_trans("GBA Window Size"), HK_GBA_1X, HK_GBA_4X, true}}};
+     {_trans("GBA Window Size"), HK_GBA_1X, HK_GBA_4X, true},
+     {_trans("USB Emulation Devices"), HK_SKYLANDERS_PORTAL, HK_INFINITY_BASE}}};
 
 HotkeyManager::HotkeyManager()
 {
@@ -365,7 +376,7 @@ HotkeyManager::HotkeyManager()
     groups.emplace_back(m_hotkey_groups[group]);
     for (int key = s_groups_info[group].first; key <= s_groups_info[group].last; key++)
     {
-      m_keys[group]->AddInput(ControllerEmu::Translate, s_hotkey_labels[key]);
+      m_keys[group]->AddInput(ControllerEmu::Translatability::Translate, s_hotkey_labels[key]);
     }
   }
 }
@@ -377,6 +388,11 @@ HotkeyManager::~HotkeyManager()
 std::string HotkeyManager::GetName() const
 {
   return "Hotkeys";
+}
+
+InputConfig* HotkeyManager::GetConfig() const
+{
+  return HotkeyManagerEmu::GetConfig();
 }
 
 void HotkeyManager::GetInput(HotkeyStatus* kb, bool ignore_focus)
@@ -404,8 +420,8 @@ ControllerEmu::ControlGroup* HotkeyManager::GetHotkeyGroup(HotkeyGroup group) co
 
 int HotkeyManager::FindGroupByID(int id) const
 {
-  const auto i = std::find_if(s_groups_info.begin(), s_groups_info.end(),
-                              [id](const auto& entry) { return entry.last >= id; });
+  const auto i =
+      std::ranges::find_if(s_groups_info, [id](const auto& entry) { return entry.last >= id; });
 
   return static_cast<int>(std::distance(s_groups_info.begin(), i));
 }
@@ -426,7 +442,7 @@ void HotkeyManager::LoadDefaults(const ControllerInterface& ciface)
   };
 
   auto hotkey_string = [](std::vector<std::string> inputs) {
-    return "@(" + JoinStrings(inputs, "+") + ')';
+    return fmt::format("@({})", fmt::join(inputs, "+"));
   };
 
   // General hotkeys
@@ -439,6 +455,9 @@ void HotkeyManager::LoadDefaults(const ControllerInterface& ciface)
   set_key_expression(HK_STOP, "Escape");
   set_key_expression(HK_FULLSCREEN, hotkey_string({"Alt", "Return"}));
 #endif
+#ifdef USE_RETRO_ACHIEVEMENTS
+  set_key_expression(HK_OPEN_ACHIEVEMENTS, hotkey_string({"Alt", "A"}));
+#endif  // USE_RETRO_ACHIEVEMENTS
   set_key_expression(HK_STEP, "F11");
   set_key_expression(HK_STEP_OVER, hotkey_string({"Shift", "F10"}));
   set_key_expression(HK_STEP_OUT, hotkey_string({"Shift", "F11"}));
@@ -490,4 +509,7 @@ void HotkeyManager::LoadDefaults(const ControllerInterface& ciface)
   set_key_expression(HK_GBA_3X, "`KP_3`");
   set_key_expression(HK_GBA_4X, "`KP_4`");
 #endif
+
+  set_key_expression(HK_SKYLANDERS_PORTAL, hotkey_string({"Ctrl", "P"}));
+  set_key_expression(HK_INFINITY_BASE, hotkey_string({"Ctrl", "I"}));
 }

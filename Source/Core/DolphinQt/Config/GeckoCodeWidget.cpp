@@ -3,6 +3,7 @@
 
 #include "DolphinQt/Config/GeckoCodeWidget.h"
 
+#include <algorithm>
 #include <utility>
 
 #include <QCursor>
@@ -25,8 +26,11 @@
 
 #include "DolphinQt/Config/CheatCodeEditor.h"
 #include "DolphinQt/Config/CheatWarningWidget.h"
+#include "DolphinQt/Config/HardcoreWarningWidget.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
+#include "DolphinQt/QtUtils/WrapInScrollArea.h"
 
 #include "UICommon/GameFile.h"
 
@@ -38,19 +42,30 @@ GeckoCodeWidget::GeckoCodeWidget(std::string game_id, std::string gametdb_id, u1
   CreateWidgets();
   ConnectWidgets();
 
-  if (!m_game_id.empty())
-  {
-    IniFile game_ini_local;
+  LoadCodes();
+}
 
-    // We don't use LoadLocalGameIni() here because user cheat codes that are installed via the UI
-    // will always be stored in GS/${GAMEID}.ini
-    game_ini_local.Load(File::GetUserPath(D_GAMESETTINGS_IDX) + m_game_id + ".ini");
+void GeckoCodeWidget::ChangeGame(std::string game_id, std::string gametdb_id,
+                                 const u16 game_revision)
+{
+  m_game_id = std::move(game_id);
+  m_gametdb_id = std::move(gametdb_id);
+  m_game_revision = game_revision;
+  m_restart_required = false;
 
-    const IniFile game_ini_default = SConfig::LoadDefaultGameIni(m_game_id, m_game_revision);
-    m_gecko_codes = Gecko::LoadCodes(game_ini_default, game_ini_local);
-  }
+  m_gecko_codes.clear();
+  m_code_list->clear();
+  m_name_label->clear();
+  m_creator_label->clear();
+  m_code_description->clear();
+  m_code_view->clear();
 
-  UpdateList();
+  // If a CheatCodeEditor is open, it's now trying to add or edit a code in the previous game's code
+  // list which is no longer loaded. Letting the user save the code wouldn't make sense, so close
+  // the dialog instead.
+  m_cheat_code_editor->reject();
+
+  LoadCodes();
 }
 
 GeckoCodeWidget::~GeckoCodeWidget() = default;
@@ -58,6 +73,9 @@ GeckoCodeWidget::~GeckoCodeWidget() = default;
 void GeckoCodeWidget::CreateWidgets()
 {
   m_warning = new CheatWarningWidget(m_game_id, m_restart_required, this);
+#ifdef USE_RETRO_ACHIEVEMENTS
+  m_hc_warning = new HardcoreWarningWidget(this);
+#endif  // USE_RETRO_ACHIEVEMENTS
   m_code_list = new QListWidget;
   m_name_label = new QLabel;
   m_creator_label = new QLabel;
@@ -83,22 +101,16 @@ void GeckoCodeWidget::CreateWidgets()
   m_remove_code = new NonDefaultQPushButton(tr("&Remove Code"));
   m_download_codes = new NonDefaultQPushButton(tr("Download Codes"));
 
+  m_cheat_code_editor = new CheatCodeEditor(this);
+
   m_download_codes->setToolTip(tr("Download Codes from the WiiRD Database"));
-
-  m_code_list->setEnabled(!m_game_id.empty());
-  m_name_label->setEnabled(!m_game_id.empty());
-  m_creator_label->setEnabled(!m_game_id.empty());
-  m_code_description->setEnabled(!m_game_id.empty());
-  m_code_view->setEnabled(!m_game_id.empty());
-
-  m_add_code->setEnabled(!m_game_id.empty());
-  m_edit_code->setEnabled(false);
-  m_remove_code->setEnabled(false);
-  m_download_codes->setEnabled(!m_game_id.empty());
 
   auto* layout = new QVBoxLayout;
 
   layout->addWidget(m_warning);
+#ifdef USE_RETRO_ACHIEVEMENTS
+  layout->addWidget(m_hc_warning);
+#endif  // USE_RETRO_ACHIEVEMENTS
   layout->addWidget(m_code_list);
 
   auto* info_layout = new QFormLayout;
@@ -128,7 +140,7 @@ void GeckoCodeWidget::CreateWidgets()
 
   layout->addLayout(btn_layout);
 
-  setLayout(layout);
+  WrapInScrollArea(this, layout);
 }
 
 void GeckoCodeWidget::ConnectWidgets()
@@ -147,21 +159,24 @@ void GeckoCodeWidget::ConnectWidgets()
   connect(m_download_codes, &QPushButton::clicked, this, &GeckoCodeWidget::DownloadCodes);
   connect(m_warning, &CheatWarningWidget::OpenCheatEnableSettings, this,
           &GeckoCodeWidget::OpenGeneralSettings);
+#ifdef USE_RETRO_ACHIEVEMENTS
+  connect(m_hc_warning, &HardcoreWarningWidget::OpenAchievementSettings, this,
+          &GeckoCodeWidget::OpenAchievementSettings);
+#endif  // USE_RETRO_ACHIEVEMENTS
 }
 
 void GeckoCodeWidget::OnSelectionChanged()
 {
-  auto items = m_code_list->selectedItems();
-
+  const QList<QListWidgetItem*> items = m_code_list->selectedItems();
   const bool empty = items.empty();
 
-  m_edit_code->setEnabled(!empty);
-  m_remove_code->setEnabled(!empty);
+  m_edit_code->setDisabled(empty);
+  m_remove_code->setDisabled(empty);
 
-  if (items.empty())
+  if (empty)
     return;
 
-  auto selected = items[0];
+  const QListWidgetItem* const selected = items[0];
 
   const int index = selected->data(Qt::UserRole).toInt();
 
@@ -187,7 +202,7 @@ void GeckoCodeWidget::OnItemChanged(QListWidgetItem* item)
   m_gecko_codes[index].enabled = (item->checkState() == Qt::Checked);
 
   if (!m_restart_required)
-    Gecko::SetActiveCodes(m_gecko_codes);
+    Gecko::SetActiveCodes(m_gecko_codes, m_game_id);
 
   SaveCodes();
 }
@@ -197,9 +212,9 @@ void GeckoCodeWidget::AddCode()
   Gecko::GeckoCode code;
   code.enabled = true;
 
-  CheatCodeEditor ed(this);
-  ed.SetGeckoCode(&code);
-  if (ed.exec() == QDialog::Rejected)
+  m_cheat_code_editor->SetGeckoCode(&code);
+  SetQWidgetWindowDecorations(m_cheat_code_editor);
+  if (m_cheat_code_editor->exec() == QDialog::Rejected)
     return;
 
   m_gecko_codes.push_back(std::move(code));
@@ -215,9 +230,9 @@ void GeckoCodeWidget::EditCode()
 
   const int index = item->data(Qt::UserRole).toInt();
 
-  CheatCodeEditor ed(this);
-  ed.SetGeckoCode(&m_gecko_codes[index]);
-  if (ed.exec() == QDialog::Rejected)
+  m_cheat_code_editor->SetGeckoCode(&m_gecko_codes[index]);
+  SetQWidgetWindowDecorations(m_cheat_code_editor);
+  if (m_cheat_code_editor->exec() == QDialog::Rejected)
     return;
 
   SaveCodes();
@@ -237,6 +252,35 @@ void GeckoCodeWidget::RemoveCode()
   SaveCodes();
 }
 
+void GeckoCodeWidget::LoadCodes()
+{
+  if (!m_game_id.empty())
+  {
+    Common::IniFile game_ini_local;
+
+    // We don't use LoadLocalGameIni() here because user cheat codes that are installed via the UI
+    // will always be stored in GS/${GAMEID}.ini
+    game_ini_local.Load(File::GetUserPath(D_GAMESETTINGS_IDX) + m_game_id + ".ini");
+
+    const Common::IniFile game_ini_default =
+        SConfig::LoadDefaultGameIni(m_game_id, m_game_revision);
+    m_gecko_codes = Gecko::LoadCodes(game_ini_default, game_ini_local);
+  }
+
+  m_code_list->setEnabled(!m_game_id.empty());
+  m_name_label->setEnabled(!m_game_id.empty());
+  m_creator_label->setEnabled(!m_game_id.empty());
+  m_code_description->setEnabled(!m_game_id.empty());
+  m_code_view->setEnabled(!m_game_id.empty());
+
+  m_add_code->setEnabled(!m_game_id.empty());
+  m_edit_code->setEnabled(false);
+  m_remove_code->setEnabled(false);
+  m_download_codes->setEnabled(!m_game_id.empty());
+
+  UpdateList();
+}
+
 void GeckoCodeWidget::SaveCodes()
 {
   if (m_game_id.empty())
@@ -245,7 +289,7 @@ void GeckoCodeWidget::SaveCodes()
   const auto ini_path =
       std::string(File::GetUserPath(D_GAMESETTINGS_IDX)).append(m_game_id).append(".ini");
 
-  IniFile game_ini_local;
+  Common::IniFile game_ini_local;
   game_ini_local.Load(ini_path);
   Gecko::SaveCodes(game_ini_local, m_gecko_codes);
   game_ini_local.Save(ini_path);
@@ -256,6 +300,8 @@ void GeckoCodeWidget::OnContextMenuRequested()
   QMenu menu;
 
   menu.addAction(tr("Sort Alphabetically"), this, &GeckoCodeWidget::SortAlphabetically);
+  menu.addAction(tr("Show Enabled Codes First"), this, &GeckoCodeWidget::SortEnabledCodesFirst);
+  menu.addAction(tr("Show Disabled Codes First"), this, &GeckoCodeWidget::SortDisabledCodesFirst);
 
   menu.exec(QCursor::pos());
 }
@@ -264,6 +310,20 @@ void GeckoCodeWidget::SortAlphabetically()
 {
   m_code_list->sortItems();
   OnListReordered();
+}
+
+void GeckoCodeWidget::SortEnabledCodesFirst()
+{
+  std::ranges::stable_partition(m_gecko_codes, std::identity{}, &Gecko::GeckoCode::enabled);
+  UpdateList();
+  SaveCodes();
+}
+
+void GeckoCodeWidget::SortDisabledCodesFirst()
+{
+  std::ranges::stable_partition(m_gecko_codes, std::logical_not{}, &Gecko::GeckoCode::enabled);
+  UpdateList();
+  SaveCodes();
 }
 
 void GeckoCodeWidget::OnListReordered()
@@ -330,7 +390,7 @@ void GeckoCodeWidget::DownloadCodes()
 
   for (const auto& code : codes)
   {
-    auto it = std::find(m_gecko_codes.begin(), m_gecko_codes.end(), code);
+    auto it = std::ranges::find(m_gecko_codes, code);
 
     if (it == m_gecko_codes.end())
     {
