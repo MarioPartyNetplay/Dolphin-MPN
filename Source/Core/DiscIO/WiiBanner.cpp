@@ -6,19 +6,16 @@
 #include <string>
 #include <vector>
 
-#include "Common/ColorUtil.h"
 #include "Common/CommonTypes.h"
 #include "Common/FileUtil.h"
 #include "Common/IOFile.h"
 #include "Common/NandPaths.h"
-#include "Common/StringUtil.h"
 
+#include "Common/Swap.h"
 #include "Core/IOS/WFS/WFSI.h"
 
 #include "DiscIO/DiscExtractor.h"
 #include "DiscIO/Volume.h"
-
-#include "fastlz.h"
 
 namespace DiscIO
 {
@@ -32,42 +29,44 @@ constexpr u32 ICON_SIZE = ICON_WIDTH * ICON_HEIGHT * 2;
 
 WiiBanner::WiiBanner(u64 title_id)
 {
-  m_path = (Common::GetTitleDataPath(title_id, Common::FROM_CONFIGURED_ROOT) + "/opening.bnr");
+  m_path = (Common::GetTitleDataPath(title_id, Common::FromWhichRoot::Configured) + "/opening.bnr");
   ExtractARC(m_path);
 }
 
 WiiBanner::WiiBanner(const Volume& volume, Partition partition)
 {
-  m_valid = ExportFile(volume, partition, m_path, (File::CreateTempDir() + "/opening.bnr"));
-  ExtractARC(m_path);
+  m_path = (File::CreateTempDir() + "/opening.bnr");
+  if (ExportFile(volume, partition, "opening.bnr", m_path))
+    ExtractARC(m_path);
+  else
+    m_valid = false;
 }
 
 void WiiBanner::ExtractARC(std::string path)
-{ 
+{
   IOS::HLE::ARCUnpacker m_arc_unpacker;
   File::IOFile file(path, "rb");
-  std::vector<unsigned char> bytes;
-  u32 header;
+  std::vector<u8> bytes;
+  const u32 offset = 0x0600;
 
   if (!file)
+  {
     m_valid = false;
-  else if (file.GetSize() <= BANNER_SIZE * ICON_SIZE)
-    m_valid = false;
+    return;
+  }
 
-  file.Seek(600, File::SeekOrigin::Begin);
+  file.Seek(offset, File::SeekOrigin::Begin);
 
-  file.ReadBytes(&header, sizeof(header));
-  if (header != 0x55AA382D) // "U.8-"
-    m_valid = false;
+  u32 length = file.GetSize() - offset;
+  bytes.resize(length);
+  file.ReadBytes(bytes.data(), length);
 
-  file.ReadBytes(&bytes, (file.GetSize() - 600));
   m_arc_unpacker.AddBytes(bytes);
 
   const std::string outdir = File::CreateTempDir();
 
-  const auto callback = [=](const std::string& filename, const std::vector<u8>& outbytes)
-  {
-    const std::string outpath = (outdir + filename);
+  const auto callback = [=](const std::string& filename, const std::vector<u8>& outbytes) {
+    const std::string outpath = (outdir + "/" + filename);
     File::CreateFullPath(outpath);
     File::IOFile outfile(outpath, "wb");
     outfile.WriteBytes(outbytes.data(), outbytes.size());
@@ -75,67 +74,116 @@ void WiiBanner::ExtractARC(std::string path)
 
   m_arc_unpacker.Extract(callback);
 
-  ExtractIconBin(outdir + "/meta/icon.bin");
+  ExtractBin(outdir + "/meta/banner.bin");
 }
 
-void WiiBanner::ExtractIconBin(std::string path)
-{ 
+void WiiBanner::ExtractBin(std::string path)
+{
   IOS::HLE::ARCUnpacker m_arc_unpacker;
   File::IOFile file(path, "rb");
-  u32 header;
+  std::vector<u8> bytes;
+  const u32 offset = 0x20;
 
   if (!file)
-    m_valid = false;
-  else if (file.GetSize() <= BANNER_SIZE * ICON_SIZE)
-    m_valid = false;
-
-  file.Seek(20, File::SeekOrigin::Begin);
-
-  file.ReadBytes(&header, sizeof(header));
-  if (header == 0x4C5A3737) // "LZ77"
-  {
-    DecompressLZ77(path);
-  }
-  else if (header == 0x55AA382D) // "U.8-"
-  {
-    std::vector<unsigned char> bytes;
-
-    file.ReadBytes(&bytes, (file.GetSize() - 20));
-    m_arc_unpacker.AddBytes(bytes);
-
-    const std::string outdir = File::CreateTempDir();
-
-    const auto callback = [=](const std::string& filename, const std::vector<u8>& outbytes)
-    {
-      const std::string outpath = (outdir + filename);
-      File::CreateFullPath(outpath);
-      File::IOFile outfile(outpath, "wb");
-      outfile.WriteBytes(outbytes.data(), outbytes.size());
-    };
-
-    m_arc_unpacker.Extract(callback);
-  }
-  else
   {
     m_valid = false;
+    return;
   }
+
+  file.Seek(offset, File::SeekOrigin::Begin);
+
+  const u32 length = file.GetSize() - offset;
+  bytes.resize(length);
+  file.ReadBytes(bytes.data(), length);
+
+  u32 header = Common::swap32(bytes.data());
+
+  if (header == 0x4C5A3737)  // "LZ77"
+  {
+    bytes.resize(bytes[0] | (bytes[1] << 8) | (bytes[2] << 16));
+    bytes = DecompressLZ77(bytes);
+    header = Common::swap32(bytes.data());
+  }
+
+  if (header != 0x55AA382D)
+  {
+    m_valid = false;
+    return;
+  }
+
+  m_arc_unpacker.AddBytes(bytes);
+
+  const std::string outdir = File::CreateTempDir();
+
+  const auto callback = [=](const std::string& filename, const std::vector<u8>& outbytes) {
+    const std::string outpath = (outdir + "/" + filename);
+    File::CreateFullPath(outpath);
+    File::IOFile outfile(outpath, "wb");
+    outfile.WriteBytes(outbytes.data(), outbytes.size());
+  };
+
+  m_arc_unpacker.Extract(callback);
 }
 
-void WiiBanner::DecompressLZ77(std::string path)
+std::vector<u8> WiiBanner::DecompressLZ77(std::vector<u8> bytes)
 {
-  File::IOFile file(path, "rb");
-  std::vector<unsigned char> bytes;
-  std::vector<unsigned char> outbytes;
+  std::vector<u8> output;
 
-  file.Seek(20, File::SeekOrigin::Begin);
-  file.ReadBytes(&bytes, (file.GetSize() - 20));
+  u32 uncompressed_length;
+  std::memcpy(&uncompressed_length, &bytes[4], sizeof(u32));
 
-  if (!(fastlz_decompress(bytes.data(), bytes.size(), &outbytes, (bytes.size()*4))))
-    m_valid = false;
+  u8 compression_method = static_cast<uint8_t>(uncompressed_length & 0xFF);
 
-  const std::string outpath = (File::CreateTempDir() + "lz77tmp.bin");
-  File::IOFile outfile(outpath, "wb");
-  outfile.WriteBytes(outbytes.data(), outbytes.size());
+  uncompressed_length >>= 8;
+
+  if (compression_method != 0x10)
+  {
+    return output;
+  }
+
+  // output.resize(uncompressed_length);
+
+  size_t pos = 8;
+  u32 written = 0;
+  while (written != uncompressed_length)
+  {
+    u8 flags = bytes[pos++];
+    for (int f = 0; f != 8; ++f)
+    {
+      if (flags & 0x80)  // If the bit is set, it's a reference
+      {
+        u16 info = (bytes[pos] << 8) | bytes[pos + 1];
+        pos += 2;
+
+        const u8 num = 3 + (info >> 12);
+        const u16 disp = info & 0xFFF;
+        u32 ptr = written - disp - 1;
+
+        for (u8 p = 0; p != num; ++p)
+        {
+          u8 c = output[ptr + p];
+          output.push_back(c);
+          ++written;
+
+          if (written == uncompressed_length)
+            break;
+        }
+      }
+      else
+      {
+        u8 c = bytes[pos++];
+        output.push_back(c);
+        ++written;
+      }
+
+      flags <<= 1;
+
+      if (written == uncompressed_length)
+        break;
+    }
+  }
+
+  return output;
 }
 
 std::string WiiBanner::GetName() const
@@ -146,7 +194,7 @@ std::string WiiBanner::GetName() const
   // but this wont be any more broken
   // ok well not exactly
   // it will be broken in a different way
-  //return UTF16BEToUTF8(m_header.name, std::size(m_header.name));
+  // return UTF16BEToUTF8(m_header.name, std::size(m_header.name));
   return std::string();
 }
 
@@ -170,6 +218,11 @@ std::vector<u32> WiiBanner::GetBanner(u32* width, u32* height) const
   // *width = BANNER_WIDTH;
   // *height = BANNER_HEIGHT;
   // return image_buffer;
+}
+
+std::string WiiBanner::GetDescription() const
+{
+  return std::string();
 }
 
 // const auto callback = [this](const std::string& filename, const std::vector<u8>& bytes)
@@ -219,7 +272,6 @@ std::vector<u32> WiiBanner::GetBanner(u32* width, u32* height) const
 //   file.ReadBytes(&magic, 4);
 //   if (magic != header.magic)
 //     m_valid = false;
-
 
 //   return 0;
 // }

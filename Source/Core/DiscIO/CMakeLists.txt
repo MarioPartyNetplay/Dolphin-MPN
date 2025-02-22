@@ -79,7 +79,6 @@ PRIVATE
   minizip::minizip
   pugixml
   ZLIB::ZLIB
-  FastLZ
 )
 
 if(MSVC)
