@@ -21,7 +21,6 @@ public:
   WiiBanner(const Volume& volume, Partition partition);
 
   bool IsValid() const { return m_valid; }
-  std::string GetPath() const { return m_path; }
   std::string GetName() const;
   std::string GetDescription() const;
 
@@ -29,11 +28,11 @@ public:
 
 private:
   std::vector<u8> DecompressLZ77(std::vector<u8> bytes);
-  void ExtractARC(std::string path);
-  void ExtractBin(std::string path);
+  void ExtractARC();
+  void ExtractBin(const std::vector<u8>& data);
 
   bool m_valid = true;
-  std::string m_path;
+  std::vector<u8> m_bytes;
 };
 
 }  // namespace DiscIO
