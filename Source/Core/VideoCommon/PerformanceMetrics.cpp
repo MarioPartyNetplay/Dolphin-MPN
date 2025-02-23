@@ -106,8 +106,6 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   const float window_width = 93.f * backbuffer_scale;
   float window_y = window_padding;
   float window_x = ImGui::GetIO().DisplaySize.x - window_padding;
-  float window_x_turn = 100.0f;
-  float window_y_turn = 8.0f;
   const float graph_width = 50.f * backbuffer_scale + 3.f * window_width + 2.f * window_padding;
   const float graph_height =
       std::min(200.f * backbuffer_scale, ImGui::GetIO().DisplaySize.y - 85.f * backbuffer_scale);
@@ -246,9 +244,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   {
     float window_height = (30.f) * backbuffer_scale;
 
-    // Position in the top-left corner of the screen.
-    ImGui::SetNextWindowPos(ImVec2(window_x_turn, window_y_turn), ImGuiCond_Always,
-                            ImVec2(1.0f, 0.0f));
+    // Position in the top-left corner of the screen, below the FPS stats.
+    ImGui::SetNextWindowPos(ImVec2(100.0f, window_y), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
    
@@ -258,7 +255,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d",
                            mpn_read_value(CurrentState.Addresses->CurrentTurn, 1),
                            mpn_read_value(CurrentState.Addresses->TotalTurns, 1));
-        ImGui::End();
+      ImGui::End();
     }
   }
 
