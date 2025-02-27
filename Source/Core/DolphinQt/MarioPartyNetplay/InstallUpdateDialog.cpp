@@ -16,6 +16,11 @@
 #include "Common/MinizipUtil.h"
 #include <Common/Logging/Log.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 // Constructor implementation
 InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename)
     : QDialog(parent), // Only pass the parent
@@ -277,14 +282,21 @@ void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
 
 void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
 {
+#ifdef _WIN32
+    #include <windows.h>
+    #include <QMessageBox>
+
     QString argumentsString = arguments.join(" ");
+    std::wstring fileW = file.toStdWString();
+    std::wstring argumentsW = argumentsString.toStdWString();
+
     SHELLEXECUTEINFO sei = {0};
     sei.cbSize = sizeof(SHELLEXECUTEINFO);
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
     sei.hwnd = nullptr;
     sei.lpVerb = L"runas"; // Request admin privileges
-    sei.lpFile = reinterpret_cast<LPCWSTR>(file.utf16()); // Path to batch file
-    sei.lpParameters = reinterpret_cast<LPCWSTR>(argumentsString.utf16()); // Arguments
+    sei.lpFile = fileW.c_str(); // Path to batch file
+    sei.lpParameters = argumentsW.c_str(); // Arguments
     sei.lpDirectory = nullptr;
     sei.nShow = SW_SHOWNORMAL;
 
@@ -292,6 +304,14 @@ void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
     {
         QMessageBox::critical(nullptr, QStringLiteral("Error"), QStringLiteral("Failed to launch %1 as administrator.").arg(file));
     }
+#else
+    #include <QProcess>
+    
+    QProcess process;
+    process.setProgram(file);
+    process.setArguments(arguments);
+    process.startDetached();
+#endif
 }
 
 void InstallUpdateDialog::timerEvent(QTimerEvent *event)
