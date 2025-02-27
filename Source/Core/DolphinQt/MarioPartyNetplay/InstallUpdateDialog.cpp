@@ -94,7 +94,7 @@ void InstallUpdateDialog::install()
   QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
 
   // Hack to remove stuck directory
-  QDir extractDirectoryHack(extractDir);
+  QDir extractDirectoryHack(extractDirectory);
   if (extractDirectoryHack.exists()) {
     extractDirectoryHack.removeRecursively();
   }
