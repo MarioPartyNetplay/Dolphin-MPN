@@ -293,7 +293,7 @@ void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
 
     SHELLEXECUTEINFO sei = {0};
     sei.cbSize = sizeof(SHELLEXECUTEINFO);
-    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE;
     sei.hwnd = nullptr;
     sei.lpVerb = L"runas"; // Request admin privileges
     sei.lpFile = fileW.c_str(); // Path to batch file
