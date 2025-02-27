@@ -94,8 +94,9 @@ void InstallUpdateDialog::install()
   QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
 
   // Hack to remove stuck directory
-  if (extractDirectory.exists()) {
-    extractDirectory.removeRecursively();
+  QDir extractDirectoryHack(extractDir);
+  if (extractDirectoryHack.exists()) {
+    extractDirectoryHack.removeRecursively();
   }
 
   // Ensure the extract directory exists before attempting to unzip
@@ -286,7 +287,7 @@ void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
     #include <windows.h>
     #include <QMessageBox>
 
-    QString argumentsString = arguments.join(QStringLiteral(" "));
+    QString argumentsString = arguments.join(" ");
     std::wstring fileW = file.toStdWString();
     std::wstring argumentsW = argumentsString.toStdWString();
 
