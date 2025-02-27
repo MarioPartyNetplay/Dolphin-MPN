@@ -90,7 +90,7 @@ void InstallUpdateDialog::install()
 
   // Hack to remove stuck directory
   if (extractDir.exists()) {
-    extractDir.removeRecursively()
+    extractDir.removeRecursively();
   }
 
   // Ensure the extract directory exists before attempting to unzip
