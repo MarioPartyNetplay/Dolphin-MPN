@@ -86,8 +86,12 @@ void InstallUpdateDialog::install()
   this->label->setText(QStringLiteral("Extracting %1...").arg(this->filename));
   this->progressBar->setValue(50);
 
-  QString extractDirectory =
-      this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
+  QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
+
+  // Hack to remove stuck directory
+  if (extractDir.exists()) {
+    extractDir.removeRecursively()
+  }
 
   // Ensure the extract directory exists before attempting to unzip
   QDir dir(this->temporaryDirectory);
@@ -273,10 +277,21 @@ void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
 
 void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
 {
-    QProcess process;
-    process.setProgram(file);
-    process.setArguments(arguments);
-    process.startDetached();
+    QString argumentsString = arguments.join(" ");
+    SHELLEXECUTEINFO sei = {0};
+    sei.cbSize = sizeof(SHELLEXECUTEINFO);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    sei.hwnd = nullptr;
+    sei.lpVerb = L"runas"; // Request admin privileges
+    sei.lpFile = reinterpret_cast<LPCWSTR>(file.utf16()); // Path to batch file
+    sei.lpParameters = reinterpret_cast<LPCWSTR>(argumentsString.utf16()); // Arguments
+    sei.lpDirectory = nullptr;
+    sei.nShow = SW_SHOWNORMAL;
+
+    if (!ShellExecuteEx(&sei))
+    {
+        QMessageBox::critical(nullptr, QStringLiteral("Error"), QStringLiteral("Failed to launch %1 as administrator.").arg(file));
+    }
 }
 
 void InstallUpdateDialog::timerEvent(QTimerEvent *event)
