@@ -891,6 +891,9 @@ set(CPACK_SOURCE_GENERATOR "TGZ;TBZ2;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES "\\\\.#;/#;.*~;\\\\.swp;/\\\\.git")
 list(APPEND CPACK_SOURCE_IGNORE_FILES "${CMAKE_BINARY_DIR}")
 
+# Dist package options
+set(CPACK_GENERATOR DEB)
+
 # Resource files (TODO items)
 set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/Readme.md)
 set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/Data/dolphin-mpn.png)
