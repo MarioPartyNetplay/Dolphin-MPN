@@ -30,6 +30,8 @@ if(GIT_FOUND)
     ERROR_QUIET)
 endif()
 
+string(TIMESTAMP DOLPHIN_WC_BUILD_DATE "%Y-%m-%d" UTC)
+
 # version number
 set(DOLPHIN_VERSION_MAJOR "2412")
 set(DOLPHIN_VERSION_MINOR "0")

@@ -213,8 +213,6 @@ add_library(core
   HW/EXI/EXI_DeviceIPL.h
   HW/EXI/EXI_DeviceMemoryCard.cpp
   HW/EXI/EXI_DeviceMemoryCard.h
-  HW/EXI/EXI_DeviceMic.cpp
-  HW/EXI/EXI_DeviceMic.h
   HW/EXI/EXI_DeviceModem.cpp
   HW/EXI/EXI_DeviceModem.h
   HW/EXI/EXI.cpp
@@ -545,6 +543,8 @@ add_library(core
   SysConf.h
   System.cpp
   System.h
+  TimePlayed.cpp
+  TimePlayed.h
   TitleDatabase.cpp
   TitleDatabase.h
   WC24PatchEngine.cpp
@@ -649,7 +649,6 @@ PUBLIC
   videosoftware
 
 PRIVATE
-  cubeb::cubeb
   FatFs
   fmt::fmt
   LZO::LZO
@@ -669,6 +668,14 @@ elseif (ANDROID)
   target_link_libraries(core
   PRIVATE
     androidcommon
+  )
+endif()
+
+if(ENABLE_CUBEB)
+  target_link_libraries(core PUBLIC cubeb)
+  target_sources(core PRIVATE
+    HW/EXI/EXI_DeviceMic.cpp
+    HW/EXI/EXI_DeviceMic.h
   )
 endif()
 

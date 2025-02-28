@@ -125,20 +125,7 @@ void PatchFixedFunctions(Core::System& system)
   // Not part of the binary itself, but either we or Gecko OS might insert
   // this, and it doesn't clear the icache properly.
 
-  const bool is_mpn_handler_and_game_id_gp7e01 =
-      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP7E01");
-  const bool is_mpn_handler_and_game_id_gp6e01 =
-      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP6E01");
-  const bool is_mpn_handler_and_game_id_gp5e01 =
-      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP5E01");
-
-  u32 codelist_hook = is_mpn_handler_and_game_id_gp7e01 ?
-                          Gecko::ENTRY_POINT_MP7 :
-                          is_mpn_handler_and_game_id_gp6e01 ?
-                          Gecko::ENTRY_POINT_MP6 :
-                          is_mpn_handler_and_game_id_gp5e01 ?
-                          Gecko::ENTRY_POINT_MP5 :
-                                                          Gecko::ENTRY_POINT;
+  u32 codelist_hook = Gecko::ENTRY_POINT;
 
 
   Patch(system, codelist_hook, "GeckoCodehandler");

@@ -125,7 +125,38 @@ QColor MappingIndicator::GetAltTextColor() const
 void MappingIndicator::AdjustGateColor(QColor* color)
 {
   if (Settings::Instance().IsThemeDark())
-    color->setHsvF(color->hueF(), color->saturationF(), 1 - color->valueF());
+    color->setHsvF(color->hueF(), std::min(color->saturationF(), 0.5f), color->valueF() * 0.35f);
+}
+
+ButtonIndicator::ButtonIndicator(ControlReference* control_ref) : m_control_ref{control_ref}
+{
+  setSizePolicy(QSizePolicy::Policy::Fixed, QSizePolicy::Policy::Fixed);
+}
+
+QSize ButtonIndicator::sizeHint() const
+{
+  return QSize{INPUT_DOT_RADIUS + 2,
+               QFontMetrics(font()).boundingRect(QStringLiteral("[")).height()};
+}
+
+void ButtonIndicator::Draw()
+{
+  QPainter p(this);
+  p.setBrush(GetBBoxBrush());
+  p.setPen(GetBBoxPen());
+  p.drawRect(QRect{{0, 0}, size() - QSize{1, 1}});
+
+  const auto input_value = std::clamp(m_control_ref->GetState<ControlState>(), 0.0, 1.0);
+  const bool is_pressed = std::lround(input_value) != 0;
+  QSizeF value_size = size() - QSizeF{2, 2};
+  value_size.setHeight(value_size.height() * input_value);
+
+  p.translate(0, height());
+  p.scale(1, -1);
+
+  p.setPen(Qt::NoPen);
+  p.setBrush(is_pressed ? GetAdjustedInputColor() : GetRawInputColor());
+  p.drawRect(QRectF{{1, 1}, value_size});
 }
 
 SquareIndicator::SquareIndicator()

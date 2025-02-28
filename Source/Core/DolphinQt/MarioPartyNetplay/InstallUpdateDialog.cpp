@@ -16,6 +16,11 @@
 #include "Common/MinizipUtil.h"
 #include <Common/Logging/Log.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 // Constructor implementation
 InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename)
     : QDialog(parent), // Only pass the parent
@@ -86,8 +91,13 @@ void InstallUpdateDialog::install()
   this->label->setText(QStringLiteral("Extracting %1...").arg(this->filename));
   this->progressBar->setValue(50);
 
-  QString extractDirectory =
-      this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
+  QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
+
+  // Hack to remove stuck directory
+  QDir extractDirectoryHack(extractDirectory);
+  if (extractDirectoryHack.exists()) {
+    extractDirectoryHack.removeRecursively();
+  }
 
   // Ensure the extract directory exists before attempting to unzip
   QDir dir(this->temporaryDirectory);
@@ -154,6 +164,8 @@ void InstallUpdateDialog::install()
       QStringLiteral("   start \"\" cmd /c \"echo Update failed && pause\""),
       QStringLiteral(")"),
       QStringLiteral("rmdir /S /Q \"") + this->temporaryDirectory + QStringLiteral("\""),
+      QStringLiteral("exit") + QStringLiteral("\""),
+
   };
   this->writeAndRunScript(scriptLines);
 #endif
@@ -273,10 +285,36 @@ void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
 
 void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
 {
+#ifdef _WIN32
+    #include <windows.h>
+    #include <QMessageBox>
+
+    QString argumentsString = arguments.join(QStringLiteral(" "));
+    std::wstring fileW = file.toStdWString();
+    std::wstring argumentsW = argumentsString.toStdWString();
+
+    SHELLEXECUTEINFO sei = {0};
+    sei.cbSize = sizeof(SHELLEXECUTEINFO);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE;
+    sei.hwnd = nullptr;
+    sei.lpVerb = L"runas"; // Request admin privileges
+    sei.lpFile = fileW.c_str(); // Path to batch file
+    sei.lpParameters = argumentsW.c_str(); // Arguments
+    sei.lpDirectory = nullptr;
+    sei.nShow = SW_SHOWNORMAL;
+
+    if (!ShellExecuteEx(&sei))
+    {
+        QMessageBox::critical(nullptr, QStringLiteral("Error"), QStringLiteral("Failed to launch %1 as administrator.").arg(file));
+    }
+#else
+    #include <QProcess>
+    
     QProcess process;
     process.setProgram(file);
     process.setArguments(arguments);
     process.startDetached();
+#endif
 }
 
 void InstallUpdateDialog::timerEvent(QTimerEvent *event)

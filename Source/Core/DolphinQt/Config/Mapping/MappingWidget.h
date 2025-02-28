@@ -3,13 +3,9 @@
 
 #pragma once
 
-#include <memory>
-#include <vector>
-
 #include <QString>
 #include <QWidget>
 
-class ControlGroupBox;
 class InputConfig;
 class MappingButton;
 class MappingNumeric;
@@ -60,4 +56,5 @@ protected:
 
 private:
   MappingWindow* m_parent;
+  MappingButton* m_previous_mapping_button = nullptr;
 };
