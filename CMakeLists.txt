@@ -892,7 +892,7 @@ set(CPACK_SOURCE_IGNORE_FILES "\\\\.#;/#;.*~;\\\\.swp;/\\\\.git")
 list(APPEND CPACK_SOURCE_IGNORE_FILES "${CMAKE_BINARY_DIR}")
 
 # Resource files (TODO items)
-set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/README.md)
+set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/Readme.md)
 set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/Data/dolphin-mpn.png)
 
 # CPack must be included after the CPACK_* variables are set in order for those
