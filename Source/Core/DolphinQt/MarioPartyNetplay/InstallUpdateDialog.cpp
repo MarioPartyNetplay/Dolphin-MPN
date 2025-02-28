@@ -164,6 +164,8 @@ void InstallUpdateDialog::install()
       QStringLiteral("   start \"\" cmd /c \"echo Update failed && pause\""),
       QStringLiteral(")"),
       QStringLiteral("rmdir /S /Q \"") + this->temporaryDirectory + QStringLiteral("\""),
+      QStringLiteral("exit") + QStringLiteral("\""),
+
   };
   this->writeAndRunScript(scriptLines);
 #endif
