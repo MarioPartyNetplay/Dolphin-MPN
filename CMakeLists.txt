@@ -853,32 +853,49 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux|FreeBSD|OpenBSD")
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man6)
 endif()
 
-# packaging information
+# General package info
 set(CPACK_PACKAGE_NAME "dolphin-mpn")
-set(CPACK_PACKAGE_VENDOR "Dolphin Team")
+set(CPACK_PACKAGE_VENDOR "Mario Party Netplay")
 set(CPACK_PACKAGE_VERSION_MAJOR ${DOLPHIN_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${DOLPHIN_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${DOLPHIN_VERSION_PATCH})
 set(CPACK_PACKAGE_DESCRIPTION_FILE ${PROJECT_SOURCE_DIR}/Data/cpack_package_description.txt)
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A GameCube and Wii emulator")
 
-set(CPACK_RPM_PACKAGE_GROUP System/Emulators/Other)
-set(CPACK_RPM_PACKAGE_LICENSE GPL-2.0)
-# TODO: CPACK_RESOURCE_FILE_README
-# TODO: CPACK_RESOURCE_FILE_WELCOME
-# TODO: CPACK_PACKAGE_ICON
-# TODO: CPACK_NSIS_*
-# TODO: Use CPack components for DSPSpy, etc => cpack_add_component
+# RPM Specific
+# set(CPACK_RPM_PACKAGE_GROUP "System/Emulators/Other")
+# set(CPACK_RPM_PACKAGE_LICENSE "GPL-2.0")
+# set(CPACK_RPM_PACKAGE_ARCHITECTURE "x86_64")
+# set(CPACK_RPM_PACKAGE_REQUIRES "glibc, libstdc++, SDL2")
+# set(CPACK_RPM_PACKAGE_VENDOR "Mario Party Netplay")
+# set(CPACK_RPM_PACKAGE_MAINTAINER "Dolphin Team <team@dolphin-emu.org>")
 
-# Debian Specific. Install dpkg-dev for automatic deps generation
+# Debian Specific
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_SECTION "Games")
-
+set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_SET_DESTDIR ON)
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Tabitha Hanegan <info@tabithahanegan.com>")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS 
+    "libasound2t64, libavcodec61, libavformat61, libavutil59, libbluetooth3, 
+    libbz2-1.0, libc6, libcubeb0, libcurl4t64, libegl1, libenet7, libevdev2, 
+    libfmt10, libgcc-s1, libglx0, libhidapi-hidraw0, liblz4-1, liblzma5, 
+    liblzo2-2, libmgba0.10t64, libminiupnpc18, libopengl0, libpugixml1v5, 
+    libpulse0, libqt6core6t64, libqt6dbus6, libqt6gui6, libqt6widgets6, 
+    libsdl2-2.0-0, libsfml-network2.6, libsfml-system2.6, libspng0, libstb0t64, 
+    libstdc++6, libswscale8, libtinygltf6d, libudev1, libusb-1.0-0, libx11-6, 
+    libxi6, libxrandr2, libxxhash0, libzstd1, zlib1g")
+
+# Source package options
 set(CPACK_SOURCE_GENERATOR "TGZ;TBZ2;ZIP")
-set(CPACK_SOURCE_IGNORE_FILES  "\\\\.#;/#;.*~;\\\\.swp;/\\\\.git")
+set(CPACK_SOURCE_IGNORE_FILES "\\\\.#;/#;.*~;\\\\.swp;/\\\\.git")
 list(APPEND CPACK_SOURCE_IGNORE_FILES "${CMAKE_BINARY_DIR}")
+
+# Resource files (TODO items)
+set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/README.md)
+set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/Data/dolphin-mpn.png)
 
 # CPack must be included after the CPACK_* variables are set in order for those
 # variables to take effect.
-Include(CPack)
+include(InstallRequiredSystemLibraries)
+include(CPack)
