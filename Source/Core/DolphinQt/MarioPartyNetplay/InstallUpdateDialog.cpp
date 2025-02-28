@@ -81,6 +81,8 @@ void InstallUpdateDialog::install()
                        "information && pause\""),
         QStringLiteral(")"),
         QStringLiteral("rmdir /S /Q \"") + this->temporaryDirectory + QStringLiteral("\""),
+        QStringLiteral("exit") + QStringLiteral("\""),
+
     };
     this->writeAndRunScript(scriptLines);
     this->accept();
@@ -301,8 +303,13 @@ void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
     sei.lpFile = fileW.c_str(); // Path to batch file
     sei.lpParameters = argumentsW.c_str(); // Arguments
     sei.lpDirectory = nullptr;
-    sei.nShow = SW_SHOWNORMAL;
+    sei.nShow = SW_HIDE; // Hide the window
 
+    if (ShellExecuteEx(&sei)) {
+        WaitForSingleObject(sei.hProcess, INFINITE);
+        CloseHandle(sei.hProcess);
+    }
+    
     if (!ShellExecuteEx(&sei))
     {
         QMessageBox::critical(nullptr, QStringLiteral("Error"), QStringLiteral("Failed to launch %1 as administrator.").arg(file));
