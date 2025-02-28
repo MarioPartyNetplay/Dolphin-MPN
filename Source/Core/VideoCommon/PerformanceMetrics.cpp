@@ -29,6 +29,7 @@ void PerformanceMetrics::Reset()
   m_cpu_times.fill(Core::System::GetInstance().GetCoreTiming().GetCPUTimePoint(0));
 }
 
+
 void PerformanceMetrics::CountFrame()
 {
   m_fps_counter.Count();
@@ -124,6 +125,26 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
 
   float window_y = window_padding;
   float window_x = ImGui::GetIO().DisplaySize.x - window_padding;
+
+  const auto clamp_window_position = [&]() {
+    const ImVec2 position = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    const float window_min_x = window_padding;
+    const float window_max_x = display_size.x - window_padding - size.x;
+    const float window_min_y = window_padding;
+    const float window_max_y = display_size.y - window_padding - size.y;
+
+    if (window_min_x > window_max_x || window_min_y > window_max_y)
+      return;
+
+    const float window_x = std::clamp(position.x, window_min_x, window_max_x);
+    const float window_y = std::clamp(position.y, window_min_y, window_max_y);
+    const bool window_needs_clamping = (window_x != position.x) || (window_y != position.y);
+
+    if (window_needs_clamping)
+      ImGui::SetWindowPos(ImVec2(window_x, window_y), ImGuiCond_Always);
+  };
+  
   const float graph_width = 50.f * backbuffer_scale + 3.f * window_width + 2.f * window_padding;
   const float graph_height =
       std::min(200.f * backbuffer_scale, display_size.y - 85.f * backbuffer_scale);
