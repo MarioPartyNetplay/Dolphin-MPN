@@ -21,14 +21,12 @@ bool mpn_update_discord()
   if (CurrentState.Scenes != NULL && CurrentState.Scene != NULL)
     RichPresence.state = CurrentState.Scene->Name.c_str();
 
-  if (mpn_read_value(CurrentState.Addresses->CurrentTurn, 1) == (mpn_read_value(CurrentState.Addresses->TotalTurns, 1) + 1))
-  {
-    State::Save(Core::System::GetInstance(), 1);
-  }
   if (CurrentState.Addresses != NULL)
   {
-    if (mpn_read_value(CurrentState.Addresses->CurrentTurn, 1) ==
-        (mpn_read_value(CurrentState.Addresses->TotalTurns, 1) + 1))
+    if ((mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP4) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 78) ||
+       (mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP5) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 105) ||
+       (mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP6) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 92) ||
+       (mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP7) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 1))
     {
       State::Save(Core::System::GetInstance(), 1);
     }
