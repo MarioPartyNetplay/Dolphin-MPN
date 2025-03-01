@@ -512,7 +512,6 @@
     <!---<DataSysFiles Include="$(DolphinRootDir)Data\**\Extras\**\*.*" />-->
     <DataSysFiles Include="$(DolphinRootDir)Data\**\Games\**\*.*" />
     <DataSysFiles Include="$(DolphinRootDir)Data\**\Sys\**\*.*" />
-    <DataUserFiles Include="$(DolphinRootDir)Data\**\Updater\**\*.*" />
     <DataUserFiles Include="$(DolphinRootDir)Data\**\User\**\*.*" />
     <DataTxtFiles Include="$(DolphinRootDir)Data\license.txt" />
     <DataTxtFiles Include="$(DolphinRootDir)Data\portable.txt" />
