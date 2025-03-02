@@ -209,10 +209,10 @@ void mpn_per_frame()
     if (Needs && MPN_PUSHY_PENGUINS)
     {
       OSD_PUSH(GFX_HACK_DISABLE_COPY_TO_VRAM)
-      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, false);
+      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, true);
     }
     else
-      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, true);
+      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, false);
 
     UpdateActiveConfig();
   }
