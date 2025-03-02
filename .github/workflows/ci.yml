@@ -68,7 +68,7 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-ubuntu-24.04-linux-x86_64
+        name: DolphinMPN-ubuntu-22.04-linux-x86_64
         path: build/OUT/
         
   build_macos:
