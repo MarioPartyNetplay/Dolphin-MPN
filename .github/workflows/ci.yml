@@ -100,9 +100,6 @@ jobs:
         certificate-profile-name: vscx-certificate-profile
         files-folder: Binary/x64/
         files-folder-filter: exe,dll
-        file-digest: SHA256
-        timestamp-rfc3161: http://timestamp.acs.microsoft.com
-        timestamp-digest: SHA256    
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
