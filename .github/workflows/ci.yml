@@ -33,8 +33,27 @@ jobs:
         name: DolphinMPN-flatpak-linux-x86_64
         path: /__w/Dolphin-MPN/Dolphin-MPN/FLATPAKDIST
 
-  build_deb:
+  build_deb24_04:
     runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Submodules
+      run: git submodule update --init --recursive
+    - name: Setup Packages
+      run: |
+        sudo apt update --fix-missing
+        sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
+    - name: Build
+      run: |
+        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb OUT/
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DolphinMPN-ubuntu-24.04-linux-x86_64
+        path: build/OUT/
+
+  build_deb22_04:
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v2
     - name: Setup Submodules
