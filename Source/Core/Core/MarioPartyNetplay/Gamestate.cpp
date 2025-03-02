@@ -6,6 +6,10 @@
 #include "Gamestate.h"
 #include "Core/System.h"
 
+#include <chrono>
+static auto lastTriggerTime = std::chrono::steady_clock::now();
+static bool waiting = false;
+static int storedSceneId = -1; // Variable to store the previous scene ID
 mpn_state_t CurrentState;
 
 
@@ -156,12 +160,24 @@ void mpn_per_frame()
 {
   uint8_t Needs = 0;
 
-  if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId)
-    return;
-
   mpn_update_board();
   mpn_update_discord();
-
+  
+  if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
+    if (!waiting) {
+        lastTriggerTime = std::chrono::steady_clock::now();
+        storedSceneId = CurrentState.PreviousSceneId; // Store previous scene ID
+        waiting = true;
+    }
+    
+    if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.25)) {
+        return; // Wait for 5 seconds before proceeding
+    }
+    
+    // 5 seconds passed, reset timer and load stored scene
+    waiting = false;
+  }
+  
   Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
   if (Needs != MPN_NEEDS_NOTHING)
@@ -189,6 +205,14 @@ void mpn_per_frame()
     }
     else
       Config::SetCurrent(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM, true);
+
+    if (Needs && MPN_PUSHY_PENGUINS)
+    {
+      OSD_PUSH(GFX_HACK_DISABLE_COPY_TO_VRAM)
+      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, false);
+    }
+    else
+      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, true);
 
     UpdateActiveConfig();
   }

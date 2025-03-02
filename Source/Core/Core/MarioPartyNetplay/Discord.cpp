@@ -10,6 +10,10 @@
 #include "Core/IOS/DolphinDevice.h"
 #include <Core/State.h>
 #include "Core/System.h"
+#include "Common/Logging/Log.h"
+
+static int previousSceneId = -1;
+static bool hasSaved = false; 
 
 bool mpn_update_discord()
 {
@@ -21,15 +25,49 @@ bool mpn_update_discord()
   if (CurrentState.Scenes != NULL && CurrentState.Scene != NULL)
     RichPresence.state = CurrentState.Scene->Name.c_str();
 
+  int gameID = mpn_read_value(0x00000000, 4);
+  int sceneValue = -1;
+  bool shouldSave = false;
+
+  if (gameID == MPN_GAMEID_MP4)
+  {
+    sceneValue = mpn_read_value(0x001D3CE3, 1);
+    shouldSave = (sceneValue == 0x4E);
+  }
+  else if (gameID == MPN_GAMEID_MP5)
+  {
+    sceneValue = mpn_read_value(0x00288863, 1);
+    shouldSave = (sceneValue == 0x69);
+  }
+  else if (gameID == MPN_GAMEID_MP6)
+  {
+    sceneValue = mpn_read_value(0x002C0257, 1);
+    shouldSave = (sceneValue == 0x5C);
+  }
+  else if (gameID == MPN_GAMEID_MP7)
+  {
+    sceneValue = mpn_read_value(0x002F2F3F, 1);
+    shouldSave = (sceneValue == 0x1);
+  }
+
+  
+  if (shouldSave) {
+    // Check if the Scene ID hasn't changed and we haven't already saved
+    if (previousSceneId == CurrentState.CurrentSceneId && !hasSaved) {
+        // Scene ID hasn't changed, and we haven't saved yet, so save the state
+        State::Save(Core::System::GetInstance(), 1);
+        hasSaved = true;  // Mark as saved to prevent further saves until conditions change
+    }
+    
+    // Store the current Scene ID for future checks
+    previousSceneId = CurrentState.CurrentSceneId;
+  } else {
+      // Reset the save flag if conditions change (optional)
+      hasSaved = false;
+  }
+
   if (CurrentState.Addresses != NULL)
   {
-    if ((mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP4) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 78) ||
-       (mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP5) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 105) ||
-       (mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP6) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 92) ||
-       (mpn_read_value(0x00000000, 4) == MPN_GAMEID_MP7) && (mpn_read_value(CurrentState.CurrentSceneId, 2) == 1))
-    {
-      State::Save(Core::System::GetInstance(), 1);
-    }
 
     // Add controller port values
     int value1 = mpn_read_value(CurrentState.Addresses->ControllerPortAddress1, 1);
