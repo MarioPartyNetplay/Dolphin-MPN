@@ -157,64 +157,65 @@ bool mpn_update_state()
 
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
-{
-  uint8_t Needs = 0;
+  if CurrentState.IsMarioParty == true {
+    uint8_t Needs = 0;
 
-  mpn_update_board();
-  mpn_update_discord();
-  
-  if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
-    if (!waiting) {
-        lastTriggerTime = std::chrono::steady_clock::now();
-        storedSceneId = CurrentState.PreviousSceneId; // Store previous scene ID
-        waiting = true;
-    }
+    mpn_update_board();
+    mpn_update_discord();
     
-    if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.25)) {
-        return; // Wait for 5 seconds before proceeding
-    }
-    
-    // 5 seconds passed, reset timer and load stored scene
-    waiting = false;
-  }
-  
-  Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
+    if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
+      if (!waiting) {
+          lastTriggerTime = std::chrono::steady_clock::now();
+          storedSceneId = CurrentState.PreviousSceneId; // Store previous scene ID
+          waiting = true;
+      }
 
-  if (Needs != MPN_NEEDS_NOTHING)
-  {
-    if (Needs & MPN_NEEDS_SAFE_TEX_CACHE)
+      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.25)) {
+          return; // Wait for 5 seconds before proceeding
+      }
+
+      // 5 seconds passed, reset timer and load stored scene
+      waiting = false;
+    }
+
+    Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
+
+    if (Needs != MPN_NEEDS_NOTHING)
     {
-      OSD_PUSH(GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES)
-      Config::SetCurrent(Config::GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES, 0);
-    }
-    else
-      Config::SetCurrent(Config::GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES, 128);
+      if (Needs & MPN_NEEDS_SAFE_TEX_CACHE)
+      {
+        OSD_PUSH(GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES)
+        Config::SetCurrent(Config::GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES, 0);
+      }
+      else
+        Config::SetCurrent(Config::GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES, 128);
 
-    if (Needs & MPN_NEEDS_NATIVE_RES)
-    {
-      OSD_PUSH(GFX_EFB_SCALE)
-      Config::SetCurrent(Config::GFX_EFB_SCALE, 1);
-    }
-    else
-      Config::SetCurrent(Config::GFX_EFB_SCALE, Config::GetBase(Config::GFX_EFB_SCALE));
+      if (Needs & MPN_NEEDS_NATIVE_RES)
+      {
+        OSD_PUSH(GFX_EFB_SCALE)
+        Config::SetCurrent(Config::GFX_EFB_SCALE, 1);
+      }
+      else
+        Config::SetCurrent(Config::GFX_EFB_SCALE, Config::GetBase(Config::GFX_EFB_SCALE));
 
-    if (Needs & MPN_NEEDS_EFB_TO_TEXTURE)
-    {
-      OSD_PUSH(GFX_HACK_SKIP_EFB_COPY_TO_RAM)
-      Config::SetCurrent(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM, false);
-    }
-    else
-      Config::SetCurrent(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM, true);
+      if (Needs & MPN_NEEDS_EFB_TO_TEXTURE)
+      {
+        OSD_PUSH(GFX_HACK_SKIP_EFB_COPY_TO_RAM)
+        Config::SetCurrent(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM, false);
+      }
+      else
+        Config::SetCurrent(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM, true);
 
-    if (Needs && MPN_PUSHY_PENGUINS)
-    {
-      OSD_PUSH(GFX_HACK_DISABLE_COPY_TO_VRAM)
-      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, true);
-    }
-    else
-      Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, false);
+      if (Needs && MPN_PUSHY_PENGUINS)
+      {
+        OSD_PUSH(GFX_HACK_DISABLE_COPY_TO_VRAM)
+        Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, true);
+      }
+      else
+        Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, false);
 
-    UpdateActiveConfig();
+      UpdateActiveConfig();
+    }
   }
 }
 
