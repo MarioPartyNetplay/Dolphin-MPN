@@ -1,4 +1,4 @@
-/*
+ix /*
 *  Dolphin for Mario Party Netplay
 *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
 */
@@ -157,7 +157,9 @@ bool mpn_update_state()
 
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
-  if CurrentState.IsMarioParty == true {
+{
+  if CurrentState.IsMarioParty == true 
+  {
     uint8_t Needs = 0;
 
     mpn_update_board();
