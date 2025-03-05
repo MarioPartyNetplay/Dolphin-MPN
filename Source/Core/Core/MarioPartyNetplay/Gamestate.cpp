@@ -1,4 +1,4 @@
-ix /*
+/*
 *  Dolphin for Mario Party Netplay
 *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
 */
