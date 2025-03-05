@@ -158,7 +158,7 @@ bool mpn_update_state()
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
 {
-  if CurrentState.IsMarioParty == true 
+  if CurrentState.IsMarioParty
   {
     uint8_t Needs = 0;
 
