@@ -158,8 +158,6 @@ bool mpn_update_state()
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
 {
-  mpn_update_board();
-  mpn_update_discord();
   if (CurrentState.IsMarioParty)
   {
     uint8_t Needs = 0;
@@ -176,6 +174,9 @@ void mpn_per_frame()
       }
       waiting = false;
     }
+
+    mpn_update_board();
+    mpn_update_discord();
 
     Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
