@@ -20,18 +20,10 @@ jobs:
         flatpak install org.kde.Sdk//5.15 org.kde.Platform//5.15 -y && \
         dnf install libusb1-devel cmake git gcc-c++ libXext-devel libgudev qt6-qtbase-devel systemd-devel openal-soft-devel libevdev-devel libao-devel SOIL-devel libXrandr-devel pulseaudio-libs-devel bluez-libs-devel p7zip SDL2-devel make automake gcc gcc-c++ kernel-devel -y
     - name: Run Flatpak Builder
-      uses: jochumdev/flatpak-github-actions/flatpak-builder@builder-update-deps
+      uses: flatpak/flatpak-github-actions/flatpak-builder@v6
       with:
         manifest-path: Distribution/flatpak.yml
         bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
-        upload-artifact: false
-    - name: Move Flatpak package (manual hack)
-      run: mkdir "FLATPAKDIST" && cp "/__w/Dolphin-MPN/Dolphin-MPN/DolphinMPN-flatpak-linux-x86_64.flatpak" "/__w/Dolphin-MPN/Dolphin-MPN/FLATPAKDIST"
-    - name: Upload Build Artifact (manual hack)
-      uses: actions/upload-artifact@v4
-      with:
-        name: DolphinMPN-flatpak-linux-x86_64
-        path: /__w/Dolphin-MPN/Dolphin-MPN/FLATPAKDIST
 
   build_deb24_04:
     runs-on: ubuntu-24.04
