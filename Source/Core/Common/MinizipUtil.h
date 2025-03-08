@@ -6,14 +6,17 @@
 #include <algorithm>
 
 #include <unzip.h>
-
 #include "Common/CommonTypes.h"
 #include "Common/ScopeGuard.h"
+
+#ifdef __unix__
+#include <sys/stat.h>
+#endif
 
 namespace Common
 {
 // Reads all of the current file. destination must be big enough to fit the whole file.
-inline bool ReadFileFromZip(unzFile file, u8* destination, u64 len)
+inline bool ReadFileFromZip(unzFile file, u8* destination, u64 len, mode_t permissions = 0755)
 {
   const u64 MAX_BUFFER_SIZE = 65535;
 
@@ -36,6 +39,12 @@ inline bool ReadFileFromZip(unzFile file, u8* destination, u64 len)
     bytes_to_go -= bytes_read;
     destination += bytes_read;
   }
+
+  #ifdef __unix__ // Check if compiling on a Unix-like system
+  // Set the file permissions after reading
+  if (chmod(reinterpret_cast<const char*>(destination), permissions) != 0) // Set permissions
+    return false;
+  #endif
 
   return unzEndOfFile(file) == 1;
 }

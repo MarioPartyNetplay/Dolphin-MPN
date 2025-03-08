@@ -51,10 +51,14 @@ InstallUpdateDialog::~InstallUpdateDialog(void)
 
 void InstallUpdateDialog::install()
 {
-  QString fullFilePath = QCoreApplication::applicationDirPath() + QStringLiteral("/") + this->filename;
-  QString appPath = QCoreApplication::applicationDirPath();
+  QString fullFilePath = this->temporaryDirectory + QDir::separator() + this->filename;
+  #ifdef _WIN32
+  QString ppPath = QCoreApplication::applicationDirPath(); // Set the installation directory
+  #endif
+  #ifdef __APPLE__
+  QString appPath = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
+  #endif
   QString appPid = QString::number(QCoreApplication::applicationPid());
-
   // Convert paths to native format
   this->temporaryDirectory = QDir::toNativeSeparators(this->temporaryDirectory);
   fullFilePath = QDir::toNativeSeparators(fullFilePath);
@@ -134,7 +138,7 @@ void InstallUpdateDialog::install()
       QStringLiteral("echo '== Terminating application with PID ") + appPid + QStringLiteral("'"),
       QStringLiteral("kill -9 ") + appPid,
       QStringLiteral("echo '== Removing old application files'"),
-      QStringLiteral("rm -f \"") + fullFilePath + QStringLiteral("\""),
+      QStringLiteral("rm -f \"") + appPath + QStringLiteral("\""),
       QStringLiteral("echo '== Copying new files to ") + appPath + QStringLiteral("'"),
       QStringLiteral("cp -r \"") + extractDirectory + QStringLiteral("/\"* \"") + appPath +
           QStringLiteral("\""),
