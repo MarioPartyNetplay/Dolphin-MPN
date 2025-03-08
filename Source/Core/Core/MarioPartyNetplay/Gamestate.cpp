@@ -158,25 +158,22 @@ bool mpn_update_state()
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
 {
+  mpn_update_board();
+  mpn_update_discord();
   if (CurrentState.IsMarioParty)
   {
     uint8_t Needs = 0;
 
-    mpn_update_board();
-    mpn_update_discord();
-    
     if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
       if (!waiting) {
           lastTriggerTime = std::chrono::steady_clock::now();
-          storedSceneId = CurrentState.PreviousSceneId; // Store previous scene ID
+          storedSceneId = CurrentState.PreviousSceneId;
           waiting = true;
       }
 
       if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.25)) {
-          return; // Wait for 5 seconds before proceeding
+          return;
       }
-
-      // 5 seconds passed, reset timer and load stored scene
       waiting = false;
     }
 
