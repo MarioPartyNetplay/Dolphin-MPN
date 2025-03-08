@@ -56,7 +56,7 @@ void InstallUpdateDialog::install()
   #ifdef __APPLE__
   QString appPath = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../"); // Set the installation directory
   #else
-  QString appPath = QCoreApplication::applicationDirPath());
+  QString appPath = QCoreApplication::applicationDirPath();
   #endif
 
   QString appPid = QString::number(QCoreApplication::applicationPid());
