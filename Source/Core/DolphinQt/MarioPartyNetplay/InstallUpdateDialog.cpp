@@ -52,12 +52,13 @@ InstallUpdateDialog::~InstallUpdateDialog(void)
 void InstallUpdateDialog::install()
 {
   QString fullFilePath = this->temporaryDirectory + QDir::separator() + this->filename;
-  #ifdef _WIN32
-  QString ppPath = QCoreApplication::applicationDirPath(); // Set the installation directory
-  #endif
+  
   #ifdef __APPLE__
-  QString appPath = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
+  QString appPath = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../"); // Set the installation directory
+  #else
+  QString appPath = QCoreApplication::applicationDirPath());
   #endif
+
   QString appPid = QString::number(QCoreApplication::applicationPid());
   // Convert paths to native format
   this->temporaryDirectory = QDir::toNativeSeparators(this->temporaryDirectory);
