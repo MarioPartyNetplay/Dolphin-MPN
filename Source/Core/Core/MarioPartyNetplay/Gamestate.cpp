@@ -158,7 +158,8 @@ bool mpn_update_state()
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
 {
-  if (CurrentState.IsMarioParty)
+  
+  if (SConfig::GetInstance().GetGameID() == "GMPE01" || SConfig::GetInstance().GetGameID() == "GP5E01" || SConfig::GetInstance().GetGameID() == "GP6E01" || SConfig::GetInstance().GetGameID() == "GP7E01" || SConfig::GetInstance().GetGameID() == "RM8E01" || SConfig::GetInstance().GetGameID() == "GMPEDX")
   {
     uint8_t Needs = 0;
 
