@@ -171,7 +171,7 @@ void mpn_per_frame()
           waiting = true;
       }
 
-      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.25)) {
+      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.05)) {
           return;
       }
       waiting = false;
