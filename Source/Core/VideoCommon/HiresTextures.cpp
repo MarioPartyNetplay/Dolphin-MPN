@@ -13,7 +13,11 @@
 #include <utility>
 #include <vector>
 #include <xxhash.h>
-
+#include <algorithm>
+#include <string>
+#include <set>
+#include <filesystem>
+#include <iostream>
 #include <fmt/format.h>
 
 #include "Common/CommonPaths.h"
@@ -82,14 +86,17 @@ void HiresTexture::Shutdown()
   Clear();
 }
 
+bool ContainsGeneratedInFileName(const std::filesystem::path& filePath) {
+  return filePath.filename().string().find("Generated") != std::string::npos;
+}
+
+// Function to check if a directory can be accessed (if it's valid)
+bool CanAccessDirectory(const std::filesystem::path& dir) {
+  return std::filesystem::exists(dir) && std::filesystem::is_directory(dir);
+}
+
 void HiresTexture::Update()
 {
-  if (!g_ActiveConfig.bHiresTextures)
-  {
-    Clear();
-    return;
-  }
-
   const std::string& game_id = SConfig::GetInstance().GetGameID();
   std::set<std::string> texture_directories =
       GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
@@ -98,6 +105,46 @@ void HiresTexture::Update()
       GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/Textures/", game_id);
         
   texture_directories.insert(additional_texture_directories.begin(), additional_texture_directories.end());
+
+  if (!g_ActiveConfig.bHiresTextures1)
+  {
+    const std::string& game_id = SConfig::GetInstance().GetGameID();
+
+    std::set<std::string> texture_directories =
+        GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
+
+    const std::set<std::string> additional_texture_directories =
+        GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/Textures/", game_id);
+
+    texture_directories.insert(additional_texture_directories.begin(), additional_texture_directories.end());
+
+    // Iterate over texture_directories and remove directories containing "Generated" files
+    for (auto it = texture_directories.begin(); it != texture_directories.end(); ) {
+      bool contains_generated = false;
+      // Check if directory can be accessed (exists and is a directory)
+      if (!CanAccessDirectory(*it)) {
+          std::cerr << "Warning: Unable to access directory: " << *it << std::endl;
+          it = texture_directories.erase(it);  // Remove the directory and move to the next
+          continue;
+      }
+
+      // Iterate over all files in the directory
+      for (const auto& entry : std::filesystem::directory_iterator(*it)) {
+          if (ContainsGeneratedInFileName(entry.path())) {
+              contains_generated = true;
+              break;
+          }
+      }
+
+      // Remove the directory if it contains a "Generated" file
+      if (contains_generated) {
+          std::cerr << "Warning: Directory contains 'Generated' files and will be removed: " << *it << std::endl;
+          it = texture_directories.erase(it);  // Remove the directory and move to the next
+      } else {
+          ++it;  // Move to the next directory if it's valid
+      }
+    }
+  }
 
   const std::vector<std::string> extensions{".png", ".dds"};
 
