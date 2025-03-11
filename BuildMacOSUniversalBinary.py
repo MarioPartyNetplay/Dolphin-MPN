@@ -44,13 +44,11 @@ DEFAULT_CONFIG = {
 
     # Location for CMake to search for files (default is for homebrew)
     "arm64_cmake_prefix":  "/opt/homebrew",
-    "x86_64_cmake_prefix": "/usr/local",
 
     # Locations to qt5 directories for arm and x64 libraries
     # The default values of these paths are taken from the default
     # paths used for homebrew
     "arm64_qt5_path":  "/opt/homebrew/opt/qt5",
-    "x86_64_qt5_path": "/usr/local/opt/qt5",
 
     # Identity to use for code signing. "-" indicates that the app will not
     # be cryptographically signed/notarized but will instead just use a
@@ -62,10 +60,9 @@ DEFAULT_CONFIG = {
 
     # Minimum macOS version for each architecture slice
     "arm64_mac_os_deployment_target":  "11.0.0",
-    "x86_64_mac_os_deployment_target": "10.15.0",
 
     # CMake Generator to use for building
-    "generator": "Unix Makefiles",
+    "generator": "Ninja",
     "build_type": "Release",
 
     "run_unit_tests": False,
@@ -83,7 +80,7 @@ DEFAULT_CONFIG = {
 # 2) Single architecture builds should utilize the normal generated cmake
 #    project files rather than this wrapper script
 
-ARCHITECTURES = ["x86_64", "arm64"]
+ARCHITECTURES = ["arm64"]
 
 
 def parse_args(conf=DEFAULT_CONFIG):

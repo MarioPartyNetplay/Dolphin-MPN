@@ -38,7 +38,8 @@ DownloadUpdateDialog::DownloadUpdateDialog(QWidget* parent, const QString& url, 
     setMinimumSize(300, 100); // Adjust size as needed
 
     // Create the worker and thread
-    DownloadWorker* worker = new DownloadWorker(url, filename);
+    temporaryDirectory = QDir::tempPath();
+    DownloadWorker* worker = new DownloadWorker(url, (temporaryDirectory + QDir::separator() + filename));
     QThread* thread = new QThread;
 
     // Move the worker to the thread
@@ -79,7 +80,7 @@ void DownloadUpdateDialog::onDownloadFinished()
     installationDirectory = QCoreApplication::applicationDirPath(); // Set the installation directory
     #endif
     #ifdef __APPLE__
-    installationDirectory = QCoreApplication::applicationDirPath() + QStringLiteral("/../../");
+    installationDirectory = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
     #endif
 
     // Use QStandardPaths to get the system's temporary directory

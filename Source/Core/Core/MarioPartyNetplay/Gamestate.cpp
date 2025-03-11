@@ -5,6 +5,7 @@
 
 #include "Gamestate.h"
 #include "Core/System.h"
+#include "Core/ConfigManager.h"
 
 #include <chrono>
 static auto lastTriggerTime = std::chrono::steady_clock::now();
@@ -158,27 +159,26 @@ bool mpn_update_state()
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
 {
-  if (CurrentState.IsMarioParty)
+  
+  if (SConfig::GetInstance().GetGameID() == "GMPE01" || SConfig::GetInstance().GetGameID() == "GP5E01" || SConfig::GetInstance().GetGameID() == "GP6E01" || SConfig::GetInstance().GetGameID() == "GP7E01" || SConfig::GetInstance().GetGameID() == "RM8E01" || SConfig::GetInstance().GetGameID() == "GMPEDX")
   {
     uint8_t Needs = 0;
 
-    mpn_update_board();
-    mpn_update_discord();
-    
     if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
       if (!waiting) {
           lastTriggerTime = std::chrono::steady_clock::now();
-          storedSceneId = CurrentState.PreviousSceneId; // Store previous scene ID
+          storedSceneId = CurrentState.PreviousSceneId;
           waiting = true;
       }
 
-      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.25)) {
-          return; // Wait for 5 seconds before proceeding
+      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.05)) {
+          return;
       }
-
-      // 5 seconds passed, reset timer and load stored scene
       waiting = false;
     }
+
+    mpn_update_board();
+    mpn_update_discord();
 
     Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
