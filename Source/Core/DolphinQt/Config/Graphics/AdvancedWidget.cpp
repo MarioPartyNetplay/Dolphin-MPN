@@ -120,6 +120,7 @@ void AdvancedWidget::CreateWidgets()
 
   m_load_custom_textures =
       new ConfigBool(tr("Load Custom Textures"), Config::GFX_HIRES_TEXTURES, m_game_layer);
+      new ConfigBool(tr("Per-controller Buttons"), Config::GFX_HIRES_TEXTURES1, m_game_layer);
   m_prefetch_custom_textures = new ConfigBool(tr("Prefetch Custom Textures"),
                                               Config::GFX_CACHE_HIRES_TEXTURES, m_game_layer);
   m_prefetch_custom_textures->setEnabled(m_load_custom_textures->isChecked());
