@@ -14,6 +14,7 @@
 #include "InputCommon/DynamicInputTextures/DITConfiguration.h"
 #include "VideoCommon/HiresTextures.h"
 #include "VideoCommon/TextureCacheBase.h"
+#include "VideoCommon/VideoConfig.h"
 
 namespace InputCommon
 {
@@ -25,13 +26,12 @@ void DynamicInputTextureManager::Load()
 {
   if (!g_ActiveConfig.bHiresTextures1)
   {
-    Clear();
     return;
   }
   m_configuration.clear();
 
   const std::string& game_id = SConfig::GetInstance().GetGameID();
-  const std::set<std::string> dynamic_input_directories =
+  std::set<std::string> dynamic_input_directories =
       GetTextureDirectoriesWithGameId(File::GetUserPath(D_DYNAMICINPUT_IDX), game_id);
 
   const std::set<std::string> additional_texture_directories = GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/DynamicInputTextures/", game_id); 

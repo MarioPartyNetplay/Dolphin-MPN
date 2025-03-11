@@ -207,15 +207,6 @@ void mpn_per_frame()
       }
       else
         Config::SetCurrent(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM, true);
-
-      if (Needs && MPN_PUSHY_PENGUINS)
-      {
-        OSD_PUSH(GFX_HACK_DISABLE_COPY_TO_VRAM)
-        Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, true);
-      }
-      else
-        Config::SetCurrent(Config::GFX_HACK_DISABLE_COPY_TO_VRAM, false);
-
       UpdateActiveConfig();
     }
   }

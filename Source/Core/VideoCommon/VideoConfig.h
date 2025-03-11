@@ -197,6 +197,7 @@ struct VideoConfig final
   bool bDumpMipmapTextures = false;
   bool bDumpBaseTextures = false;
   bool bHiresTextures = false;
+  bool bHiresTextures1 = false;
   bool bCacheHiresTextures = false;
   bool bDumpEFBTarget = false;
   bool bDumpXFBTarget = false;
