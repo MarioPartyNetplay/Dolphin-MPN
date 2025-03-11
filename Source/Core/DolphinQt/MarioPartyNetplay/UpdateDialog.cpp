@@ -41,7 +41,11 @@ UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced)
 
     // Create and set up the text edit
     textEdit = new QTextEdit(this);
+    #ifdef __APPLE__ or _WIN32
     textEdit->setText(jsonObject.value(QStringLiteral("body")).toString());
+    #else
+    textEdit->setText(QStringLiteral("Auto Updater is not supported on your platform.\nPlease use your package manager to update."));
+    #endif
     textEdit->setReadOnly(true);
     mainLayout->addWidget(textEdit);
 

@@ -117,7 +117,6 @@ void GeneralWidget::CreateWidgets()
       new ConfigBool(tr("Show NetPlay Ping"), Config::GFX_SHOW_NETPLAY_PING, m_game_layer);
   m_autoadjust_window_size = new ConfigBool(tr("Auto-Adjust Window Size"),
                                             Config::MAIN_RENDER_WINDOW_AUTOSIZE, m_game_layer);
-  m_show_turn_count = new ConfigBool(tr("Show MP Turn"), Config::GFX_SHOW_MP_TURN);
   m_show_messages =
       new ConfigBool(tr("Show NetPlay Messages"), Config::GFX_SHOW_NETPLAY_MESSAGES, m_game_layer);
   m_render_main_window =
@@ -130,7 +129,16 @@ void GeneralWidget::CreateWidgets()
 
   m_options_layout->addWidget(m_show_messages, 0, 1);
   m_options_layout->addWidget(m_show_ping, 1, 1);
-  m_options_layout->addWidget(m_show_turn_count, 2, 0);
+
+  // MPN
+  auto* m_mpn_box = new QGroupBox(tr("MPN Specific"));
+  auto* m_mpn_layout = new QGridLayout();
+  m_show_turn_count = new ConfigBool(tr("Show Turn Count"), Config::GFX_SHOW_MP_TURN);
+  m_show_buttons_new = new ConfigBool(tr("Per-controller Buttons"), Config::GFX_HIRES_TEXTURES1);
+
+  m_mpn_box->setLayout(m_mpn_layout);
+  m_mpn_layout->addWidget(m_show_turn_count, 0, 0);
+  m_mpn_layout->addWidget(m_show_buttons_new, 0, 1);
 
   // Other
   auto* shader_compilation_box = new QGroupBox(tr("Shader Compilation"));
@@ -156,6 +164,7 @@ void GeneralWidget::CreateWidgets()
 
   main_layout->addWidget(m_video_box);
   main_layout->addWidget(m_options_box);
+  main_layout->addWidget(m_mpn_box);
   main_layout->addWidget(shader_compilation_box);
   main_layout->addStretch();
 
@@ -321,6 +330,12 @@ void GeneralWidget::AddDescriptions()
                  "two or fewer cores, it is recommended to enable this option, as a large shader "
                  "queue may reduce frame rates.<br><br><dolphin_emphasis>Otherwise, if "
                  "unsure, leave this unchecked.</dolphin_emphasis>");
+  static const char TR_TURN_DESCRIPTION[] =
+      QT_TR_NOOP("Show the current MP turn in the Dolphin HUD.");
+
+  static const char TR_BUTTON_DESCRIPTION[] =
+  QT_TR_NOOP("Change the in-game MP buttons to buttons to match "
+             "your selected controller.");
 
   m_backend_combo->SetTitle(tr("Backend"));
   m_backend_combo->SetDescription(
@@ -356,6 +371,11 @@ void GeneralWidget::AddDescriptions()
   m_shader_compilation_mode[3]->SetDescription(tr(TR_SHADER_COMPILE_SKIP_DRAWING_DESCRIPTION));
 
   m_wait_for_shaders->SetDescription(tr(TR_SHADER_COMPILE_BEFORE_START_DESCRIPTION));
+
+  m_show_turn_count->SetDescription(tr(TR_TURN_DESCRIPTION));
+  
+  m_show_buttons_new->SetDescription(tr(TR_BUTTON_DESCRIPTION));
+
 }
 
 void GeneralWidget::OnBackendChanged(const QString& backend_name)

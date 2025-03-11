@@ -18,6 +18,7 @@
 #include "InputCommon/ControllerEmu/Setting/NumericSetting.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/InputProfile.h"
+#include "VideoCommon/VideoConfig.h"
 
 InputConfig::InputConfig(const std::string& ini_name, const std::string& gui_name,
                          const std::string& profile_directory_name, const std::string& profile_key)
@@ -103,7 +104,11 @@ bool InputConfig::LoadConfig()
       n++;
     }
 
-    m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
+
+    if (!g_ActiveConfig.bHiresTextures1)
+    {
+      m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
+    }
     return true;
   }
   else
@@ -139,8 +144,10 @@ void InputConfig::SaveConfig()
     controller_names.push_back(controller->GetName());
   }
 
-  m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
-
+  if (!g_ActiveConfig.bHiresTextures1)
+  {
+    m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
+  }
   inifile.Save(ini_filename);
 }
 
@@ -216,5 +223,8 @@ void InputConfig::GenerateControllerTextures(const Common::IniFile& file)
     controller_names.push_back(controller->GetName());
   }
 
-  m_dynamic_input_tex_config_manager.GenerateTextures(file, controller_names);
+  if (!g_ActiveConfig.bHiresTextures1)
+  {
+    m_dynamic_input_tex_config_manager.GenerateTextures(file, controller_names);
+  }
 }
