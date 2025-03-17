@@ -47,7 +47,7 @@ DownloadUpdateDialog::DownloadUpdateDialog(QWidget* parent, const QString& url, 
 
     // Connect signals and slots
     connect(thread, &QThread::started, worker, &DownloadWorker::startDownload, Qt::UniqueConnection);
-    connect(worker, &DownloadWorker::progressUpdated, this, &DownloadUpdateDialog::updateProgress, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::progressUpdated, this, &DownloadUpdateDialog::updateProgress, Qt::QueuedConnection);
     connect(worker, &DownloadWorker::finished, thread, &QThread::quit, Qt::UniqueConnection);
     connect(worker, &DownloadWorker::finished, worker, &DownloadWorker::deleteLater, Qt::UniqueConnection);
     connect(worker, &DownloadWorker::finished, this, &DownloadUpdateDialog::onDownloadFinished, Qt::UniqueConnection);
