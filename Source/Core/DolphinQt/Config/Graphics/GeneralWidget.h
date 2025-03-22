@@ -61,6 +61,7 @@ private:
   // Options
   ConfigBool* m_show_ping;
   ConfigBool* m_show_turn_count;
+  ConfigBool* m_show_buttons_new;
   ConfigBool* m_autoadjust_window_size;
   ConfigBool* m_show_messages;
   ConfigBool* m_render_main_window;

@@ -29,7 +29,6 @@
 #define MPN_NEEDS_NATIVE_RES (1 << 1)
 #define MPN_NEEDS_EFB_TO_TEXTURE (1 << 2)
 #define MPN_NEEDS_SIDEWAYS_WIIMOTE (1 << 3)
-#define MPN_PUSHY_PENGUINS (1 << 4)
 #define MPN_NEEDS_NOTHING 0xFF
 #define NONE -1
 
@@ -260,7 +259,7 @@ const mpn_scene_t MP5_GAMESTATES[] = {{NONE, 0x01, {"Title Screen"}, 0},
                                       {0x01, 0x10, {"Ground Pound Down"}, 0},
                                       {0x02, 0x11, {"Chimp Chase"}, 0},
                                       {0x03, 0x12, {"Chomp Romp"}, 0},
-                                      {0x04, 0x13, {"Pushy Penguins"}, MPN_PUSHY_PENGUINS},
+                                      {0x04, 0x13, {"Pushy Penguins"}, 0},
                                       {0x05, 0x14, {"Leaf Leap"}, 0},
                                       {0x06, 0x15, {"Night Light Fright"}, 0},
                                       {0x07, 0x16, {"Pop-Star Piranhas"}, 0},
