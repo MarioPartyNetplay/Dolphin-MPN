@@ -86,8 +86,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FatFs", "..\Externals\FatFs
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "spng", "..\Externals\libspng\spng.vcxproj", "{447B7B1E-1D74-4AEF-B2B9-6EB41C5D5313}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SCMRevGen", "Core\Common\SCMRevGen.vcxproj", "{41279555-F94F-4EBC-99DE-AF863C10C5C4}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rcheevos", "..\Externals\rcheevos\rcheevos.vcxproj", "{CC99A910-3752-4465-95AA-7DC240D92A99}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tinygltf", "..\Externals\tinygltf\tinygltf.vcxproj", "{8BDA3693-4999-4D11-9E52-8D08C30B643A}"
