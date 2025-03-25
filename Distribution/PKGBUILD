@@ -1,0 +1,54 @@
+pkgname="dolphin-mpn"
+pkgver="$(git rev-parse --short=6 HEAD)"
+pkgrel=1
+pkgdesc="A modified version of Dolphin for Mario Party Netplay"
+arch=('x86_64')
+url="https://github.com/MarioPartyNetplay/Dolphin-MPN"
+license=('GPL-2.0-or-later')
+depends=(
+  'bluez-libs' 'bzip2' 'enet' 'gcc-libs' 'glibc' 'hidapi' 'libavcodec.so'
+  'libavformat.so' 'libavutil.so' 'libcurl.so' 'libfmt.so' 'libgl'
+  'libsfml-network.so' 'libsfml-system.so' 'libspng.so' 'libswscale.so'
+  'libusb-1.0.so' 'libx11' 'libxi' 'libxrandr' 'lz4' 'lzo' 'mbedtls2'
+  'pugixml' 'sdl2' 'sfml' 'speexdsp' 'xxhash' 'xz' 'zstd' 'minizip-ng'
+)
+makedepends=(
+  'alsa-lib' 'cmake' 'git' 'libevdev' 'libminiupnpc.so' 'libpulse'
+  'libudev.so' 'ninja' 'python' 'qt6-base' 'qt6-svg'
+)
+source=("git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git")
+sha256sums=('SKIP')
+_sourcedirectory="$pkgbase"
+
+prepare() {
+  cd "$srcdir/"
+  rm -rf 'Dolphin-MPN/build/'
+  mkdir 'Dolphin-MPN/build/'
+}
+
+build() {
+  cd "$srcdir/Dolphin-MPN"  # Ensure we're in the correct directory
+  git submodule update --init --recursive
+  cmake -S '.' -B 'build/' -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DDISTRIBUTOR="Mario Party Netplay" \
+    -DCPACK_PACKAGE_CONTACT="Mario Party Netplay"
+  cmake --build 'build/'
+}
+
+package() {
+  pkgdesc="$pkgdesc - Mario Party Netplay version of Dolphin"
+  depends+=(
+    'alsa-lib' 'hicolor-icon-theme' 'libevdev' 'libminiupnpc.so' 'libpulse'
+    'libudev.so' 'qt6-base' 'qt6-svg'
+  )
+
+  cd "$srcdir/Dolphin-MPN"  # Ensure we're in the correct directory
+  DESTDIR="$pkgdir" cmake --install 'build/'
+  install -Dm644 'Data/51-usb-device.rules' "$pkgdir/usr/lib/udev/rules.d/51-usb-device.rules"
+
+  # Remove unnecessary binaries
+  rm -rf "$pkgdir/usr/bin/dolphin-mpn-nogui"
+  rm -rf "$pkgdir/usr/bin/dolphin-mpn-tool"
+  rm -rf "$pkgdir/usr/share/man/man6/dolphin-mpn-nogui.6"
+}
