@@ -18,7 +18,6 @@
 
 #include "Core/AchievementManager.h"
 #include "Core/CPUThreadConfigCallback.h"
-#include "Core/Config/AchievementSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
 #include "Core/PowerPC/PowerPC.h"
@@ -93,7 +92,7 @@ void CoreTimingManager::Init()
   m_globals.global_timer = 0;
   m_idled_cycles = 0;
 
-  // The time between CoreTiming being intialized and the first call to Advance() is considered
+  // The time between CoreTiming being initialized and the first call to Advance() is considered
   // the slice boundary between slice -1 and slice 0. Dispatcher loops must call Advance() before
   // executing the first PPC cycle of each slice to prepare the slice length and downcount for
   // that slice.
@@ -361,8 +360,6 @@ void CoreTimingManager::Advance()
     Event evt = std::move(m_event_queue.front());
     std::ranges::pop_heap(m_event_queue, std::ranges::greater{});
     m_event_queue.pop_back();
-
-    Throttle(evt.time);
     evt.type->callback(m_system, evt.userdata, m_globals.global_timer - evt.time);
   }
 
@@ -394,15 +391,40 @@ void CoreTimingManager::Advance()
   power_pc.CheckExternalExceptions();
 }
 
+TimePoint CoreTimingManager::GetTargetHostTime(s64 target_cycle)
+{
+  const double speed = Core::GetIsThrottlerTempDisabled() ? 0.0 : m_emulation_speed;
+
+  if (speed > 0)
+  {
+    const s64 cycles = target_cycle - m_throttle_last_cycle;
+    return m_throttle_deadline + std::chrono::duration_cast<DT>(
+                                     DT_s(cycles) / (m_emulation_speed * m_throttle_clock_per_sec));
+  }
+  else
+  {
+    return Clock::now();
+  }
+}
+
+void CoreTimingManager::SleepUntil(TimePoint time_point)
+{
+  const TimePoint time = Clock::now();
+
+  std::this_thread::sleep_until(time_point);
+
+  if (Core::IsCPUThread())
+  {
+    // Count amount of time sleeping for analytics
+    const TimePoint time_after_sleep = Clock::now();
+    g_perf_metrics.CountThrottleSleep(time_after_sleep - time);
+  }
+}
+
 void CoreTimingManager::Throttle(const s64 target_cycle)
 {
   // Based on number of cycles and emulation speed, increase the target deadline
   const s64 cycles = target_cycle - m_throttle_last_cycle;
-
-  // Prevent any throttling code if the amount of time passed is < ~0.122ms
-  if (cycles < m_throttle_min_clock_per_sleep)
-    return;
-
   m_throttle_last_cycle = target_cycle;
 
   const double speed = Core::GetIsThrottlerTempDisabled() ? 0.0 : m_emulation_speed;
@@ -449,12 +471,6 @@ void CoreTimingManager::ResetThrottle(s64 cycle)
   m_throttle_deadline = Clock::now();
 }
 
-TimePoint CoreTimingManager::GetCPUTimePoint(s64 cyclesLate) const
-{
-  return TimePoint(std::chrono::duration_cast<DT>(DT_s(m_globals.global_timer - cyclesLate) /
-                                                  m_throttle_clock_per_sec));
-}
-
 bool CoreTimingManager::GetVISkip() const
 {
   return m_throttle_disable_vi_int && g_ActiveConfig.bVISkip && !Core::WantsDeterminism();
@@ -480,7 +496,6 @@ void CoreTimingManager::LogPendingEvents() const
 void CoreTimingManager::AdjustEventQueueTimes(u32 new_ppc_clock, u32 old_ppc_clock)
 {
   m_throttle_clock_per_sec = new_ppc_clock;
-  m_throttle_min_clock_per_sleep = new_ppc_clock / 1200;
 
   for (Event& ev : m_event_queue)
   {

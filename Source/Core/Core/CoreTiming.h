@@ -16,7 +16,6 @@
 // inside callback:
 //   ScheduleEvent(periodInCycles - cyclesLate, callback, "whatever")
 
-#include <compare>
 #include <mutex>
 #include <string>
 #include <tuple>
@@ -99,6 +98,7 @@ public:
   // doing something evil
   u64 GetTicks() const;
   u64 GetIdleTicks() const;
+  TimePoint GetTargetHostTime(s64 target_cycle);
 
   void RefreshConfig();
 
@@ -163,12 +163,13 @@ public:
   Globals& GetGlobals() { return m_globals; }
 
   // Throttle the CPU to the specified target cycle.
-  // Never used outside of CoreTiming, however it remains public
-  // in order to allow custom throttling implementations to be tested.
   void Throttle(const s64 target_cycle);
 
-  TimePoint GetCPUTimePoint(s64 cyclesLate) const;  // Used by Dolphin Analytics
-  bool GetVISkip() const;                           // Used By VideoInterface
+  // May be used from any thread.
+  void SleepUntil(TimePoint time_point);
+
+  // Used by VideoInterface
+  bool GetVISkip() const;
 
   bool UseSyncOnSkipIdle() const;
 
@@ -184,7 +185,7 @@ private:
   // STATE_TO_SAVE
   // The queue is a min-heap using std::ranges::make_heap/push_heap/pop_heap.
   // We don't use std::priority_queue because we need to be able to serialize, unserialize and
-  // erase arbitrary events (RemoveEvent()) regardless of the queue order. These aren't accomodated
+  // erase arbitrary events (RemoveEvent()) regardless of the queue order. These aren't accommodated
   // by the standard adaptor class.
   std::vector<Event> m_event_queue;
   u64 m_event_fifo_id = 0;
@@ -219,7 +220,6 @@ private:
   s64 m_throttle_last_cycle = 0;
   TimePoint m_throttle_deadline = Clock::now();
   s64 m_throttle_clock_per_sec = 0;
-  s64 m_throttle_min_clock_per_sleep = 0;
   bool m_throttle_disable_vi_int = false;
 
   DT m_max_fallback = {};

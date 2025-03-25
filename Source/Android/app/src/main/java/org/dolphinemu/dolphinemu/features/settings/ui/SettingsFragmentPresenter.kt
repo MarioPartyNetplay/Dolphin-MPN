@@ -22,6 +22,7 @@ import org.dolphinemu.dolphinemu.features.input.model.InputMappingBooleanSetting
 import org.dolphinemu.dolphinemu.features.input.model.InputMappingDoubleSetting
 import org.dolphinemu.dolphinemu.features.input.model.InputMappingIntSetting
 import org.dolphinemu.dolphinemu.features.input.model.controlleremu.ControlGroup
+import org.dolphinemu.dolphinemu.features.input.model.controlleremu.ControlGroupContainer
 import org.dolphinemu.dolphinemu.features.input.model.controlleremu.EmulatedController
 import org.dolphinemu.dolphinemu.features.input.model.controlleremu.NumericSetting
 import org.dolphinemu.dolphinemu.features.input.model.view.InputDeviceSetting
@@ -533,9 +534,9 @@ class SettingsFragmentPresenter(
         sl.add(
             SwitchSetting(
                 context,
-                BooleanSetting.MAIN_AUDIO_STRETCH,
-                R.string.audio_stretch,
-                R.string.audio_stretch_description
+                BooleanSetting.MAIN_AUDIO_FILL_GAPS,
+                R.string.audio_fill_gaps,
+                R.string.audio_fill_gaps_description
             )
         )
         sl.add(
@@ -1972,8 +1973,8 @@ class SettingsFragmentPresenter(
             ) { SettingsAdapter.clearLog() })
 
         sl.add(HeaderSetting(context, R.string.log_types, 0))
-        for ((key, value) in LOG_TYPE_NAMES) {
-            sl.add(LogSwitchSetting(key, value, ""))
+        for (logType in LOG_TYPE_NAMES) {
+            sl.add(LogSwitchSetting(logType.first, logType.second, ""))
         }
     }
 
@@ -2255,8 +2256,9 @@ class SettingsFragmentPresenter(
         wiimoteNumber: Int,
         extensionType: Int
     ) {
-        addControllerMappingSettings(
+        addContainerMappingSettings(
             sl,
+            EmulatedController.getWiimote(wiimoteNumber),
             EmulatedController.getWiimoteAttachment(wiimoteNumber, extensionType),
             null
         )
@@ -2404,15 +2406,32 @@ class SettingsFragmentPresenter(
      * @param groupTypeFilter If this is non-null, only groups whose types match this are considered.
      */
     private fun addControllerMappingSettings(
+      sl: ArrayList<SettingsItem>,
+      controller: EmulatedController,
+      groupTypeFilter: Set<Int>?
+    ) {
+      addContainerMappingSettings(sl, controller, controller, groupTypeFilter)
+    }
+
+    /**
+     * Adds mapping settings and other control-specific settings.
+     *
+     * @param sl              The list to place controller settings into.
+     * @param controller      The encompassing controller.
+     * @param container       The container of control groups to add settings for.
+     * @param groupTypeFilter If this is non-null, only groups whose types match this are considered.
+     */
+    private fun addContainerMappingSettings(
         sl: ArrayList<SettingsItem>,
         controller: EmulatedController,
+        container: ControlGroupContainer,
         groupTypeFilter: Set<Int>?
     ) {
         updateOldControllerSettingsWarningVisibility(controller)
 
-        val groupCount = controller.getGroupCount()
+        val groupCount = container.getGroupCount()
         for (i in 0 until groupCount) {
-            val group = controller.getGroup(i)
+            val group = container.getGroup(i)
             val groupType = group.getGroupType()
             if (groupTypeFilter != null && !groupTypeFilter.contains(groupType)) continue
 
@@ -2504,11 +2523,11 @@ class SettingsFragmentPresenter(
     fun setAllLogTypes(value: Boolean) {
         val settings = fragmentView.settings
 
-        for ((key) in LOG_TYPE_NAMES) {
+        for (logType in LOG_TYPE_NAMES) {
             AdHocBooleanSetting(
                 Settings.FILE_LOGGER,
                 Settings.SECTION_LOGGER_LOGS,
-                key,
+                logType.first,
                 false
             ).setBoolean(settings!!, value)
         }

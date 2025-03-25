@@ -44,7 +44,7 @@ endif()
 
 set(COMPILER ${CMAKE_CXX_COMPILER_ID})
 if (COMPILER STREQUAL "GNU")
-  set(COMPILER "GCC") # perfer printing GCC instead of GNU
+  set(COMPILER "GCC") # prefer printing GCC instead of GNU
 endif()
 
 # Enforce minimum compiler versions that support the c++20 features we use
@@ -407,7 +407,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/usr/local/lib")
 
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14.0)
-    # Workaround: the llvm libc++ and versions of clang eariler than 14 have a bug with consteval
+    # Workaround: the llvm libc++ and versions of clang earlier than 14 have a bug with consteval
     # so we define FMT_CONSTEVAL to blank to just disable consteval in fmt
     add_definitions(-DFMT_CONSTEVAL=)
   endif()
@@ -696,11 +696,6 @@ if (APPLE OR WIN32)
   include_directories(Externals/ed25519)
 endif()
 
-# Using static soundtouch from Externals
-# Unable to use system soundtouch library: We require shorts, not floats.
-add_subdirectory(Externals/soundtouch)
-include_directories(Externals/soundtouch)
-
 if(ENABLE_CUBEB)
   dolphin_find_optional_system_library(CUBEB Externals/cubeb)
   add_definitions(-DHAVE_CUBEB)
@@ -713,7 +708,7 @@ if(NOT ANDROID)
   add_definitions(-D__LIBUSB__)
 endif()
 
-dolphin_find_optional_system_library(SFML Externals/SFML 2.1 COMPONENTS network system)
+dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
 
 if(USE_UPNP)
   dolphin_find_optional_system_library(MINIUPNPC Externals/miniupnpc 1.6)
