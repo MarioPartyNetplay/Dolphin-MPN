@@ -883,6 +883,18 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS
 # Check for Debian-based systems
 if(EXISTS "/etc/debian_version")
     set(CPACK_GENERATOR "DEB")
+    if(EXISTS "/etc/os-release")
+        # Read Ubuntu version
+        file(STRINGS "/etc/os-release" OS_RELEASE_CONTENTS REGEX "^VERSION_ID=")
+        string(REGEX REPLACE "VERSION_ID=\"([0-9]+)\\.([0-9]+)\"" "\\1_\\2" UBUNTU_VERSION "${OS_RELEASE_CONTENTS}")
+    endif()
+    
+    # Ensure a default value if detection fails
+    if(NOT UBUNTU_VERSION)
+        set(UBUNTU_VERSION "unknown")
+    endif()
+    
+    set(CPACK_PACKAGE_FILE_NAME "DolphinMPN-ubuntu${UBUNTU_VERSION}")
 endif()
 
 # Arch Linux Specific
@@ -891,6 +903,7 @@ set(CPACK_PACKAGE_CONTACT "Tabitha Hanegan <info@tabithahanegan.com>")
 # Check for Debian-based systems
 if(EXISTS "/etc/arch-release")
     set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "DolphinMPN-archLinux")
 endif()
 
 # Resource files (TODO items)
@@ -898,7 +911,8 @@ set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/Readme.md)
 set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/Data/dolphin-mpn.png)
 
 # Disable MGBA Hack
-set(CPACK_COMPONENTS_DISABLED "mgba;mgba-dev")
+set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 
 # CPack must be included after the CPACK_* variables are set in order for those
 # variables to take effect.

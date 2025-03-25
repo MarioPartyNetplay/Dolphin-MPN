@@ -43,7 +43,7 @@
       run: git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN && git submodule update --init --recursive
     - name: Build
       run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && sh ../Distribution/archLinux.sh && mkdir -p OUT && mv *.pkg.zst OUT/
+        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && sh ../Distribution/archLinux.sh && mkdir -p OUT && mv *.pkg.tar.zst OUT/
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:

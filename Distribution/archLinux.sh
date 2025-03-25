@@ -14,8 +14,8 @@ license=("GPL2")
 
 # Convert generated archive to Arch format
 mkdir -p "${pkgname}-${pkgver}-${arch}"
-tar -xzf dolphin-mpn-*.tar.gz -C "${pkgname}-${pkgver}-${arch}"
-
+tar -xzf DolphinMPN-*.tar.gz -C "${pkgname}-${pkgver}-${arch}"
+mv "${pkgname}-${pkgver}-${arch}/DolphinMPN-archLinux" "${pkgname}-${pkgver}-${arch}"
 # Create .PKGINFO file
 cat <<EOF > "${pkgname}-${pkgver}-${arch}/.PKGINFO"
 pkgname=${pkgname}
@@ -27,6 +27,4 @@ depends=(${depends[@]})
 EOF
 
 # Compress into a valid Arch package format
-tar -cJf "${pkgname}-${pkgver}-${arch}.pkg.tar.zst" -C "${pkgname}-${pkgver}-${arch}" .
-
-echo "Arch Linux package created: ${pkgname}-${pkgver}-${arch}.pkg.tar.zst"
+tar -cJf "DolphinMPN-archLinux.pkg.tar.zst" -C "${pkgname}-${pkgver}-${arch}" .
