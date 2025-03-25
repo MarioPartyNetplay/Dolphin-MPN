@@ -14,7 +14,7 @@ license=("GPL2")
 
 # Convert generated archive to Arch format
 mkdir -p "${pkgname}-${pkgver}-${arch}"
-tar -xf build/dolphin-mpn-*.tar.xz -C "${pkgname}-${pkgver}-${arch}"
+tar -xzf dolphin-mpn-*.tar.gz -C "${pkgname}-${pkgver}-${arch}"
 
 # Create .PKGINFO file
 cat <<EOF > "${pkgname}-${pkgver}-${arch}/.PKGINFO"

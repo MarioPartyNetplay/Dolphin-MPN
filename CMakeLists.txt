@@ -890,14 +890,25 @@ set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_PACKAGE_CONTACT "Tabitha Hanegan <info@tabithahanegan.com>")
 # Check for Debian-based systems
 if(EXISTS "/etc/arch-release")
-    set(CPACK_GENERATOR "DEB")
+    set(CPACK_GENERATOR "TGZ")
 endif()
 
 # Resource files (TODO items)
 set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/Readme.md)
 set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/Data/dolphin-mpn.png)
 
+# Disable MGBA Hack
+set(CPACK_COMPONENTS_DISABLED "mgba;mgba-dev")
+
 # CPack must be included after the CPACK_* variables are set in order for those
 # variables to take effect.
 include(InstallRequiredSystemLibraries)
 include(CPack)
+
+# Unhijack version from MGBA
+execute_process(
+    COMMAND git rev-parse --short=7 HEAD
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+set(VERSION "${GIT_COMMIT_HASH}")
