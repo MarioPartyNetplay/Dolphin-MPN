@@ -880,14 +880,18 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS
     libsdl2-2.0-0, libsfml-network2.6, libsfml-system2.6, libspng0, libstb0t64, 
     libstdc++6, libswscale8, libtinygltf6d, libudev1, libusb-1.0-0, libx11-6, 
     libxi6, libxrandr2, libxxhash0, libzstd1, zlib1g")
+# Check for Debian-based systems
+if(EXISTS "/etc/debian_version")
+    set(CPACK_GENERATOR "DEB")
+endif()
 
-# Source package options
-set(CPACK_SOURCE_GENERATOR "TGZ;TBZ2;ZIP")
-set(CPACK_SOURCE_IGNORE_FILES "\\\\.#;/#;.*~;\\\\.swp;/\\\\.git")
-list(APPEND CPACK_SOURCE_IGNORE_FILES "${CMAKE_BINARY_DIR}")
-
-# Dist package options
-set(CPACK_GENERATOR DEB)
+# Arch Linux Specific
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_PACKAGE_CONTACT "Tabitha Hanegan <info@tabithahanegan.com>")
+# Check for Debian-based systems
+if(EXISTS "/etc/arch-release")
+    set(CPACK_GENERATOR "DEB")
+endif()
 
 # Resource files (TODO items)
 set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/Readme.md)
