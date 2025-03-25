@@ -990,61 +990,6 @@ void NetPlayClient::OnPowerButton()
   m_dialog->OnMsgPowerButton();
 }
 
-void NetPlayClient::OnScheduleExternalEvent(sf::Packet& packet)
-{
-  // A user (could be ourselves, too) has requested the scheduling of an external event.
-
-  ExternalEventID eeid;
-  packet >> eeid;
-  sf::Uint64 uid;
-  packet >> uid;
-  sf::Uint64 timepoint;
-  packet >> timepoint;
-
-  DEBUG_LOG_FMT(NETPLAY, "OnScheduleExternalEvent(): eeid {}, timepoint {}, uid {}", u8(eeid),
-                timepoint, uid);
-
-  // The 'uid' is unique per netplay session and is both used to provide an absolute ordering in
-  // case two events get assigned to the same timepoint, and also to keep track (in
-  // s_event_sync_map) of what event-related packet belongs to what event if multiple are in flight
-  // at the same time.
-
-  {
-    std::lock_guard lk(s_event_sync_mutex);
-    s_event_sync_map[static_cast<u64>(uid)].event_id = eeid;
-  }
-
-  auto& core_timing = Core::System::GetInstance().GetCoreTiming();
-  core_timing.ScheduleExternalEvent(static_cast<u64>(timepoint), event_type_sync_time_for_ext_event,
-                                    static_cast<u64>(uid), static_cast<u64>(uid));
-}
-
-void NetPlayClient::OnSyncTimepointForExternalEvent(sf::Packet& packet)
-{
-  // A user (not ourselves) is currently waiting to execute an external event and has sent us their
-  // current timepoint to determine what the earliest timepoint the event can execute is.
-
-  PlayerId pid;
-  packet >> pid;
-  sf::Uint64 uid;
-  packet >> uid;
-  sf::Uint64 timepoint;
-  packet >> timepoint;
-
-  DEBUG_LOG_FMT(NETPLAY, "OnSyncTimepointForExternalEvent(): player id {}, timepoint {}, uid {}",
-                u8(pid), timepoint, uid);
-
-  {
-    std::lock_guard lk(s_event_sync_mutex);
-    auto& event_data = s_event_sync_map[static_cast<u64>(uid)];
-    {
-      std::lock_guard lk2(event_data.mutex);
-      event_data.map[pid] = static_cast<u64>(timepoint);
-    }
-    event_data.cv.notify_all();
-  }
-}
-
 void NetPlayClient::OnPing(sf::Packet& packet)
 {
   u32 ping_key = 0;
