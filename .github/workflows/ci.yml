@@ -25,31 +25,6 @@
         manifest-path: Distribution/flatpak.yml
         bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
 
-  build_archLinux:
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux/archlinux:latest
-      options: --privileged
-    steps:
-    - name: Setup Packages
-      run: |
-        pacman -Sy --noconfirm \
-        bluez-libs bzip2 enet gcc-libs gcc glibc hidapi cmake make git \
-        ffmpeg curl fmt libgl sfml libspng lz4 lzo ninja \
-        mbedtls2 pugixml sdl2 speexdsp xxhash xz zstd libevdev pkgconf libx11 \
-        qt6-base systemd libao qt6-svg pulseaudio p7zip automake linux-headers
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN && git submodule update --init --recursive
-    - name: Build
-      run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && sh ../Distribution/archLinux.sh && mkdir -p OUT && mv *.pkg.tar.zst OUT/
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DolphinMPN-archLinux-linux-x86_64
-        path: build/OUT/
-
   build_deb24_04:
     runs-on: ubuntu-24.04
     steps:
