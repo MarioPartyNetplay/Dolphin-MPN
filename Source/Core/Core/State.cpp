@@ -99,7 +99,7 @@ static size_t s_state_writes_in_queue;
 static std::condition_variable s_state_write_queue_is_empty;
 
 // Don't forget to increase this after doing changes on the savestate system
-constexpr u32 STATE_VERSION = 170;  // Last changed in PR 13219
+constexpr u32 STATE_VERSION = 172;  // Last changed in PR 13385
 
 // Increase this if the StateExtendedHeader definition changes
 constexpr u32 EXTENDED_HEADER_VERSION = 1;  // Last changed in PR 12217
@@ -310,11 +310,6 @@ static std::vector<SlotWithTimestamp> GetUsedSlotsWithTimestamp()
     }
   }
   return result;
-}
-
-static bool CompareTimestamp(const SlotWithTimestamp& lhs, const SlotWithTimestamp& rhs)
-{
-  return lhs.timestamp < rhs.timestamp;
 }
 
 static void CompressBufferToFile(const u8* raw_buffer, u64 size, File::IOFile& f)
@@ -813,7 +808,7 @@ static void LoadFileStateData(const std::string& filename, std::vector<u8>& ret_
   {
   case CompressionType::LZ4:
   {
-    Core::DisplayMessage("Decompressing State...", 500);
+    Core::DisplayMessage("Decompressing State...", OSD::Duration::SHORT);
     if (!DecompressLZ4(buffer, extended_header.base_header.uncompressed_size, f))
       return;
 
@@ -999,7 +994,7 @@ void LoadLastSaved(Core::System& system, int i)
     return;
   }
 
-  std::stable_sort(used_slots.begin(), used_slots.end(), CompareTimestamp);
+  std::ranges::stable_sort(used_slots, {}, &SlotWithTimestamp::timestamp);
   Load(system, (used_slots.end() - i)->slot);
 }
 
@@ -1015,7 +1010,7 @@ void SaveFirstSaved(Core::System& system)
   }
 
   // overwrite the oldest state
-  std::stable_sort(used_slots.begin(), used_slots.end(), CompareTimestamp);
+  std::ranges::stable_sort(used_slots, {}, &SlotWithTimestamp::timestamp);
   Save(system, used_slots.front().slot, true);
 }
 

@@ -8,7 +8,6 @@
 #include "Common/CPUDetect.h"
 #include "Common/CommonTypes.h"
 #include "Common/Contains.h"
-#include "Common/StringUtil.h"
 
 #include "Core/CPUThreadConfigCallback.h"
 #include "Core/Config/GraphicsSettings.h"
@@ -24,19 +23,16 @@
 #include "VideoCommon/Fifo.h"
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/FreeLookCamera.h"
-#include "VideoCommon/GraphicsModSystem/Config/GraphicsMod.h"
 #include "VideoCommon/GraphicsModSystem/Runtime/GraphicsModManager.h"
 #include "VideoCommon/OnScreenDisplay.h"
 #include "VideoCommon/PixelShaderManager.h"
-#include "VideoCommon/Present.h"
 #include "VideoCommon/ShaderGenCommon.h"
 #include "VideoCommon/TextureCacheBase.h"
 #include "VideoCommon/VertexManagerBase.h"
 
-#include "VideoCommon/VideoCommon.h"
-
 VideoConfig g_Config;
 VideoConfig g_ActiveConfig;
+BackendInfo g_backend_info;
 static bool s_has_registered_callback = false;
 
 static bool IsVSyncActive(bool enabled)
@@ -48,9 +44,6 @@ static bool IsVSyncActive(bool enabled)
 
 void UpdateActiveConfig()
 {
-  auto& movie = Core::System::GetInstance().GetMovie();
-  if (movie.IsPlayingInput() && movie.IsConfigSaved())
-    movie.SetGraphicsConfig();
   g_ActiveConfig = g_Config;
   g_ActiveConfig.bVSyncActive = IsVSyncActive(g_ActiveConfig.bVSync);
 }
@@ -123,15 +116,6 @@ void VideoConfig::Refresh()
   bCacheHiresTextures = Config::Get(Config::GFX_CACHE_HIRES_TEXTURES);
   bDumpEFBTarget = Config::Get(Config::GFX_DUMP_EFB_TARGET);
   bDumpXFBTarget = Config::Get(Config::GFX_DUMP_XFB_TARGET);
-  bDumpFramesAsImages = Config::Get(Config::GFX_DUMP_FRAMES_AS_IMAGES);
-  bUseLossless = Config::Get(Config::GFX_USE_LOSSLESS);
-  sDumpFormat = Config::Get(Config::GFX_DUMP_FORMAT);
-  sDumpCodec = Config::Get(Config::GFX_DUMP_CODEC);
-  sDumpPixelFormat = Config::Get(Config::GFX_DUMP_PIXEL_FORMAT);
-  sDumpEncoder = Config::Get(Config::GFX_DUMP_ENCODER);
-  sDumpPath = Config::Get(Config::GFX_DUMP_PATH);
-  iBitrateKbps = Config::Get(Config::GFX_BITRATE_KBPS);
-  frame_dumps_resolution_type = Config::Get(Config::GFX_FRAME_DUMPS_RESOLUTION_TYPE);
   bEnableGPUTextureDecoding = Config::Get(Config::GFX_ENABLE_GPU_TEXTURE_DECODING);
   bPreferVSForLinePointExpansion = Config::Get(Config::GFX_PREFER_VS_FOR_LINE_POINT_EXPANSION);
   bEnablePixelLighting = Config::Get(Config::GFX_ENABLE_PIXEL_LIGHTING);
@@ -185,7 +169,6 @@ void VideoConfig::Refresh()
   bEFBAccessEnable = Config::Get(Config::GFX_HACK_EFB_ACCESS_ENABLE);
   bEFBAccessDeferInvalidation = Config::Get(Config::GFX_HACK_EFB_DEFER_INVALIDATION);
   bBBoxEnable = Config::Get(Config::GFX_HACK_BBOX_ENABLE);
-  bForceProgressive = Config::Get(Config::GFX_HACK_FORCE_PROGRESSIVE);
   bSkipEFBCopyToRam = Config::Get(Config::GFX_HACK_SKIP_EFB_COPY_TO_RAM);
   bSkipXFBCopyToRam = Config::Get(Config::GFX_HACK_SKIP_XFB_COPY_TO_RAM);
   bDisableCopyToVRAM = Config::Get(Config::GFX_HACK_DISABLE_COPY_TO_VRAM);
@@ -215,15 +198,15 @@ void VideoConfig::Refresh()
 void VideoConfig::VerifyValidity()
 {
   // TODO: Check iMaxAnisotropy value
-  if (iAdapter < 0 || iAdapter > ((int)backend_info.Adapters.size() - 1))
+  if (iAdapter < 0 || iAdapter > ((int)g_backend_info.Adapters.size() - 1))
     iAdapter = 0;
 
-  if (!Common::Contains(backend_info.AAModes, iMultisamples))
+  if (!Common::Contains(g_backend_info.AAModes, iMultisamples))
     iMultisamples = 1;
 
   if (stereo_mode != StereoMode::Off)
   {
-    if (!backend_info.bSupportsGeometryShaders)
+    if (!g_backend_info.bSupportsGeometryShaders)
     {
       OSD::AddMessage(
           "Stereoscopic 3D isn't supported by your GPU, support for OpenGL 3.2 is required.",
@@ -255,7 +238,7 @@ static u32 GetNumAutoShaderPreCompilerThreads()
 
 u32 VideoConfig::GetShaderCompilerThreads() const
 {
-  if (!backend_info.bSupportsBackgroundCompiling)
+  if (!g_backend_info.bSupportsBackgroundCompiling)
     return 0;
 
   if (iShaderCompilerThreads >= 0)
@@ -270,7 +253,7 @@ u32 VideoConfig::GetShaderPrecompilerThreads() const
   if (!bWaitForShadersBeforeStarting)
     return GetShaderCompilerThreads();
 
-  if (!backend_info.bSupportsBackgroundCompiling)
+  if (!g_backend_info.bSupportsBackgroundCompiling)
     return 0;
 
   if (iShaderPrecompilerThreads >= 0)
@@ -286,7 +269,7 @@ void CheckForConfigChanges()
   const ShaderHostConfig old_shader_host_config = ShaderHostConfig::GetCurrent();
   const StereoMode old_stereo = g_ActiveConfig.stereo_mode;
   const u32 old_multisamples = g_ActiveConfig.iMultisamples;
-  const int old_anisotropy = g_ActiveConfig.iMaxAnisotropy;
+  const auto old_anisotropy = g_ActiveConfig.iMaxAnisotropy;
   const int old_efb_access_tile_size = g_ActiveConfig.iEFBAccessTileSize;
   const auto old_texture_filtering_mode = g_ActiveConfig.texture_filtering_mode;
   const bool old_vsync = g_ActiveConfig.bVSyncActive;

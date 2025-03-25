@@ -176,7 +176,6 @@ void GeneralWidget::ConnectWidgets()
   // Video Backend
   connect(m_backend_combo, &QComboBox::currentIndexChanged, this, &GeneralWidget::BackendWarning);
   connect(m_adapter_combo, &QComboBox::currentIndexChanged, this, [&](int index) {
-    g_Config.iAdapter = index;
     Config::SetBaseOrCurrent(Config::GFX_ADAPTER, index);
     emit BackendChanged(QString::fromStdString(Config::Get(Config::MAIN_GFX_BACKEND)));
   });
@@ -237,7 +236,7 @@ void GeneralWidget::OnEmulationStateChanged(bool running)
   m_render_main_window->setEnabled(!running);
   m_enable_fullscreen->setEnabled(!running);
 
-  const bool supports_adapters = !g_Config.backend_info.Adapters.empty();
+  const bool supports_adapters = !g_backend_info.Adapters.empty();
   m_adapter_combo->setEnabled(!running && supports_adapters);
 
   std::string current_backend = m_backend_combo->currentData().toString().toStdString();
@@ -384,14 +383,17 @@ void GeneralWidget::OnBackendChanged(const QString& backend_name)
 
   m_adapter_combo->clear();
 
-  const auto& adapters = g_Config.backend_info.Adapters;
+  const auto& adapters = g_backend_info.Adapters;
 
   for (const auto& adapter : adapters)
     m_adapter_combo->addItem(QString::fromStdString(adapter));
 
   const bool supports_adapters = !adapters.empty();
 
-  m_adapter_combo->setCurrentIndex(g_Config.iAdapter);
+  const int adapter_index = Config::Get(Config::GFX_ADAPTER);
+  if (adapter_index < m_adapter_combo->count())
+    m_adapter_combo->setCurrentIndex(adapter_index);
+
   m_adapter_combo->setEnabled(supports_adapters &&
                               Core::IsUninitialized(Core::System::GetInstance()));
 

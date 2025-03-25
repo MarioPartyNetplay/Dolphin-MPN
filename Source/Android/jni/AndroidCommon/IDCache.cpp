@@ -29,9 +29,8 @@ static jclass s_analytics_class;
 static jmethodID s_send_analytics_report;
 static jmethodID s_get_analytics_value;
 
-static jclass s_linked_hash_map_class;
-static jmethodID s_linked_hash_map_init;
-static jmethodID s_linked_hash_map_put;
+static jclass s_pair_class;
+static jmethodID s_pair_constructor;
 
 static jclass s_hash_map_class;
 static jmethodID s_hash_map_init;
@@ -97,6 +96,10 @@ static jmethodID s_control_group_constructor;
 static jclass s_control_reference_class;
 static jfieldID s_control_reference_pointer;
 static jmethodID s_control_reference_constructor;
+
+static jclass s_control_group_container_class;
+static jfieldID s_control_group_container_pointer;
+static jmethodID s_control_group_container_constructor;
 
 static jclass s_emulated_controller_class;
 static jfieldID s_emulated_controller_pointer;
@@ -212,19 +215,14 @@ jfieldID GetGameFileCachePointer()
   return s_game_file_cache_pointer;
 }
 
-jclass GetLinkedHashMapClass()
+jclass GetPairClass()
 {
-  return s_linked_hash_map_class;
+  return s_pair_class;
 }
 
-jmethodID GetLinkedHashMapInit()
+jmethodID GetPairConstructor()
 {
-  return s_linked_hash_map_init;
-}
-
-jmethodID GetLinkedHashMapPut()
-{
-  return s_linked_hash_map_put;
+  return s_pair_constructor;
 }
 
 jclass GetHashMapClass()
@@ -452,6 +450,21 @@ jmethodID GetControlReferenceConstructor()
   return s_control_reference_constructor;
 }
 
+jclass GetControlGroupContainerClass()
+{
+  return s_control_group_container_class;
+}
+
+jfieldID GetControlGroupContainerPointer()
+{
+  return s_control_group_container_pointer;
+}
+
+jmethodID GetControlGroupContainerConstructor()
+{
+  return s_control_group_container_constructor;
+}
+
 jclass GetEmulatedControllerClass()
 {
   return s_emulated_controller_class;
@@ -565,12 +578,11 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
                                                  "(Ljava/lang/String;)Ljava/lang/String;");
   env->DeleteLocalRef(analytics_class);
 
-  const jclass linked_hash_map_class = env->FindClass("java/util/LinkedHashMap");
-  s_linked_hash_map_class = reinterpret_cast<jclass>(env->NewGlobalRef(linked_hash_map_class));
-  s_linked_hash_map_init = env->GetMethodID(s_linked_hash_map_class, "<init>", "(I)V");
-  s_linked_hash_map_put = env->GetMethodID(
-      s_linked_hash_map_class, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-  env->DeleteLocalRef(linked_hash_map_class);
+  const jclass pair_class = env->FindClass("androidx/core/util/Pair");
+  s_pair_class = reinterpret_cast<jclass>(env->NewGlobalRef(pair_class));
+  s_pair_constructor =
+      env->GetMethodID(s_pair_class, "<init>", "(Ljava/lang/Object;Ljava/lang/Object;)V");
+  env->DeleteLocalRef(pair_class);
 
   const jclass hash_map_class = env->FindClass("java/util/HashMap");
   s_hash_map_class = reinterpret_cast<jclass>(env->NewGlobalRef(hash_map_class));
@@ -692,6 +704,16 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
   s_control_reference_constructor = env->GetMethodID(control_reference_class, "<init>", "(J)V");
   env->DeleteLocalRef(control_reference_class);
 
+  const jclass control_group_container_class = env->FindClass(
+      "org/dolphinemu/dolphinemu/features/input/model/controlleremu/ControlGroupContainer");
+  s_control_group_container_class =
+      reinterpret_cast<jclass>(env->NewGlobalRef(control_group_container_class));
+  s_control_group_container_pointer =
+      env->GetFieldID(control_group_container_class, "pointer", "J");
+  s_control_group_container_constructor =
+      env->GetMethodID(control_group_container_class, "<init>", "(J)V");
+  env->DeleteLocalRef(control_group_container_class);
+
   const jclass emulated_controller_class = env->FindClass(
       "org/dolphinemu/dolphinemu/features/input/model/controlleremu/EmulatedController");
   s_emulated_controller_class =
@@ -741,7 +763,7 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved)
   env->DeleteGlobalRef(s_game_file_class);
   env->DeleteGlobalRef(s_game_file_cache_class);
   env->DeleteGlobalRef(s_analytics_class);
-  env->DeleteGlobalRef(s_linked_hash_map_class);
+  env->DeleteGlobalRef(s_pair_class);
   env->DeleteGlobalRef(s_hash_map_class);
   env->DeleteGlobalRef(s_compress_cb_class);
   env->DeleteGlobalRef(s_content_handler_class);
@@ -761,5 +783,6 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved)
   env->DeleteGlobalRef(s_numeric_setting_class);
   env->DeleteGlobalRef(s_core_device_class);
   env->DeleteGlobalRef(s_core_device_control_class);
+  env->DeleteGlobalRef(s_control_group_container_class);
 }
 }
