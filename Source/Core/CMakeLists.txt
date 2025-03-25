@@ -53,36 +53,4 @@ if (APPLE AND ENABLE_QT)
     ${DOLPHIN_MAC_BUNDLE}/Contents/Info.plist
     
     DEPENDS dolphin-mpn)
-  
-  if (ENABLE_AUTOUPDATE)
-    add_dependencies(build_final_bundle MacUpdater)
-
-    add_custom_command(TARGET build_final_bundle
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E make_directory
-      "${DOLPHIN_MAC_BUNDLE}/Contents/Helpers"
-
-      COMMAND cp -R
-      "$<TARGET_BUNDLE_DIR:MacUpdater>"
-      "${DOLPHIN_MAC_BUNDLE}/Contents/Helpers/Dolphin Updater.app")
-
-    if (MACOS_CODE_SIGNING)
-      add_custom_command(TARGET build_final_bundle
-        POST_BUILD
-        COMMAND "${CMAKE_SOURCE_DIR}/Tools/mac-codesign.sh"
-        "-t"
-        "${MACOS_CODE_SIGNING_IDENTITY}"
-        "${DOLPHIN_MAC_BUNDLE}/Contents/Helpers/Dolphin Updater.app")
-    endif()
-  endif()
-
-  if (MACOS_CODE_SIGNING)
-    add_custom_command(TARGET build_final_bundle
-      POST_BUILD
-      COMMAND "${CMAKE_SOURCE_DIR}/Tools/mac-codesign.sh"
-      "-t"
-      "-e" "${CMAKE_SOURCE_DIR}/Source/Core/DolphinQt/DolphinEmu$<$<CONFIG:Debug>:Debug>.entitlements"
-      "${MACOS_CODE_SIGNING_IDENTITY}"
-      "${DOLPHIN_MAC_BUNDLE}")
-  endif()
 endif()
