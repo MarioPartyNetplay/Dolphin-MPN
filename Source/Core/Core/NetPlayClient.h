@@ -162,8 +162,6 @@ public:
   bool ChangeGame(const std::string& game);
   void SendChatMessage(const std::string& msg);
   void RequestStopGame();
-  void SendTimepointForNetPlayEvent(u64 timepoint, u64 uid);
-  void ScheduleExternalEvent(ExternalEventID id);
   void SendPowerButtonEvent();
   void SendActiveGeckoCodes();
   void GetActiveGeckoCodes();
@@ -335,8 +333,6 @@ private:
   void OnStartGame(sf::Packet& packet);
   void OnStopGame(sf::Packet& packet);
   void OnPowerButton();
-  void OnScheduleExternalEvent(sf::Packet& packet);
-  void OnSyncTimepointForExternalEvent(sf::Packet& packet);
   void OnPing(sf::Packet& packet);
   void OnPlayerPingData(sf::Packet& packet);
   void OnDesyncDetected(sf::Packet& packet);
@@ -403,6 +399,4 @@ void NetPlay_Enable(NetPlayClient* const np);
 void NetPlay_Disable();
 bool NetPlay_GetWiimoteData(const std::span<NetPlayClient::WiimoteDataBatchEntry>& entries);
 unsigned int NetPlay_GetLocalWiimoteForSlot(unsigned int slot);
-
-void NetPlay_RegisterEvents();
 }  // namespace NetPlay

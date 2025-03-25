@@ -214,7 +214,5 @@ private:
   Common::TraversalClient* m_traversal_client = nullptr;
   NetPlayUI* m_dialog = nullptr;
   NetPlayIndex m_index;
-
-  u64 m_external_event_uid_counter = 0;
 };
 }  // namespace NetPlay
