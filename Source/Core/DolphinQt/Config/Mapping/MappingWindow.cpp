@@ -322,7 +322,6 @@ void MappingWindow::OnLoadProfilePressed()
 
   m_controller->LoadConfig(ini.GetOrCreateSection("Profile"));
   m_controller->UpdateReferences(g_controller_interface);
-  m_controller->GetConfig()->GenerateControllerTextures();
 
   const auto lock = GetController()->GetStateLock();
   emit ConfigChanged();
@@ -562,7 +561,6 @@ void MappingWindow::OnDefaultFieldsPressed()
 {
   m_controller->LoadDefaults(g_controller_interface);
   m_controller->UpdateReferences(g_controller_interface);
-  m_controller->GetConfig()->GenerateControllerTextures();
 
   const auto lock = GetController()->GetStateLock();
   emit ConfigChanged();
@@ -580,7 +578,6 @@ void MappingWindow::OnClearFieldsPressed()
   m_controller->SetDefaultDevice(default_device);
 
   m_controller->UpdateReferences(g_controller_interface);
-  m_controller->GetConfig()->GenerateControllerTextures();
 
   const auto lock = GetController()->GetStateLock();
   emit ConfigChanged();

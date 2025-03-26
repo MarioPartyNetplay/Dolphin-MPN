@@ -55,7 +55,6 @@ public:
   void UnregisterHotplugCallback();
 
   void GenerateControllerTextures(const Common::IniFile& file);
-  void GenerateControllerTextures();
 
 private:
   ControllerInterface::HotplugCallbackHandle m_hotplug_callback_handle;
