@@ -276,6 +276,8 @@ void SConfig::OnTitleDirectlyBooted(const Core::CPUThreadGuard& guard)
   CBoot::LoadMapFromFilename(guard, ppc_symbol_db);
   HLE::Reload(system);
 
+  HiresTexture::Update();
+  
   PatchEngine::Reload(system);
   WC24PatchEngine::Reload();
 
@@ -288,13 +290,6 @@ void SConfig::OnTitleDirectlyBooted(const Core::CPUThreadGuard& guard)
 
 void SConfig::ReloadTextures(Core::System& system)
 {
-  Pad::GenerateDynamicInputTextures();
-  Keyboard::GenerateDynamicInputTextures();
-  if (system.IsWii() && !Config::Get(Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED))
-  {
-    Wiimote::GenerateDynamicInputTextures();
-  }
-
   HiresTexture::Update();
 }
 
