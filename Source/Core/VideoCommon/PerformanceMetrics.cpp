@@ -124,8 +124,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   last_display_size = display_size;
   // There are too many edge cases to reasonably handle when the display size changes, so just reset
   // the layout to default. Hopefully users aren't changing window sizes or resolutions too often.
-  const ImGuiCond set_next_position_condition =
-      display_size_changed ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+  const ImGuiCond set_next_position_condition = ImGuiCond_FirstUseEver;
 
   float window_y = window_padding;
   float window_x = ImGui::GetIO().DisplaySize.x - window_padding;
