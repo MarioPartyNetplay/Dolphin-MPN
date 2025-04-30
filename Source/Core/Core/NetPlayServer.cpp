@@ -638,11 +638,22 @@ void NetPlayServer::UpdatePadMapping()
 {
   sf::Packet spac;
   spac << MessageID::PadMapping;
-  for (PlayerId mapping : m_pad_map)
-  {
-    spac << mapping;
-  }
+  for (PadIndex i = 0; i < 4; i++)
+    spac << m_pad_map[i];
   SendToClients(spac);
+
+  // Also send the multi-pad mapping update
+  sf::Packet mpac;
+  mpac << MessageID::MultiPadMapping;
+  for (const auto& port_mapping : m_multi_pad_map)
+  {
+    mpac << static_cast<u32>(port_mapping.size());
+    for (const auto& player_id : port_mapping)
+    {
+      mpac << player_id;
+    }
+  }
+  SendToClients(mpac);
 }
 
 // called from ---GUI--- thread and ---NETPLAY--- thread
@@ -2536,5 +2547,64 @@ void NetPlayServer::ChunkedDataAbort()
   m_abort_chunked_data = true;
   m_chunked_data_event.Set();
   m_chunked_data_complete_event.Set();
+}
+
+// called from ---GUI--- thread and ---NETPLAY--- thread
+MultiPadMappingArray NetPlayServer::GetMultiPadMapping()
+{
+  std::lock_guard lkp(m_crit.players);
+  return m_multi_pad_map;
+}
+
+void NetPlayServer::SetMultiPadMapping(const MultiPadMappingArray& mappings)
+{
+  std::lock_guard lkp(m_crit.players);
+  m_multi_pad_map = mappings;
+
+  // Update the legacy single-player mapping with the first player from each port
+  for (size_t i = 0; i < m_pad_map.size(); i++)
+  {
+    if (!m_multi_pad_map[i].empty())
+    {
+      m_pad_map[i] = *m_multi_pad_map[i].begin();
+    }
+    else
+    {
+      m_pad_map[i] = 0;
+    }
+  }
+
+  // Send the multi-pad mapping update to all clients
+  sf::Packet spac;
+  spac << MessageID::MultiPadMapping;
+  for (const auto& port_mapping : m_multi_pad_map)
+  {
+    spac << static_cast<u32>(port_mapping.size());
+    for (const auto& player_id : port_mapping)
+    {
+      spac << player_id;
+    }
+  }
+
+  SendToClients(spac);
+}
+
+void NetPlayServer::OnPadMappingChanged()
+{
+  UpdatePadMapping();
+  
+  // Also send the multi-pad mapping update
+  sf::Packet spac;
+  spac << MessageID::MultiPadMapping;
+  for (auto& map : m_multi_pad_map)
+  {
+    spac << static_cast<u32>(map.size());
+    for (auto& player : map)
+    {
+      spac << player;
+    }
+  }
+
+  SendToClients(spac);
 }
 }  // namespace NetPlay
