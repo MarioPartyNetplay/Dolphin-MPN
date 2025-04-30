@@ -616,7 +616,35 @@ PadMappingArray NetPlayServer::GetWiimoteMapping() const
 void NetPlayServer::SetPadMapping(const PadMappingArray& mappings)
 {
   m_pad_map = mappings;
-  UpdatePadMapping();
+
+  // Update the multi-pad mapping to match the pad_map exactly (one player per port)
+  // Instead, allow multiple players per port by not clearing existing mappings
+  for (size_t i = 0; i < m_multi_pad_map.size(); ++i)
+  {
+    m_multi_pad_map[i].clear();
+    if (mappings[i] != 0)
+      m_multi_pad_map[i].insert(mappings[i]);
+    // If you want to allow multiple players to be mapped via GUI, you would add them here
+    // For now, this just mirrors pad_map, but you can extend this logic as needed
+  }
+
+  // Send new pad mappings to clients
+  sf::Packet spac;
+  spac << MessageID::PadMapping;
+  for (const auto& mapping : mappings)
+    spac << mapping;
+  SendToClients(spac);
+
+  // Send the multi-pad mapping
+  spac.clear();
+  spac << MessageID::MultiPadMapping;
+  for (const auto& map : m_multi_pad_map)
+  {
+    spac << static_cast<u32>(map.size());
+    for (auto pid : map)
+      spac << pid;
+  }
+  SendToClients(spac);
 }
 
 // called from ---GUI--- thread
@@ -841,10 +869,15 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
       // If the data is not from the correct player,
       // then disconnect them.
-      if (m_pad_map.at(map) != player.pid)
+      INFO_LOG_FMT(NETPLAY, "PadData: Received from player {} for port {}", player.pid, map);
+
+      // If the data is not from the correct player,
+      if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
       {
-        return 1;
+          INFO_LOG_FMT(NETPLAY, "PadData: Rejecting input from player {} for port {} (not mapped)", player.pid, map);
+          return 1;
       }
+      INFO_LOG_FMT(NETPLAY, "PadData: Forwarding input from player {} for port {}", player.pid, map);
 
       GCPadStatus pad;
       packet >> pad.button;
@@ -857,6 +890,9 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
              << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
       }
+      
+      // Include the sender's player ID in the packet
+      spac << player.pid;
     }
 
     if (m_host_input_authority)
