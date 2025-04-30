@@ -1631,8 +1631,7 @@ void NetPlayClient::ThreadFunc()
 
     if (qos_session.Successful())
     {
-      m_dialog->AppendChat(
-          Common::GetStringT("Quality of Service (QoS) was successfully enabled."));
+      m_dialog->AppendChat(Common::GetStringT("Quality of Service (QoS) was successfully enabled."));
     }
     else
     {
@@ -1646,7 +1645,11 @@ void NetPlayClient::ThreadFunc()
     int net;
     if (m_traversal_client)
       m_traversal_client->HandleResends();
-    net = enet_host_service(m_client, &netEvent, 250);
+
+    // Increase service time during game start to prevent timeouts
+    int timeout = m_is_running.IsSet() ? 250 : 1000;
+    net = enet_host_service(m_client, &netEvent, timeout);
+
     while (!m_async_queue.Empty())
     {
       INFO_LOG_FMT(NETPLAY, "Processing async queue event.");
@@ -1657,14 +1660,12 @@ void NetPlayClient::ThreadFunc()
       INFO_LOG_FMT(NETPLAY, "Processing async queue event done.");
       m_async_queue.Pop();
     }
+
     if (net > 0)
     {
       sf::Packet rpac;
       switch (netEvent.type)
       {
-      case ENET_EVENT_TYPE_CONNECT:
-        INFO_LOG_FMT(NETPLAY, "enet_host_service: connect event");
-        break;
       case ENET_EVENT_TYPE_RECEIVE:
         INFO_LOG_FMT(NETPLAY, "enet_host_service: receive event");
 
@@ -1673,6 +1674,7 @@ void NetPlayClient::ThreadFunc()
 
         enet_packet_destroy(netEvent.packet);
         break;
+
       case ENET_EVENT_TYPE_DISCONNECT:
         INFO_LOG_FMT(NETPLAY, "enet_host_service: disconnect event");
 
@@ -1682,22 +1684,37 @@ void NetPlayClient::ThreadFunc()
           StopGame();
 
         break;
+
       default:
         // not a valid switch case due to not technically being part of the enum
         if (static_cast<int>(netEvent.type) == Common::ENet::SKIPPABLE_EVENT)
+        {
           INFO_LOG_FMT(NETPLAY, "enet_host_service: skippable packet event");
+        }
         else
+        {
           ERROR_LOG_FMT(NETPLAY, "enet_host_service: unknown event type: {}", int(netEvent.type));
+        }
         break;
       }
     }
     else if (net == 0)
     {
-      INFO_LOG_FMT(NETPLAY, "enet_host_service: no event occurred");
+      // No event occurred - this is normal
+      continue;
     }
     else
     {
       ERROR_LOG_FMT(NETPLAY, "enet_host_service error: {}", net);
+      
+      // Only disconnect on critical errors
+      if (net < -1)
+      {
+        m_dialog->OnConnectionLost();
+        if (m_is_running.IsSet())
+          StopGame();
+        break;
+      }
     }
   }
 
@@ -1793,6 +1810,13 @@ bool NetPlayClient::StartGame(const std::string& path)
   m_current_golfer = 1;
   m_wait_on_input = false;
 
+  // Configure ENet for game start
+  if (m_server)
+  {
+    // Increase timeout during game start to prevent early disconnects
+    enet_peer_timeout(m_server, 0, PEER_TIMEOUT.count() * 2, PEER_TIMEOUT.count() * 2);
+  }
+
   m_is_running.Set();
   NetPlay_Enable(this);
 
@@ -1836,8 +1860,7 @@ bool NetPlayClient::StartGame(const std::string& path)
 
   boot_session_data->SetWiiSyncData(std::move(m_wii_sync_fs), std::move(m_wii_sync_titles),
                                     std::move(m_wii_sync_redirect_folder), [] {
-                                      // on emulation end clean up the Wii save sync directory --
-                                      // see OnSyncSaveDataWii()
+                                      // on emulation end clean up the Wii save sync directory
                                       const std::string wii_path = File::GetUserPath(D_USER_IDX) +
                                                                    "Wii" GC_MEMCARD_NETPLAY DIR_SEP;
                                       if (File::Exists(wii_path))
@@ -1853,6 +1876,12 @@ bool NetPlayClient::StartGame(const std::string& path)
   m_dialog->BootGame(path, std::move(boot_session_data));
 
   UpdateDevices();
+
+  // Reset ENet timeout back to normal after game start
+  if (m_server)
+  {
+    enet_peer_timeout(m_server, 0, PEER_TIMEOUT.count(), PEER_TIMEOUT.count());
+  }
 
   return true;
 }
@@ -2002,6 +2031,17 @@ void NetPlayClient::OnConnectReady(ENetAddress addr)
   if (m_connection_state == ConnectionState::WaitingForTraversalClientConnectReady)
   {
     m_connection_state = ConnectionState::Connecting;
+    
+    // Configure client for multiple players
+    if (m_client != nullptr && m_client->socket != ENET_SOCKET_NULL)
+    {
+      int value = 1;
+      if (setsockopt(m_client->socket, SOL_SOCKET, SO_REUSEADDR, (char*)&value, sizeof(value)) == -1)
+      {
+        ERROR_LOG_FMT(NETPLAY, "Failed to set SO_REUSEADDR on client socket");
+      }
+    }
+    
     enet_host_connect(m_client, &addr, CHANNEL_COUNT, 0);
   }
 }
@@ -2691,18 +2731,24 @@ SyncIdentifier NetPlayClient::GetSDCardIdentifier()
 
 std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
                                    const GBAConfigArray& gba_config,
-                                   const PadMappingArray& wiimote_map)
+                                   const PadMappingArray& wiimote_map,
+                                   const MultiPadMappingArray& multi_pad_map)
 {
-  std::vector<size_t> gc_slots, gba_slots, wiimote_slots;
-  for (size_t i = 0; i < pad_map.size(); ++i)
+  std::vector<size_t> gc_slots;
+  std::vector<size_t> gba_slots;
+  std::vector<size_t> wiimote_slots;
+
+  for (size_t i = 0; i < pad_map.size(); i++)
   {
-    if (pad_map[i] == pid && !gba_config[i].enabled)
+    // Check if this player is mapped to this port in the multi-pad mapping
+    if (multi_pad_map[i].find(pid) != multi_pad_map[i].end() && !gba_config[i].enabled)
       gc_slots.push_back(i + 1);
     if (pad_map[i] == pid && gba_config[i].enabled)
       gba_slots.push_back(i + 1);
     if (wiimote_map[i] == pid)
       wiimote_slots.push_back(i + 1);
   }
+
   std::vector<std::string> groups;
   std::array<std::pair<std::string, std::vector<size_t>*>, 3> slot_groups = {
       {{"GC", &gc_slots}, {"GBA", &gba_slots}, {"Wii", &wiimote_slots}}};

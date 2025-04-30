@@ -263,7 +263,8 @@ struct PadDetails
 
 std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
                                    const GBAConfigArray& gba_config,
-                                   const PadMappingArray& wiimote_map);
+                                   const PadMappingArray& wiimote_map,
+                                   const MultiPadMappingArray& multi_pad_map);
 bool IsNetPlayRunning();
 void SetSIPollBatching(bool state);
 void SendPowerButtonEvent();

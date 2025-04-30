@@ -127,39 +127,118 @@ void PadMappingDialog::OnMappingChanged()
 {
   for (unsigned int i = 0; i < m_wii_boxes.size(); i++)
   {
-    // Update GC port mappings
-    m_multi_pad_mapping[i].clear();
+    // Handle GC port mappings
     QList<QListWidgetItem*> gc_selected = m_gc_boxes[i]->selectedItems();
+    m_multi_pad_mapping[i].clear();
+
+    bool has_none = false;
+    bool has_players = false;
+
+    // First pass - check what's selected
     for (auto* item : gc_selected)
     {
-      if (item->text() != tr("None"))
+      if (item->text() == tr("None"))
+        has_none = true;
+      else
+        has_players = true;
+    }
+
+    // Handle selections with signal blocking
+    {
+      const QSignalBlocker blocker(m_gc_boxes[i]);
+
+      // If both None and players are selected, enforce the proper state
+      if (has_none && has_players)
       {
-        int player_index = m_gc_boxes[i]->row(item) - 1;
-        if (player_index >= 0 && player_index < static_cast<int>(m_players.size()))
+        if (gc_selected.size() > 1)  // If multiple items selected, prefer players over None
         {
-          m_multi_pad_mapping[i].insert(m_players[player_index]->pid);
+          m_gc_boxes[i]->item(0)->setSelected(false);  // Deselect None
+          has_none = false;
         }
+        else  // If only one item, prefer None
+        {
+          for (int j = 1; j < m_gc_boxes[i]->count(); j++)
+            m_gc_boxes[i]->item(j)->setSelected(false);
+          has_players = false;
+        }
+      }
+
+      // Update mappings based on final state
+      if (has_players)
+      {
+        for (auto* item : gc_selected)
+        {
+          if (item->text() != tr("None"))
+          {
+            int player_index = m_gc_boxes[i]->row(item) - 1;
+            if (player_index >= 0 && player_index < static_cast<int>(m_players.size()))
+            {
+              m_multi_pad_mapping[i].insert(m_players[player_index]->pid);
+            }
+          }
+        }
+      }
+
+      // If nothing is selected or only None is selected, ensure None is selected
+      if (!has_players)
+      {
+        m_gc_boxes[i]->item(0)->setSelected(true);
       }
     }
 
-    // Update the legacy single-player mapping with the first selected player
+    // Update legacy single-player mapping
     m_pad_mapping[i] = m_multi_pad_mapping[i].empty() ? 0 : *m_multi_pad_mapping[i].begin();
 
-    // Update Wii Remote mappings (keeping single-player for now)
+    // Handle Wii Remote mappings
     QList<QListWidgetItem*> wii_selected = m_wii_boxes[i]->selectedItems();
     m_wii_mapping[i] = 0;
-    if (!wii_selected.empty() && wii_selected.last()->text() != tr("None"))
+
+    has_none = false;
+    has_players = false;
+
+    // First pass - check what's selected
+    for (auto* item : wii_selected)
     {
-      int player_index = m_wii_boxes[i]->row(wii_selected.last()) - 1;
-      if (player_index >= 0 && player_index < static_cast<int>(m_players.size()))
+      if (item->text() == tr("None"))
+        has_none = true;
+      else
+        has_players = true;
+    }
+
+    // Handle selections with signal blocking
+    {
+      const QSignalBlocker blocker(m_wii_boxes[i]);
+
+      // For Wii remotes, we only want one selection
+      if (has_none || !has_players)
       {
-        m_wii_mapping[i] = m_players[player_index]->pid;
+        // Select None and clear other selections
+        for (int j = 0; j < m_wii_boxes[i]->count(); j++)
+          m_wii_boxes[i]->item(j)->setSelected(j == 0);
+      }
+      else
+      {
+        // Use the last selected player
+        auto* last_selected = wii_selected.last();
+        if (last_selected->text() != tr("None"))
+        {
+          int player_index = m_wii_boxes[i]->row(last_selected) - 1;
+          if (player_index >= 0 && player_index < static_cast<int>(m_players.size()))
+          {
+            // Clear all selections except the last player
+            for (int j = 0; j < m_wii_boxes[i]->count(); j++)
+              m_wii_boxes[i]->item(j)->setSelected(m_wii_boxes[i]->item(j) == last_selected);
+            
+            m_wii_mapping[i] = m_players[player_index]->pid;
+          }
+        }
       }
     }
 
     m_gba_config[i].enabled = m_gba_boxes[i]->isChecked();
   }
 
+  // Update server with new mappings
   if (auto server = Settings::Instance().GetNetPlayServer())
   {
     server->SetPadMapping(m_pad_mapping);

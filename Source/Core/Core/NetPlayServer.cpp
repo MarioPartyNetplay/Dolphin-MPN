@@ -158,12 +158,25 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
     ENetAddress serverAddr;
     serverAddr.host = ENET_HOST_ANY;
     serverAddr.port = port;
-    m_server = enet_host_create(&serverAddr, 10, CHANNEL_COUNT, 0, 0);
-    if (m_server != nullptr)
+    
+    // Configure server for multiple players
+    ENetHost* server = enet_host_create(&serverAddr, 10, CHANNEL_COUNT, 0, 0);
+    if (server != nullptr)
     {
-      m_server->mtu = std::min(m_server->mtu, NetPlay::MAX_ENET_MTU);
-      m_server->intercept = Common::ENet::InterceptCallback;
+      server->mtu = std::min(server->mtu, NetPlay::MAX_ENET_MTU);
+      server->intercept = Common::ENet::InterceptCallback;
+      
+      // Set socket options to allow multiple players
+      if (server->socket != ENET_SOCKET_NULL)
+      {
+        int value = 1;
+        if (setsockopt(server->socket, SOL_SOCKET, SO_REUSEADDR, (char*)&value, sizeof(value)) == -1)
+        {
+          ERROR_LOG_FMT(NETPLAY, "Failed to set SO_REUSEADDR on server socket");
+        }
+      }
     }
+    m_server = server;
 
     SetupIndex();
   }
