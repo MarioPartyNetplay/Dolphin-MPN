@@ -1,3 +1,6 @@
+// Copyright 2010 Dolphin Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #include "Core/NetPlayClient.h"
 
 #include <algorithm>
@@ -726,23 +729,12 @@ void NetPlayClient::OnPadData(sf::Packet& packet)
           pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
     }
 
-    // Get the player ID who sent this pad data
-    PlayerId sender_pid;
-    packet >> sender_pid;
-
-    if (m_multi_pad_map[map].find(sender_pid) != m_multi_pad_map[map].end())
-    {
-      INFO_LOG_FMT(NETPLAY, "Received pad data for port {} from player {}. Pushing to buffer.", map, sender_pid);
-      m_pad_buffer.at(map).Push(pad);
-      m_gc_pad_event.Set();
-    }
-    else
-    {
-      INFO_LOG_FMT(NETPLAY, "Received pad data for port {} from player {}, but not mapped. Ignoring.", map, sender_pid);
-    }
+    // Trusting server for good map value (>=0 && <4)
+    // add to pad buffer
+    m_pad_buffer.at(map).Push(pad);
+    m_gc_pad_event.Set();
   }
 }
-
 
 void NetPlayClient::OnPadHostData(sf::Packet& packet)
 {
@@ -1961,13 +1953,13 @@ void NetPlayClient::UpdateDevices()
   u8 pad = 0;
 
   auto& si = Core::System::GetInstance().GetSerialInterface();
-  for (const auto& port_mapping : m_multi_pad_map)
+  for (auto player_id : m_pad_map)
   {
-    if (m_gba_config[pad].enabled && !port_mapping.empty())
+    if (m_gba_config[pad].enabled && player_id > 0)
     {
       si.ChangeDevice(SerialInterface::SIDEVICE_GC_GBA_EMULATED, pad);
     }
-    else if (port_mapping.find(m_local_player->pid) != port_mapping.end())
+    else if (player_id == m_local_player->pid)
     {
       // Use local controller types for local controllers if they are compatible
       const SerialInterface::SIDevices si_device =
@@ -1987,7 +1979,7 @@ void NetPlayClient::UpdateDevices()
       }
       local_pad++;
     }
-    else if (!port_mapping.empty())
+    else if (player_id > 0)
     {
       si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
     }
@@ -2107,79 +2099,24 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
   // and send it.
 
   // When here when told to so we don't deadlock in certain situations
-  INFO_LOG_FMT(NETPLAY, "GetNetPads called for pad {}. Buffer size: {}", pad_nb, m_pad_buffer[pad_nb].Size());
-
-  // Combine all available pad statuses for this port
-  GCPadStatus combined_pad = {};
-  bool got_input = false;
-
-  while (m_pad_buffer[pad_nb].Size() > 0)
+  while (m_wait_on_input)
   {
-    GCPadStatus next_pad;
-    m_pad_buffer[pad_nb].Pop(next_pad);
+    if (!m_is_running.IsSet())
+    {
+      return false;
+    }
 
-    if (!got_input)
+    if (m_wait_on_input_received)
     {
-      combined_pad = next_pad;
-      got_input = true;
-    }
-    else
-    {
-      combined_pad.button |= next_pad.button;
-      combined_pad.analogA = std::max(combined_pad.analogA, next_pad.analogA);
-      combined_pad.analogB = std::max(combined_pad.analogB, next_pad.analogB);
-      combined_pad.stickX = std::max(combined_pad.stickX, next_pad.stickX);
-      combined_pad.stickY = std::max(combined_pad.stickY, next_pad.stickY);
-      combined_pad.substickX = std::max(combined_pad.substickX, next_pad.substickX);
-      combined_pad.substickY = std::max(combined_pad.substickY, next_pad.substickY);
-      combined_pad.triggerLeft = std::max(combined_pad.triggerLeft, next_pad.triggerLeft);
-      combined_pad.triggerRight = std::max(combined_pad.triggerRight, next_pad.triggerRight);
-      combined_pad.isConnected = combined_pad.isConnected || next_pad.isConnected;
-    }
-  }
+      // Tell the server we've acknowledged the message
+      sf::Packet spac;
+      spac << MessageID::GolfPrepare;
+      Send(spac);
 
-  if (got_input)
-  {
-    INFO_LOG_FMT(NETPLAY, "Combined input for pad {}: button={:x}", pad_nb, combined_pad.button);
-    *pad_status = combined_pad;
-    auto& movie = Core::System::GetInstance().GetMovie();
-    if (movie.IsRecordingInput())
-    {
-      movie.RecordInput(pad_status, pad_nb);
-      movie.InputUpdate();
+      m_wait_on_input_received = false;
     }
-    else
-    {
-      movie.CheckPadStatus(pad_status, pad_nb);
-    }
-    return true;
-  }
-  else
-  {
-    INFO_LOG_FMT(NETPLAY, "Waiting for input for pad {}...", pad_nb);
-    // Wait for input as before
-    while (m_pad_buffer[pad_nb].Size() == 0)
-    {
-      if (!m_is_running.IsSet())
-      {
-        INFO_LOG_FMT(NETPLAY, "Game is not running, returning false for pad {}", pad_nb);
-        return false;
-      }
-      m_gc_pad_event.Wait();
-      INFO_LOG_FMT(NETPLAY, "Woke up from wait for pad {}. Buffer size: {}", pad_nb, m_pad_buffer[pad_nb].Size());
-    }
-    m_pad_buffer[pad_nb].Pop(*pad_status);
-    auto& movie = Core::System::GetInstance().GetMovie();
-    if (movie.IsRecordingInput())
-    {
-      movie.RecordInput(pad_status, pad_nb);
-      movie.InputUpdate();
-    }
-    else
-    {
-      movie.CheckPadStatus(pad_status, pad_nb);
-    }
-    return true;
+
+    m_wait_on_input_event.Wait();
   }
 
   if (IsFirstInGamePad(pad_nb) && batching)
@@ -2191,7 +2128,6 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     const int num_local_pads = NumLocalPads();
     for (int local_pad = 0; local_pad < num_local_pads; local_pad++)
     {
-      // PollLocalPad will push to the buffer and add to the packet for each local pad
       send_packet = PollLocalPad(local_pad, packet) || send_packet;
     }
 
@@ -2201,6 +2137,75 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     if (m_host_input_authority)
       SendPadHostPoll(-1);
   }
+
+  if (!batching)
+  {
+    const int local_pad = InGamePadToLocalPad(pad_nb);
+    if (local_pad < 4)
+    {
+      sf::Packet packet;
+      packet << MessageID::PadData;
+      if (PollLocalPad(local_pad, packet))
+        SendAsync(std::move(packet));
+    }
+
+    if (m_host_input_authority)
+      SendPadHostPoll(pad_nb);
+  }
+
+  if (m_host_input_authority)
+  {
+    if (m_local_player->pid != m_current_golfer)
+    {
+      // CoreTiming acts funny and causes what looks like frame skip if
+      // we toggle the emulation speed too quickly, so to prevent this
+      // we wait until the buffer has been over for at least 1 second.
+
+      const bool buffer_over_target = m_pad_buffer[pad_nb].Size() > m_target_buffer_size + 1;
+      if (!buffer_over_target)
+        m_buffer_under_target_last = std::chrono::steady_clock::now();
+
+      std::chrono::duration<double> time_diff =
+          std::chrono::steady_clock::now() - m_buffer_under_target_last;
+      if (time_diff.count() >= 1.0 || !buffer_over_target)
+      {
+        // run fast if the buffer is overfilled, otherwise run normal speed
+        Config::SetCurrent(Config::MAIN_EMULATION_SPEED, buffer_over_target ? 0.0f : 1.0f);
+      }
+    }
+    else
+    {
+      // Set normal speed when we're the host, otherwise it can get stuck at unlimited
+      Config::SetCurrent(Config::MAIN_EMULATION_SPEED, 1.0f);
+    }
+  }
+
+  // Now, we either use the data pushed earlier, or wait for the
+  // other clients to send it to us
+  while (m_pad_buffer[pad_nb].Size() == 0)
+  {
+    if (!m_is_running.IsSet())
+    {
+      return false;
+    }
+
+    m_gc_pad_event.Wait();
+  }
+
+  m_pad_buffer[pad_nb].Pop(*pad_status);
+
+  auto& movie = Core::System::GetInstance().GetMovie();
+  if (movie.IsRecordingInput())
+  {
+    movie.RecordInput(pad_status, pad_nb);
+    movie.InputUpdate();
+  }
+  else
+  {
+    movie.CheckPadStatus(pad_status, pad_nb);
+  }
+
+  return true;
 }
 
 u64 NetPlayClient::GetInitialRTCValue() const
@@ -2481,13 +2486,7 @@ bool NetPlayClient::IsFirstInGamePad(int ingame_pad) const
 
 int NetPlayClient::NumLocalPads() const
 {
-  int local_pad_count = 0;
-  for (const auto& mapping : m_multi_pad_map)
-  {
-    if (mapping.find(m_local_player->pid) != mapping.end())
-      local_pad_count++;
-  }
-  return local_pad_count;
+  return std::ranges::count(m_pad_map, m_local_player->pid);
 }
 
 int NetPlayClient::NumLocalWiimotes() const

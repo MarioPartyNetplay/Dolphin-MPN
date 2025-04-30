@@ -616,35 +616,7 @@ PadMappingArray NetPlayServer::GetWiimoteMapping() const
 void NetPlayServer::SetPadMapping(const PadMappingArray& mappings)
 {
   m_pad_map = mappings;
-
-  // Update the multi-pad mapping to match the pad_map exactly (one player per port)
-  // Instead, allow multiple players per port by not clearing existing mappings
-  for (size_t i = 0; i < m_multi_pad_map.size(); ++i)
-  {
-    m_multi_pad_map[i].clear();
-    if (mappings[i] != 0)
-      m_multi_pad_map[i].insert(mappings[i]);
-    // If you want to allow multiple players to be mapped via GUI, you would add them here
-    // For now, this just mirrors pad_map, but you can extend this logic as needed
-  }
-
-  // Send new pad mappings to clients
-  sf::Packet spac;
-  spac << MessageID::PadMapping;
-  for (const auto& mapping : mappings)
-    spac << mapping;
-  SendToClients(spac);
-
-  // Send the multi-pad mapping
-  spac.clear();
-  spac << MessageID::MultiPadMapping;
-  for (const auto& map : m_multi_pad_map)
-  {
-    spac << static_cast<u32>(map.size());
-    for (auto pid : map)
-      spac << pid;
-  }
-  SendToClients(spac);
+  UpdatePadMapping();
 }
 
 // called from ---GUI--- thread
@@ -857,53 +829,88 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   {
     // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
-      break;
+        break;
 
+    // Accumulators for merging
+    std::array<GCPadStatus, 4> merged_inputs{};
+    std::array<bool, 4> has_input{};
+
+    // Read all pad data from the packet
+    while (!packet.endOfPacket())
+    {
+        PadIndex map;
+        packet >> map;
+
+        // Multi-pad support: allow if player is mapped to this pad in m_multi_pad_map
+        if (!m_multi_pad_map[map].empty())
+        {
+            if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
+                return 1;
+        }
+        else
+        {
+            if (m_pad_map.at(map) != player.pid)
+                return 1;
+        }
+
+        GCPadStatus pad;
+        packet >> pad.button;
+        if (!m_gba_config.at(map).enabled)
+        {
+            packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
+                pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
+        }
+
+        if (!has_input[map])
+        {
+            merged_inputs[map] = pad;
+            has_input[map] = true;
+        }
+        else
+        {
+            // Merge logic: OR buttons, max analogs
+            merged_inputs[map].button |= pad.button;
+            merged_inputs[map].analogA = std::max(merged_inputs[map].analogA, pad.analogA);
+            merged_inputs[map].analogB = std::max(merged_inputs[map].analogB, pad.analogB);
+            merged_inputs[map].stickX = std::max(merged_inputs[map].stickX, pad.stickX);
+            merged_inputs[map].stickY = std::max(merged_inputs[map].stickY, pad.stickY);
+            merged_inputs[map].substickX = std::max(merged_inputs[map].substickX, pad.substickX);
+            merged_inputs[map].substickY = std::max(merged_inputs[map].substickY, pad.substickY);
+            merged_inputs[map].triggerLeft = std::max(merged_inputs[map].triggerLeft, pad.triggerLeft);
+            merged_inputs[map].triggerRight = std::max(merged_inputs[map].triggerRight, pad.triggerRight);
+            merged_inputs[map].isConnected = merged_inputs[map].isConnected || pad.isConnected;
+        }
+    }
+
+    // Now send the merged input for each port
     sf::Packet spac;
     spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
 
-    while (!packet.endOfPacket())
+    for (PadIndex map = 0; map < 4; ++map)
     {
-      PadIndex map;
-      packet >> map;
+        if (!has_input[map])
+            continue;
 
-      // If the data is not from the correct player,
-      // then disconnect them.
-      INFO_LOG_FMT(NETPLAY, "PadData: Received from player {} for port {}", player.pid, map);
-
-      // If the data is not from the correct player,
-      if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
-      {
-          INFO_LOG_FMT(NETPLAY, "PadData: Rejecting input from player {} for port {} (not mapped)", player.pid, map);
-          return 1;
-      }
-      INFO_LOG_FMT(NETPLAY, "PadData: Forwarding input from player {} for port {}", player.pid, map);
-
-      GCPadStatus pad;
-      packet >> pad.button;
-      spac << map << pad.button;
-      if (!m_gba_config.at(map).enabled)
-      {
-        packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
-            pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
-
-        spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
-             << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
-      }
-      
-      // Include the sender's player ID in the packet
-      spac << player.pid;
+        spac << map << merged_inputs[map].button;
+        if (!m_gba_config.at(map).enabled)
+        {
+            spac << merged_inputs[map].analogA << merged_inputs[map].analogB
+                 << merged_inputs[map].stickX << merged_inputs[map].stickY
+                 << merged_inputs[map].substickX << merged_inputs[map].substickY
+                 << merged_inputs[map].triggerLeft << merged_inputs[map].triggerRight
+                 << merged_inputs[map].isConnected;
+        }
     }
 
     if (m_host_input_authority)
     {
-      // Prevent crash before game stop if the golfer disconnects
-      if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
-        Send(m_players.at(m_current_golfer).socket, spac);
+        // Prevent crash before game stop if the golfer disconnects
+        if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
+            Send(m_players.at(m_current_golfer).socket, spac);
     }
     else
     {
-      SendToClients(spac, player.pid);
+        SendToClients(spac, player.pid);
     }
   }
   break;
