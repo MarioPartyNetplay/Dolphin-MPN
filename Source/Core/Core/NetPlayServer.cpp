@@ -843,25 +843,20 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::PadData:
   {
     INFO_LOG_FMT(NETPLAY, "[OnData] Step 2: Handling PadData from client {}", player.pid);
-    // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
     {
       INFO_LOG_FMT(NETPLAY, "[OnData] Step 3: Ignoring PadData, player.current_game {} != m_current_game {}", player.current_game, m_current_game);
       break;
     }
 
-    // Accumulators for merging
-    std::array<GCPadStatus, 4> merged_inputs{};
-    std::array<bool, 4> has_input{};
+    // For deterministic merging, collect all pad data for this packet by port
+    // and store them in a map: port -> (pid, pad)
+    std::map<PadIndex, std::vector<std::pair<PlayerId, GCPadStatus>>> pad_inputs_by_port;
 
-    // Read all pad data from the packet
     while (!packet.endOfPacket())
     {
       PadIndex map;
       packet >> map;
-
-      INFO_LOG_FMT(NETPLAY, "[OnData] Step 4: PadData for port {}: allowed PIDs: [{}], incoming PID: {}", map, fmt::join(m_multi_pad_map[map], ", "), player.pid);
-      // Multi-pad support: allow if player is mapped to this pad in m_multi_pad_map
       if (!m_multi_pad_map[map].empty())
       {
         if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
@@ -872,7 +867,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         if (m_pad_map.at(map) != player.pid)
           return 1;
       }
-
       GCPadStatus pad;
       packet >> pad.button;
       if (!m_gba_config.at(map).enabled)
@@ -880,37 +874,35 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
             pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
       }
+      pad_inputs_by_port[map].emplace_back(player.pid, pad);
+    }
 
-      if (!has_input[map])
+    // Accumulators for merging
+    std::array<GCPadStatus, 4> merged_inputs{};
+    std::array<bool, 4> has_input{};
+
+    // For each port, only accept the first input received in this frame
+    for (auto& [map, inputs] : pad_inputs_by_port)
+    {
+      std::sort(inputs.begin(), inputs.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+      for (const auto& [pid, pad] : inputs)
       {
-        merged_inputs[map] = pad;
-        has_input[map] = true;
-      }
-      else
-      {
-        // Merge logic: OR buttons, max analogs
-        merged_inputs[map].button |= pad.button;
-        merged_inputs[map].analogA = std::max(merged_inputs[map].analogA, pad.analogA);
-        merged_inputs[map].analogB = std::max(merged_inputs[map].analogB, pad.analogB);
-        merged_inputs[map].stickX = std::max(merged_inputs[map].stickX, pad.stickX);
-        merged_inputs[map].stickY = std::max(merged_inputs[map].stickY, pad.stickY);
-        merged_inputs[map].substickX = std::max(merged_inputs[map].substickX, pad.substickX);
-        merged_inputs[map].substickY = std::max(merged_inputs[map].substickY, pad.substickY);
-        merged_inputs[map].triggerLeft = std::max(merged_inputs[map].triggerLeft, pad.triggerLeft);
-        merged_inputs[map].triggerRight = std::max(merged_inputs[map].triggerRight, pad.triggerRight);
-        merged_inputs[map].isConnected = merged_inputs[map].isConnected || pad.isConnected;
+        if (!has_input[map])
+        {
+          merged_inputs[map] = pad;
+          has_input[map] = true;
+          INFO_LOG_FMT(NETPLAY, "[OnData] Port {}: using input from PID {}", map, pid);
+        }
+        // else: ignore further inputs for this port in this frame
       }
     }
 
-    // Now send the merged input for each port
     sf::Packet spac;
     spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
-
     for (PadIndex map = 0; map < 4; ++map)
     {
       if (!has_input[map])
         continue;
-
       spac << map << merged_inputs[map].button;
       if (!m_gba_config.at(map).enabled)
       {
@@ -921,11 +913,9 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
              << merged_inputs[map].isConnected;
       }
     }
-
     if (m_host_input_authority)
     {
       INFO_LOG_FMT(NETPLAY, "[OnData] Step 5: Host input authority active");
-      // Prevent crash before game stop if the golfer disconnects
       if (m_current_golfer != 0 && m_players.find(m_current_golfer) != m_players.end())
       {
         INFO_LOG_FMT(NETPLAY, "[OnData] Step 6: Sending PadHostData to golfer {}", m_current_golfer);
