@@ -2303,7 +2303,6 @@ void NetPlayServer::SendToClients(const sf::Packet& packet, const PlayerId skip_
   {
     if (p.pid && p.pid != skip_pid)
     {
-      INFO_LOG_FMT(NETPLAY, "[SendToClients] Sending message ID: {:x} to pid {} (peer ptr: {} address {:x}:{}) on channel {}", static_cast<u8>(mid), p.second.pid, static_cast<void*>(p.second.socket), p.second.socket ? p.second.socket->address.host : 0, p.second.socket ? p.second.socket->address.port : 0, channel_id);
       Send(p.socket, packet, channel_id);
     }
   }
