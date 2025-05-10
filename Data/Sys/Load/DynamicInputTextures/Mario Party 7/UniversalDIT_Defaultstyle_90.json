@@ -1413,7 +1413,7 @@
   "preserve_aspect_ratio": true,
   "output_textures": {
     "tex1_64x64_16b2cd2f35f95f59_5.png": {
-      "image": "tex1_64x64_90.png",
+      "image": "tex1_64x64.png",
       "emulated_controls": {
         "GCPad1": {
           "Buttons/X": [
@@ -1428,7 +1428,7 @@
       }
     },
     "tex1_64x64_27fc6a3434514319_5.png": {
-      "image": "tex1_64x64_90.png",
+      "image": "tex1_64x64.png",
       "emulated_controls": {
         "GCPad1": {
           "Buttons/B": [
@@ -1443,7 +1443,7 @@
       }
     },
     "tex1_64x64_130ffe6baa7b5c81_5.png": {
-      "image": "tex1_64x64_90.png",
+      "image": "tex1_64x64.png",
       "emulated_controls": {
         "GCPad1": {
           "Triggers/R": [
@@ -1458,7 +1458,7 @@
       }
     },
     "tex1_64x64_649d7ccdcf452d50_5.png": {
-      "image": "tex1_64x64_90.png",
+      "image": "tex1_64x64.png",
       "emulated_controls": {
         "GCPad1": {
           "Buttons/Y": [
@@ -1473,7 +1473,7 @@
       }
     },
     "tex1_64x64_ab335b5a605e7111_5.png": {
-      "image": "tex1_64x64_90.png",
+      "image": "tex1_64x64.png",
       "emulated_controls": {
         "GCPad1": {
           "Triggers/L": [
@@ -1488,7 +1488,7 @@
       }
     },
     "tex1_64x64_cbceb42212e08ccc_5.png": {
-      "image": "tex1_64x64_90.png",
+      "image": "tex1_64x64.png",
       "emulated_controls": {
         "GCPad1": {
           "Buttons/A": [
