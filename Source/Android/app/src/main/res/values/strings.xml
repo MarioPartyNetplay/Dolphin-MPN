@@ -54,7 +54,8 @@
 
     <string name="input_binding">Input Binding</string>
     <string name="input_binding_description">Press or move an input to bind it to %1$s.</string>
-    <string name="input_binding_no_device">You need to select a device first!</string>
+    <string name="input_binding_no_device">You need to select a device first.</string>
+    <string name="input_binding_disconnected_device">The selected device is disconnected.\n\nPlease reconnect the device or select a different device.</string>
     <string name="input_configure_input">Configure Input</string>
     <string name="input_configure_output">Configure Output</string>
     <string name="input_expression">Expression</string>
@@ -152,6 +153,8 @@
     <string name="panic_handlers_description">Show a message box when a potentially serious error has occurred. Disabling this may avoid annoying and non-fatal messages, but it may result in major crashes having no explanation at all.</string>
     <string name="osd_messages">Show On-Screen Display Messages</string>
     <string name="osd_messages_description">Display messages over the emulation screen area. These messages include memory card writes, video backend and CPU information, and JIT cache clearing.</string>
+    <string name="time_tracking">Enable Play Time Tracking</string>
+    <string name="time_tracking_description">Tracks the time you spend playing games and shows it in the game details.</string>
     <string name="download_game_covers">Download Game Covers from GameTDB.com</string>
     <string name="show_titles_in_game_list">Show Titles</string>
     <string name="change_theme">Change App Theme</string>
@@ -182,6 +185,8 @@
     <!-- Audio Settings -->
     <string name="audio_submenu">Audio</string>
     <string name="dsp_emulation_engine">DSP Emulation Engine</string>
+    <string name="audio_buffer_size">Audio Buffer Size</string>
+    <string name="audio_buffer_size_description">Controls the number of audio samples buffered. Lower values reduce latency but may cause more crackling or stuttering. If unsure, set this to 80 ms.</string>
     <string name="audio_fill_gaps">Fill Audio Gaps</string>
     <string name="audio_fill_gaps_description">Repeat existing audio during lag spikes to prevent stuttering. If unsure, leave this checked.</string>
     <string name="audio_volume">Audio Volume</string>
@@ -514,6 +519,7 @@
     <string name="game_ini_junk_question">The settings file for this game contains extraneous data added by an old version of Dolphin. This will likely prevent global settings from working as intended.\n\nWould you like to fix this by deleting the settings file for this game? All game-specific settings and cheats that you have added will be removed. This cannot be undone.</string>
 
     <!-- Game Details Screen -->
+    <string name="game_details_time_played">Played for %1$dh %2$dm</string>
     <string name="game_details_country">Country</string>
     <string name="game_details_company">Company</string>
     <string name="game_details_game_id">Game ID</string>

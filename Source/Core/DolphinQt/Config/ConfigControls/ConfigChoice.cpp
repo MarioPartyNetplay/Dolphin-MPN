@@ -45,8 +45,8 @@ ConfigStringChoice::ConfigStringChoice(const std::vector<std::pair<QString, QStr
   for (const auto& [option_text, option_data] : options)
     addItem(option_text, option_data);
 
-  connect(this, &QComboBox::currentIndexChanged, this, &ConfigStringChoice::Update);
   Load();
+  connect(this, &QComboBox::currentIndexChanged, this, &ConfigStringChoice::Update);
 }
 
 void ConfigStringChoice::Update(int index)
@@ -153,11 +153,21 @@ void ConfigComplexChoice::UpdateComboIndex()
   };
 
   auto it = std::find_if(m_options.begin(), m_options.end(), is_correct_option);
-  int index = static_cast<int>(std::distance(m_options.begin(), it));
+  int index;
+
+  if (it == m_options.end())
+    index = m_default_index;
+  else
+    index = static_cast<int>(std::distance(m_options.begin(), it));
 
   // Will crash if not blocked
   const QSignalBlocker blocker(this);
   setCurrentIndex(index);
+}
+
+void ConfigComplexChoice::SetDefault(int index)
+{
+  m_default_index = index;
 }
 
 const std::pair<Config::Location, Config::Location> ConfigComplexChoice::GetLocation() const
@@ -180,4 +190,4 @@ void ConfigComplexChoice::mousePressEvent(QMouseEvent* event)
   {
     QComboBox::mousePressEvent(event);
   }
-};
+}

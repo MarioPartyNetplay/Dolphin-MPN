@@ -24,6 +24,7 @@
 
 #include "Common/CommonTypes.h"
 #include "Common/SPSCQueue.h"
+#include "Common/Timer.h"
 #include "Core/CPUThreadConfigCallback.h"
 
 class PointerWrap;
@@ -158,7 +159,7 @@ public:
   // Throttle the CPU to the specified target cycle.
   void Throttle(const s64 target_cycle);
 
-  // May be used from any thread.
+  // May be used from CPU or GPU thread.
   void SleepUntil(TimePoint time_point);
 
   // Used by VideoInterface
@@ -183,7 +184,7 @@ private:
   std::vector<Event> m_event_queue;
   u64 m_event_fifo_id = 0;
   std::mutex m_ts_write_lock;
-  Common::SPSCQueue<Event, false> m_ts_queue;
+  Common::SPSCQueue<Event> m_ts_queue;
 
   float m_last_oc_factor = 0.0f;
 
@@ -201,19 +202,27 @@ private:
   float m_config_oc_inv_factor = 0.0f;
   bool m_config_sync_on_skip_idle = false;
 
-  s64 m_throttle_last_cycle = 0;
-  TimePoint m_throttle_deadline = Clock::now();
-  s64 m_throttle_clock_per_sec = 0;
+  s64 m_throttle_reference_cycle = 0;
+  TimePoint m_throttle_reference_time = Clock::now();
+  u32 m_throttle_adj_clock_per_sec = 0;
   bool m_throttle_disable_vi_int = false;
 
   DT m_max_fallback = {};
   DT m_max_variance = {};
   double m_emulation_speed = 1.0;
 
+  bool IsSpeedUnlimited() const;
+  void UpdateSpeedLimit(s64 cycle, double new_speed);
   void ResetThrottle(s64 cycle);
+  TimePoint CalculateTargetHostTimeInternal(s64 target_cycle);
+  void UpdateVISkip(TimePoint current_time, TimePoint target_time);
 
   int DowncountToCycles(int downcount) const;
   int CyclesToDowncount(int cycles) const;
+
+  std::atomic_bool m_use_precision_timer = false;
+  Common::PrecisionTimer m_precision_cpu_timer;
+  Common::PrecisionTimer m_precision_gpu_timer;
 };
 
 }  // namespace CoreTiming
