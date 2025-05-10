@@ -72,6 +72,7 @@ extern const Info<bool> MAIN_OVERRIDE_REGION_SETTINGS;
 extern const Info<bool> MAIN_DPL2_DECODER;
 extern const Info<AudioCommon::DPL2Quality> MAIN_DPL2_QUALITY;
 extern const Info<int> MAIN_AUDIO_LATENCY;
+extern const Info<int> MAIN_AUDIO_BUFFER_SIZE;
 extern const Info<bool> MAIN_AUDIO_FILL_GAPS;
 extern const Info<std::string> MAIN_MEMCARD_A_PATH;
 extern const Info<std::string> MAIN_MEMCARD_B_PATH;
@@ -124,6 +125,7 @@ extern const Info<bool> MAIN_FPRF;
 extern const Info<bool> MAIN_ACCURATE_NANS;
 extern const Info<bool> MAIN_DISABLE_ICACHE;
 extern const Info<float> MAIN_EMULATION_SPEED;
+extern const Info<bool> MAIN_PRECISION_FRAME_TIMING;
 extern const Info<float> MAIN_OVERCLOCK;
 extern const Info<bool> MAIN_OVERCLOCK_ENABLE;
 extern const Info<bool> MAIN_RAM_OVERRIDE_ENABLE;
@@ -267,6 +269,7 @@ extern const Info<bool> MAIN_GAMELIST_LIST_WAD;
 extern const Info<bool> MAIN_GAMELIST_LIST_ELF_DOL;
 extern const Info<bool> MAIN_GAMELIST_LIST_WII;
 extern const Info<bool> MAIN_GAMELIST_LIST_GC;
+extern const Info<bool> MAIN_GAMELIST_LIST_TRI;
 extern const Info<bool> MAIN_GAMELIST_LIST_JPN;
 extern const Info<bool> MAIN_GAMELIST_LIST_PAL;
 extern const Info<bool> MAIN_GAMELIST_LIST_USA;
@@ -350,6 +353,7 @@ extern const Info<std::string> MAIN_BLUETOOTH_PASSTHROUGH_LINK_KEYS;
 
 // Main.USBPassthrough
 
+extern const Info<bool> MAIN_USB_PASSTHROUGH_DISGUISE_PLAYSTATION_AS_WII;
 extern const Info<std::string> MAIN_USB_PASSTHROUGH_DEVICES;
 std::set<std::pair<u16, u16>> GetUSBDeviceWhitelist();
 void SetUSBDeviceWhitelist(const std::set<std::pair<u16, u16>>& devices);

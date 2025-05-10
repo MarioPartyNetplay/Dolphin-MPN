@@ -322,6 +322,8 @@ add_executable(dolphin-mpn
   QtUtils/ImageConverter.h
   QtUtils/ModalMessageBox.cpp
   QtUtils/ModalMessageBox.h
+  QtUtils/NonAutodismissibleMenu.cpp
+  QtUtils/NonAutodismissibleMenu.h
   QtUtils/NonDefaultQPushButton.cpp
   QtUtils/NonDefaultQPushButton.h
   QtUtils/ParallelProgressDialog.h
@@ -682,6 +684,9 @@ if(USE_DISCORD_PRESENCE)
 endif()
 
 if(USE_RETRO_ACHIEVEMENTS)
-  target_link_libraries(dolphin-mpn PRIVATE rcheevos)
-  target_compile_definitions(dolphin-mpn PRIVATE -DUSE_RETRO_ACHIEVEMENTS)
+  target_link_libraries(dolphin-emu PRIVATE rcheevos)
+  target_compile_definitions(dolphin-emu PRIVATE -DUSE_RETRO_ACHIEVEMENTS)
+  if(RC_CLIENT_SUPPORTS_RAINTEGRATION)
+    target_compile_definitions(dolphin-emu PRIVATE -DRC_CLIENT_SUPPORTS_RAINTEGRATION)
+  endif()
 endif()

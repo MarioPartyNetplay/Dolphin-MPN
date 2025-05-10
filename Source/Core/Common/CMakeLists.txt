@@ -18,6 +18,7 @@ add_library(common
   BitSet.h
   BitUtils.h
   BlockingLoop.h
+  Buffer.h
   ChunkFile.h
   CodeBlock.h
   ColorUtil.cpp
@@ -69,6 +70,7 @@ add_library(common
   Flag.h
   FloatUtils.cpp
   FloatUtils.h
+  Functional.h
   FormatUtil.h
   FPURoundMode.h
   GekkoDisassembler.cpp
@@ -154,6 +156,7 @@ add_library(common
   VariantUtil.h
   Version.cpp
   Version.h
+  WaitableFlag.h
   WindowSystemInfo.h
   WorkQueueThread.h
 )
