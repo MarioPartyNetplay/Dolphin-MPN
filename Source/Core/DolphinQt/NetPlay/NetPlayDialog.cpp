@@ -676,8 +676,7 @@ void NetPlayDialog::UpdateGUI()
     ping_item->setToolTip(ping_item->text());
     auto* mapping_item =
         new QTableWidgetItem(QString::fromStdString(NetPlay::GetPlayerMappingString(
-            p->pid, client->GetPadMapping(), client->GetGBAConfig(), client->GetWiimoteMapping(),
-            client->GetMultiPadMapping())));
+            p->pid, client->GetPadMapping(), client->GetGBAConfig(), client->GetWiimoteMapping())));
     mapping_item->setToolTip(mapping_item->text());
     auto* revision_item = new QTableWidgetItem(QString::fromStdString(p->revision));
     revision_item->setToolTip(revision_item->text());
