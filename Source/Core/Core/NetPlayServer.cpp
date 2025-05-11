@@ -442,8 +442,8 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 {
   std::string netplay_version;
   received_packet >> netplay_version;
-  //if (netplay_version != Common::GetScmRevGitStr())
-  //  return ConnectionError::VersionMismatch;
+  if (netplay_version != Common::GetScmRevGitStr())
+    return ConnectionError::VersionMismatch;
 
   if (m_is_running || m_start_pending)
     return ConnectionError::GameRunning;
@@ -806,88 +806,45 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   {
     // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
-        break;
+      break;
 
-    // Accumulators for merging
-    std::array<GCPadStatus, 4> merged_inputs{};
-    std::array<bool, 4> has_input{};
-
-    // Read all pad data from the packet
-    while (!packet.endOfPacket())
-    {
-        PadIndex map;
-        packet >> map;
-
-        // Multi-pad support: allow if player is mapped to this pad in m_multi_pad_map
-        if (!m_multi_pad_map[map].empty())
-        {
-            if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
-                return 1;
-        }
-        else
-        {
-            if (m_pad_map.at(map) != player.pid)
-                return 1;
-        }
-
-        GCPadStatus pad;
-        packet >> pad.button;
-        if (!m_gba_config.at(map).enabled)
-        {
-            packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
-                pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
-        }
-
-        if (!has_input[map])
-        {
-            merged_inputs[map] = pad;
-            has_input[map] = true;
-        }
-        else
-        {
-            // Merge logic: OR buttons, max analogs
-            merged_inputs[map].button |= pad.button;
-            merged_inputs[map].analogA = std::max(merged_inputs[map].analogA, pad.analogA);
-            merged_inputs[map].analogB = std::max(merged_inputs[map].analogB, pad.analogB);
-            merged_inputs[map].stickX = std::max(merged_inputs[map].stickX, pad.stickX);
-            merged_inputs[map].stickY = std::max(merged_inputs[map].stickY, pad.stickY);
-            merged_inputs[map].substickX = std::max(merged_inputs[map].substickX, pad.substickX);
-            merged_inputs[map].substickY = std::max(merged_inputs[map].substickY, pad.substickY);
-            merged_inputs[map].triggerLeft = std::max(merged_inputs[map].triggerLeft, pad.triggerLeft);
-            merged_inputs[map].triggerRight = std::max(merged_inputs[map].triggerRight, pad.triggerRight);
-            merged_inputs[map].isConnected = merged_inputs[map].isConnected || pad.isConnected;
-        }
-    }
-
-    // Now send the merged input for each port
     sf::Packet spac;
     spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
 
-    for (PadIndex map = 0; map < 4; ++map)
+    while (!packet.endOfPacket())
     {
-        if (!has_input[map])
-            continue;
+      PadIndex map;
+      packet >> map;
 
-        spac << map << merged_inputs[map].button;
-        if (!m_gba_config.at(map).enabled)
-        {
-            spac << merged_inputs[map].analogA << merged_inputs[map].analogB
-                 << merged_inputs[map].stickX << merged_inputs[map].stickY
-                 << merged_inputs[map].substickX << merged_inputs[map].substickY
-                 << merged_inputs[map].triggerLeft << merged_inputs[map].triggerRight
-                 << merged_inputs[map].isConnected;
-        }
+      // If the data is not from the correct player,
+      // then disconnect them.
+      if (m_pad_map.at(map) != player.pid)
+      {
+        return 1;
+      }
+
+      GCPadStatus pad;
+      packet >> pad.button;
+      spac << map << pad.button;
+      if (!m_gba_config.at(map).enabled)
+      {
+        packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
+            pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
+
+        spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
+             << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
+      }
     }
 
     if (m_host_input_authority)
     {
-        // Prevent crash before game stop if the golfer disconnects
-        if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
-            Send(m_players.at(m_current_golfer).socket, spac);
+      // Prevent crash before game stop if the golfer disconnects
+      if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
+        Send(m_players.at(m_current_golfer).socket, spac);
     }
     else
     {
-        SendToClients(spac, player.pid);
+      SendToClients(spac, player.pid);
     }
   }
   break;
@@ -2250,9 +2207,6 @@ u64 NetPlayServer::GetInitialNetPlayRTC() const
 void NetPlayServer::SendToClients(const sf::Packet& packet, const PlayerId skip_pid,
                                   const u8 channel_id)
 {
-  MessageID mid;
-  sf::Packet temp = packet;
-  temp >> mid;
   for (auto& p : std::views::values(m_players))
   {
     if (p.pid && p.pid != skip_pid)
