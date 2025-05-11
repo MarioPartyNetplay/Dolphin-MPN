@@ -6,7 +6,6 @@
 #include <array>
 #include <string>
 #include <vector>
-#include <set>
 
 #include "Common/CommonTypes.h"
 #include "Common/EnumMap.h"
@@ -131,22 +130,6 @@ struct NetTraversalConfig
   u16 traversal_port_alt = 0;
 };
 
-using PlayerId = u8;
-using FrameNum = u32;
-using PadIndex = s8;
-using PadMappingArray = std::array<PlayerId, 4>;
-using MultiPadMappingArray = std::array<std::set<PlayerId>, 4>;
-
-struct GBAConfig
-{
-  bool enabled = false;
-  bool has_rom = false;
-  std::string title;
-  std::array<u8, 20> hash{};
-};
-
-using GBAConfigArray = std::array<GBAConfig, 4>;
-
 enum class MessageID : u8
 {
   ConnectionSuccessful = 0,
@@ -165,10 +148,9 @@ enum class MessageID : u8
 
   PadData = 0x60,
   PadMapping = 0x61,
-  MultiPadMapping = 0x62,
-  PadBuffer = 0x63,
-  PadHostData = 0x64,
-  GBAConfig = 0x65,
+  PadBuffer = 0x62,
+  PadHostData = 0x63,
+  GBAConfig = 0x64,
 
   WiimoteData = 0x70,
   WiimoteMapping = 0x71,
@@ -252,6 +234,19 @@ enum : u8
   CHUNKED_DATA_CHANNEL,
   CHANNEL_COUNT
 };
+
+using PlayerId = u8;
+using FrameNum = u32;
+using PadIndex = s8;
+using PadMappingArray = std::array<PlayerId, 4>;
+struct GBAConfig
+{
+  bool enabled = false;
+  bool has_rom = false;
+  std::string title;
+  std::array<u8, 20> hash{};
+};
+using GBAConfigArray = std::array<GBAConfig, 4>;
 
 struct PadDetails
 {

@@ -60,9 +60,6 @@ public:
   PadMappingArray GetPadMapping() const;
   void SetPadMapping(const PadMappingArray& mappings);
 
-  MultiPadMappingArray GetMultiPadMapping();
-  void SetMultiPadMapping(const MultiPadMappingArray& mappings);
-
   GBAConfigArray GetGBAConfig() const;
   void SetGBAConfig(const GBAConfigArray& configs, bool update_rom);
 
@@ -82,8 +79,6 @@ public:
   bool is_connected = false;
 
 private:
-  void OnPadMappingChanged();
-
   class Client
   {
   public:
@@ -177,7 +172,6 @@ private:
   u32 m_current_game = 0;
   unsigned int m_target_buffer_size = 0;
   PadMappingArray m_pad_map;
-  MultiPadMappingArray m_multi_pad_map;
   GBAConfigArray m_gba_config;
   PadMappingArray m_wiimote_map;
   unsigned int m_save_data_synced_players = 0;

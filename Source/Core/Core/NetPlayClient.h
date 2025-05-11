@@ -205,7 +205,6 @@ public:
   bool DoAllPlayersHaveGame();
 
   const PadMappingArray& GetPadMapping() const;
-  const MultiPadMappingArray& GetMultiPadMapping() const { return m_multi_pad_map; }
   const GBAConfigArray& GetGBAConfig() const;
   const PadMappingArray& GetWiimoteMapping() const;
 
@@ -271,17 +270,10 @@ protected:
   u32 m_current_game = 0;
 
   PadMappingArray m_pad_map{};
-  MultiPadMappingArray m_multi_pad_map{};
   GBAConfigArray m_gba_config{};
   PadMappingArray m_wiimote_map{};
 
   bool m_is_recording = false;
-
-  NetSettings m_settings;
-  bool m_should_compute_md5 = false;
-  bool m_dialog_config_finish = false;
-  Common::Event m_config_finish_event;
-  bool m_local_wiimote[4];
 
 private:
   enum class ConnectionState
