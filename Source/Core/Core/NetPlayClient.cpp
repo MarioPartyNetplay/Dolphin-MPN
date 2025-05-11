@@ -511,11 +511,6 @@ void NetPlayClient::OnData(sf::Packet& packet)
         m_pad_map[i] = 0;
       }
     }
-    INFO_LOG_FMT(NETPLAY, "[PadMappingUpdate] m_pad_map: [{}]", fmt::join(m_pad_map, ", "));
-    for (size_t i = 0; i < m_multi_pad_map.size(); ++i)
-    {
-      INFO_LOG_FMT(NETPLAY, "[PadMappingUpdate] m_multi_pad_map[{}]: [{}]", i, fmt::join(m_multi_pad_map[i], ", "));
-    }
 
     UpdateDevices();
   }
@@ -677,12 +672,6 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
 {
   for (PlayerId& mapping : m_pad_map)
     packet >> mapping;
-
-  INFO_LOG_FMT(NETPLAY, "[OnPadMapping] m_pad_map: [{}]", fmt::join(m_pad_map, ", "));
-  for (size_t i = 0; i < m_multi_pad_map.size(); ++i)
-  {
-    INFO_LOG_FMT(NETPLAY, "[OnPadMapping] m_multi_pad_map[{}]: [{}]", i, fmt::join(m_multi_pad_map[i], ", "));
-  }
 
   UpdateDevices();
 
@@ -2082,7 +2071,6 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
-  INFO_LOG_FMT(NETPLAY, "[GetNetPads] Called for pad_nb={}, batching={}, local pid={}", pad_nb, batching, m_local_player ? m_local_player->pid : -1);
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
@@ -2137,19 +2125,14 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     packet << MessageID::PadData;
 
     bool send_packet = false;
-    for (int port = 0; port < 4; ++port)
+    const int num_local_pads = NumLocalPads();
+    for (int local_pad = 0; local_pad < num_local_pads; local_pad++)
     {
-      if (m_multi_pad_map[port].find(m_local_player->pid) != m_multi_pad_map[port].end())
-      {
-        send_packet = PollLocalPad(port, packet) || send_packet;
-      }
+      send_packet = PollLocalPad(local_pad, packet) || send_packet;
     }
 
     if (send_packet)
-    {
-      INFO_LOG_FMT(NETPLAY, "[GetNetPads] Sending PadData (batched) for local pid={} (ports: 0-3)", m_local_player ? m_local_player->pid : -1);
       SendAsync(std::move(packet));
-    }
 
     if (m_host_input_authority)
       SendPadHostPoll(-1);
@@ -2272,7 +2255,6 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
 bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
 {
   const int ingame_pad = LocalPadToInGamePad(local_pad);
-  INFO_LOG_FMT(NETPLAY, "[PollLocalPad] local_pad={}, ingame_pad={}, local pid={}", local_pad, ingame_pad, m_local_player ? m_local_player->pid : -1);
   bool data_added = false;
   GCPadStatus pad_status;
 
@@ -2504,13 +2486,7 @@ bool NetPlayClient::IsFirstInGamePad(int ingame_pad) const
 
 int NetPlayClient::NumLocalPads() const
 {
-  int count = 0;
-  for (const auto& port_set : m_multi_pad_map)
-  {
-    if (port_set.find(m_local_player->pid) != port_set.end())
-      ++count;
-  }
-  return count;
+  return std::ranges::count(m_pad_map, m_local_player->pid);
 }
 
 int NetPlayClient::NumLocalWiimotes() const

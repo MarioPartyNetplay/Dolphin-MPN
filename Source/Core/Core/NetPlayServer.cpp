@@ -294,7 +294,6 @@ void NetPlayServer::ThreadFunc()
     if (m_traversal_client)
       m_traversal_client->HandleResends();
     net = enet_host_service(m_server, &netEvent, 1000);
-    INFO_LOG_FMT(NETPLAY, "[ENetEvent] type={} (peer ptr: {}), address: {:x}:{} peer->data: {}", static_cast<int>(netEvent.type), static_cast<void*>(netEvent.peer), netEvent.peer ? netEvent.peer->address.host : 0, netEvent.peer ? netEvent.peer->address.port : 0, netEvent.peer && netEvent.peer->data ? "initialized" : "uninitialized");
     while (!m_async_queue.Empty())
     {
       INFO_LOG_FMT(NETPLAY, "Processing async queue event.");
@@ -304,7 +303,7 @@ void NetPlayServer::ThreadFunc()
         auto& e = m_async_queue.Front();
         if (e.target_mode == TargetMode::Only)
         {
-          if (m_players.find(e.target_pid) != m_players.end())
+          if (m_players.contains(e.target_pid))
             Send(m_players.at(e.target_pid).socket, e.packet, e.channel_id);
         }
         else
@@ -321,12 +320,16 @@ void NetPlayServer::ThreadFunc()
       {
       case ENET_EVENT_TYPE_CONNECT:
       {
-        INFO_LOG_FMT(NETPLAY, "[ThreadFunc] ENET_EVENT_TYPE_CONNECT: Peer connected from: {:x}:{} (peer ptr: {})", netEvent.peer->address.host, netEvent.peer->address.port, static_cast<void*>(netEvent.peer));
+        // Actual client initialization is deferred to the receive event, so here
+        // we'll just log the new connection.
+        INFO_LOG_FMT(NETPLAY, "Peer connected from: {:x}:{}", netEvent.peer->address.host,
+                     netEvent.peer->address.port);
       }
       break;
       case ENET_EVENT_TYPE_RECEIVE:
       {
-        INFO_LOG_FMT(NETPLAY, "[ThreadFunc] ENET_EVENT_TYPE_RECEIVE: Packet from {:x}:{} (peer ptr: {}), peer->data: {}", netEvent.peer->address.host, netEvent.peer->address.port, static_cast<void*>(netEvent.peer), netEvent.peer->data ? "initialized" : "uninitialized");
+        INFO_LOG_FMT(NETPLAY, "enet_host_service: receive event");
+
         sf::Packet rpac;
         rpac.append(netEvent.packet->data, netEvent.packet->dataLength);
 
@@ -335,14 +338,16 @@ void NetPlayServer::ThreadFunc()
           // uninitialized client, we'll assume this is their initialization packet
           ConnectionError error;
           {
-            INFO_LOG_FMT(NETPLAY, "Initializing peer {:x}:{} (peer ptr: {})", netEvent.peer->address.host, netEvent.peer->address.port, static_cast<void*>(netEvent.peer));
+            INFO_LOG_FMT(NETPLAY, "Initializing peer {:x}:{}", netEvent.peer->address.host,
+                         netEvent.peer->address.port);
             std::lock_guard lkg(m_crit.game);
             error = OnConnect(netEvent.peer, rpac);
           }
 
           if (error != ConnectionError::NoError)
           {
-            INFO_LOG_FMT(NETPLAY, "Error {} initializing peer {:x}:{} (peer ptr: {})", u8(error), netEvent.peer->address.host, netEvent.peer->address.port, static_cast<void*>(netEvent.peer));
+            INFO_LOG_FMT(NETPLAY, "Error {} initializing peer {:x}:{}", u8(error),
+                         netEvent.peer->address.host, netEvent.peer->address.port);
 
             sf::Packet spac;
             spac << error;
@@ -357,7 +362,6 @@ void NetPlayServer::ThreadFunc()
         {
           auto it = m_players.find(*PeerPlayerId(netEvent.peer));
           Client& client = it->second;
-          INFO_LOG_FMT(NETPLAY, "[ThreadFunc] Calling OnData for client pid {} (peer ptr: {})", client.pid, static_cast<void*>(netEvent.peer));
           if (OnData(rpac, client) != 0)
           {
             INFO_LOG_FMT(NETPLAY, "Invalid packet from client {}, disconnecting.", client.pid);
@@ -378,7 +382,6 @@ void NetPlayServer::ThreadFunc()
       break;
       case ENET_EVENT_TYPE_DISCONNECT:
       {
-        INFO_LOG_FMT(NETPLAY, "[ThreadFunc] ENET_EVENT_TYPE_DISCONNECT: Peer {:x}:{} (peer ptr: {}), peer->data: {}", netEvent.peer->address.host, netEvent.peer->address.port, static_cast<void*>(netEvent.peer), netEvent.peer->data ? "initialized" : "uninitialized");
         INFO_LOG_FMT(NETPLAY, "enet_host_service: disconnect event");
 
         std::lock_guard lkg(m_crit.game);
@@ -404,7 +407,6 @@ void NetPlayServer::ThreadFunc()
       }
       break;
       default:
-        INFO_LOG_FMT(NETPLAY, "[ENetEvent] Unknown event type: {} (peer ptr: {})", static_cast<int>(netEvent.type), static_cast<void*>(netEvent.peer));
         // not a valid switch case due to not technically being part of the enum
         if (static_cast<int>(netEvent.type) == Common::ENet::SKIPPABLE_EVENT)
           INFO_LOG_FMT(NETPLAY, "enet_host_service: skippable packet event");
@@ -469,15 +471,6 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
   received_packet >> new_player.revision;
   received_packet >> new_player.name;
 
-  INFO_LOG_FMT(NETPLAY, "[OnConnect] New client connected: name='{}', assigned pid={}, peer ptr={} (address {:x}:{})", new_player.name, new_player.pid, static_cast<void*>(incoming_connection), incoming_connection->address.host, incoming_connection->address.port);
-
-  // Log current pad mapping
-  INFO_LOG_FMT(NETPLAY, "[OnConnect] Current m_pad_map: [{}]", fmt::join(m_pad_map, ", "));
-  for (size_t i = 0; i < m_multi_pad_map.size(); ++i)
-  {
-    INFO_LOG_FMT(NETPLAY, "[OnConnect] m_multi_pad_map[{}]: [{}]", i, fmt::join(m_multi_pad_map[i], ", "));
-  }
-
   if (StringUTF8CodePointCount(new_player.name) > MAX_NAME_LENGTH)
     return ConnectionError::NameTooLong;
 
@@ -533,8 +526,6 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
     UpdateGBAConfig();
     UpdateWiimoteMapping();
   }
-
-  INFO_LOG_FMT(NETPLAY, "[OnConnect] Adding new client: name='{}', assigned pid={}, peer ptr={} (address {:x}:{})", new_player.name, new_player.pid, static_cast<void*>(incoming_connection), incoming_connection->address.host, incoming_connection->address.port);
 
   return ConnectionError::NoError;
 }
@@ -677,13 +668,6 @@ void NetPlayServer::UpdatePadMapping()
     }
   }
   SendToClients(mpac);
-
-  // Log current pad mapping after update
-  INFO_LOG_FMT(NETPLAY, "[UpdatePadMapping] m_pad_map: [{}]", fmt::join(m_pad_map, ", "));
-  for (size_t i = 0; i < m_multi_pad_map.size(); ++i)
-  {
-    INFO_LOG_FMT(NETPLAY, "[UpdatePadMapping] m_multi_pad_map[{}]: [{}]", i, fmt::join(m_multi_pad_map[i], ", "));
-  }
 }
 
 // called from ---GUI--- thread and ---NETPLAY--- thread
@@ -796,7 +780,8 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   MessageID mid;
   packet >> mid;
 
-  INFO_LOG_FMT(NETPLAY, "[OnData] Step 1: Received message ID: {:x} from client {}", static_cast<u8>(mid), player.pid);
+  INFO_LOG_FMT(NETPLAY, "Got client message: {:x} from client {}", static_cast<u8>(mid),
+               player.pid);
 
   // don't need lock because this is the only thread that modifies the players
   // only need locks for writes to m_players in this thread
@@ -833,7 +818,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     u32 cid;
     packet >> cid;
 
-    if (m_chunked_data_complete_count.find(cid) != m_chunked_data_complete_count.end())
+    if (m_chunked_data_complete_count.contains(cid))
     {
       m_chunked_data_complete_count[cid]++;
       m_chunked_data_complete_event.Set();
@@ -843,13 +828,9 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadData:
   {
-    INFO_LOG_FMT(NETPLAY, "[OnData] Step 2: Handling PadData from client {}", player.pid);
     // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
-    {
-      INFO_LOG_FMT(NETPLAY, "[OnData] Step 3: Ignoring PadData, player.current_game {} != m_current_game {}", player.current_game, m_current_game);
-      break;
-    }
+        break;
 
     // Accumulators for merging
     std::array<GCPadStatus, 4> merged_inputs{};
@@ -858,49 +839,53 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     // Read all pad data from the packet
     while (!packet.endOfPacket())
     {
-      PadIndex map;
-      packet >> map;
+        PadIndex map;
+        packet >> map;
 
-      INFO_LOG_FMT(NETPLAY, "[OnData] Step 4: PadData for port {}: allowed PIDs: [{}], incoming PID: {}", map, fmt::join(m_multi_pad_map[map], ", "), player.pid);
-      // Multi-pad support: allow if player is mapped to this pad in m_multi_pad_map
-      if (!m_multi_pad_map[map].empty())
-      {
-        if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
-          return 1;
-      }
-      else
-      {
-        if (m_pad_map.at(map) != player.pid)
-          return 1;
-      }
+        INFO_LOG_FMT(NETPLAY, "Port {}: allowed PIDs: [{}], incoming PID: {}",
+             map,
+             fmt::join(m_multi_pad_map[map], ", "),
+             player.pid);
+             
+        // Multi-pad support: allow if player is mapped to this pad in m_multi_pad_map
+        if (!m_multi_pad_map[map].empty())
+        {
+            if (m_multi_pad_map[map].find(player.pid) == m_multi_pad_map[map].end())
+                return 1;
+        }
+        else
+        {
+            if (m_pad_map.at(map) != player.pid)
+                return 1;
+        }
 
-      GCPadStatus pad;
-      packet >> pad.button;
-      if (!m_gba_config.at(map).enabled)
-      {
-        packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
-            pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
-      }
+        GCPadStatus pad;
+        packet >> pad.button;
+        if (!m_gba_config.at(map).enabled)
+        {
+            packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
+                pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
+        }
 
-      if (!has_input[map])
-      {
-        merged_inputs[map] = pad;
-        has_input[map] = true;
-      }
-      else
-      {
-        // Merge logic: OR buttons, max analogs
-        merged_inputs[map].button |= pad.button;
-        merged_inputs[map].analogA = std::max(merged_inputs[map].analogA, pad.analogA);
-        merged_inputs[map].analogB = std::max(merged_inputs[map].analogB, pad.analogB);
-        merged_inputs[map].stickX = std::max(merged_inputs[map].stickX, pad.stickX);
-        merged_inputs[map].stickY = std::max(merged_inputs[map].stickY, pad.stickY);
-        merged_inputs[map].substickX = std::max(merged_inputs[map].substickX, pad.substickX);
-        merged_inputs[map].substickY = std::max(merged_inputs[map].substickY, pad.substickY);
-        merged_inputs[map].triggerLeft = std::max(merged_inputs[map].triggerLeft, pad.triggerLeft);
-        merged_inputs[map].triggerRight = std::max(merged_inputs[map].triggerRight, pad.triggerRight);
-        merged_inputs[map].isConnected = merged_inputs[map].isConnected || pad.isConnected;
-      }
+        if (!has_input[map])
+        {
+            merged_inputs[map] = pad;
+            has_input[map] = true;
+        }
+        else
+        {
+            // Merge logic: OR buttons, max analogs
+            merged_inputs[map].button |= pad.button;
+            merged_inputs[map].analogA = std::max(merged_inputs[map].analogA, pad.analogA);
+            merged_inputs[map].analogB = std::max(merged_inputs[map].analogB, pad.analogB);
+            merged_inputs[map].stickX = std::max(merged_inputs[map].stickX, pad.stickX);
+            merged_inputs[map].stickY = std::max(merged_inputs[map].stickY, pad.stickY);
+            merged_inputs[map].substickX = std::max(merged_inputs[map].substickX, pad.substickX);
+            merged_inputs[map].substickY = std::max(merged_inputs[map].substickY, pad.substickY);
+            merged_inputs[map].triggerLeft = std::max(merged_inputs[map].triggerLeft, pad.triggerLeft);
+            merged_inputs[map].triggerRight = std::max(merged_inputs[map].triggerRight, pad.triggerRight);
+            merged_inputs[map].isConnected = merged_inputs[map].isConnected || pad.isConnected;
+        }
     }
 
     // Now send the merged input for each port
@@ -909,48 +894,38 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
     for (PadIndex map = 0; map < 4; ++map)
     {
-      if (!has_input[map])
-        continue;
+        if (!has_input[map])
+            continue;
 
-      spac << map << merged_inputs[map].button;
-      if (!m_gba_config.at(map).enabled)
-      {
-        spac << merged_inputs[map].analogA << merged_inputs[map].analogB
-             << merged_inputs[map].stickX << merged_inputs[map].stickY
-             << merged_inputs[map].substickX << merged_inputs[map].substickY
-             << merged_inputs[map].triggerLeft << merged_inputs[map].triggerRight
-             << merged_inputs[map].isConnected;
-      }
+        spac << map << merged_inputs[map].button;
+        if (!m_gba_config.at(map).enabled)
+        {
+            spac << merged_inputs[map].analogA << merged_inputs[map].analogB
+                 << merged_inputs[map].stickX << merged_inputs[map].stickY
+                 << merged_inputs[map].substickX << merged_inputs[map].substickY
+                 << merged_inputs[map].triggerLeft << merged_inputs[map].triggerRight
+                 << merged_inputs[map].isConnected;
+        }
     }
 
     if (m_host_input_authority)
     {
-      INFO_LOG_FMT(NETPLAY, "[OnData] Step 5: Host input authority active");
-      // Prevent crash before game stop if the golfer disconnects
-      if (m_current_golfer != 0 && m_players.find(m_current_golfer) != m_players.end())
-      {
-        INFO_LOG_FMT(NETPLAY, "[OnData] Step 6: Sending PadHostData to golfer {}", m_current_golfer);
-        Send(m_players.at(m_current_golfer).socket, spac);
-      }
+        // Prevent crash before game stop if the golfer disconnects
+        if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
+            Send(m_players.at(m_current_golfer).socket, spac);
     }
     else
     {
-      INFO_LOG_FMT(NETPLAY, "[OnData] Step 7: Sending PadData to all clients except {}", player.pid);
-      SendToClients(spac, player.pid);
+        SendToClients(spac, player.pid);
     }
-    INFO_LOG_FMT(NETPLAY, "[OnData] Step 8: Finished handling PadData");
   }
   break;
 
   case MessageID::PadHostData:
   {
-    INFO_LOG_FMT(NETPLAY, "[OnData] Step 9: Handling PadHostData from client {}", player.pid);
     // Kick player if they're not the golfer.
     if (m_current_golfer != 0 && player.pid != m_current_golfer)
-    {
-      INFO_LOG_FMT(NETPLAY, "[OnData] Step 10: Player {} is not the golfer {}. Kicking.", player.pid, m_current_golfer);
       return 1;
-    }
 
     sf::Packet spac;
     spac << MessageID::PadData;
@@ -973,9 +948,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       }
     }
 
-    INFO_LOG_FMT(NETPLAY, "[OnData] Step 11: Sending PadData to all clients except {} (golfer)", player.pid);
     SendToClients(spac, player.pid);
-    INFO_LOG_FMT(NETPLAY, "[OnData] Step 12: Finished handling PadHostData");
   }
   break;
 
@@ -1023,7 +996,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     packet >> pid;
 
     // Check if player ID is valid and sender isn't a spectator
-    if (m_players.find(pid) == m_players.end() || !PlayerHasControllerMapped(player.pid))
+    if (!m_players.contains(pid) || !PlayerHasControllerMapped(player.pid))
       break;
 
     if (m_host_input_authority && m_settings.golf_mode && m_pending_golfer == 0 &&
@@ -2320,10 +2293,6 @@ void NetPlayServer::SendToClients(const sf::Packet& packet, const PlayerId skip_
 
 void NetPlayServer::Send(ENetPeer* socket, const sf::Packet& packet, const u8 channel_id)
 {
-  MessageID mid;
-  sf::Packet temp = packet;
-  temp >> mid;
-  INFO_LOG_FMT(NETPLAY, "[Send] Sending message ID: {:x} to peer ptr: {} (address {:x}:{}) on channel {}", static_cast<u8>(mid), static_cast<void*>(socket), socket ? socket->address.host : 0, socket ? socket->address.port : 0, channel_id);
   Common::ENet::SendPacket(socket, packet, channel_id);
 }
 
@@ -2573,7 +2542,7 @@ void NetPlayServer::ChunkedDataThreadFunc()
         }
         if (e.target_mode == TargetMode::Only)
         {
-          if (m_players.find(e.target_pid) == m_players.end())
+          if (!m_players.contains(e.target_pid))
           {
             skip_wait = true;
             break;
