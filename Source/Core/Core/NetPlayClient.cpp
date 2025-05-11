@@ -2150,20 +2150,6 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
       INFO_LOG_FMT(NETPLAY, "[GetNetPads] Sending PadData (batched) for local pid={} (ports: 0-3)", m_local_player ? m_local_player->pid : -1);
       SendAsync(std::move(packet));
     }
-    else
-    {
-      // Buffer is full, but we should still send at least one packet to break the deadlock
-      for (int port = 0; port < 4; ++port)
-      {
-        if (m_multi_pad_map[port].find(m_local_player->pid) != m_multi_pad_map[port].end())
-        {
-          GCPadStatus forced_pad_status = Pad::GetStatus(port);
-          AddPadStateToPacket(port, forced_pad_status, packet);
-        }
-      }
-      INFO_LOG_FMT(NETPLAY, "[GetNetPads] Forcing PadData send to break buffer deadlock for local pid={}", m_local_player ? m_local_player->pid : -1);
-      SendAsync(std::move(packet));
-    }
 
     if (m_host_input_authority)
       SendPadHostPoll(-1);
