@@ -842,11 +842,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         PadIndex map;
         packet >> map;
 
-        INFO_LOG_FMT(NETPLAY, "Port {}: allowed PIDs: [{}], incoming PID: {}",
-             map,
-             fmt::join(m_multi_pad_map[map], ", "),
-             player.pid);
-             
         // Multi-pad support: allow if player is mapped to this pad in m_multi_pad_map
         if (!m_multi_pad_map[map].empty())
         {
