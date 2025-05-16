@@ -287,7 +287,9 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   CheckForUpdatesAuto();
 
 #ifdef USE_RETRO_ACHIEVEMENTS
-  AchievementManager::GetInstance().Init(reinterpret_cast<void*>(winId()));
+  AchievementManager::GetInstance().Init(reinterpret_cast<void*>(winId()), [this](auto func) {
+    QueueOnObject(this, std::move(func));
+  });
   if (AchievementManager::GetInstance().IsHardcoreModeActive())
     Settings::Instance().SetDebugModeEnabled(false);
   // This needs to trigger on both RA_HARDCORE_ENABLED and RA_ENABLED
