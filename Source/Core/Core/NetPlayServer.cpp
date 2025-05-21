@@ -442,8 +442,8 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 {
   std::string netplay_version;
   received_packet >> netplay_version;
-  if (netplay_version != Common::GetScmRevGitStr())
-    return ConnectionError::VersionMismatch;
+  //if (netplay_version != Common::GetScmRevGitStr())
+  //  return ConnectionError::VersionMismatch;
 
   if (m_is_running || m_start_pending)
     return ConnectionError::GameRunning;
@@ -1376,6 +1376,8 @@ bool NetPlayServer::SetupNetSettings()
   settings.allow_sd_writes = Config::Get(Config::MAIN_ALLOW_SD_WRITES);
   settings.oc_enable = Config::Get(Config::MAIN_OVERCLOCK_ENABLE);
   settings.oc_factor = Config::Get(Config::MAIN_OVERCLOCK);
+  settings.vi_oc_enable = Config::Get(Config::MAIN_VI_OVERCLOCK_ENABLE);
+  settings.vi_oc_factor = Config::Get(Config::MAIN_VI_OVERCLOCK);
 
   for (ExpansionInterface::Slot slot : ExpansionInterface::SLOTS)
   {
@@ -1603,6 +1605,8 @@ bool NetPlayServer::StartGame()
   spac << m_settings.allow_sd_writes;
   spac << m_settings.oc_enable;
   spac << m_settings.oc_factor;
+  spac << m_settings.vi_oc_enable;
+  spac << m_settings.vi_oc_factor;
 
   for (auto slot : ExpansionInterface::SLOTS)
     spac << static_cast<int>(m_settings.exi_device[slot]);
