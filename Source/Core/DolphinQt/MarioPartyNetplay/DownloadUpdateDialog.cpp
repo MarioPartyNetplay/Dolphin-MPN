@@ -77,7 +77,7 @@ void DownloadUpdateDialog::onDownloadFinished()
 {
     // Use QCoreApplication to get the application's directory path
     #ifdef _WIN32
-    installationDirectory = QCoreApplication::applicationDirPath(); // Set the installation directory
+    installationDirectory = QCoreApplication::applicationDirPath();
     #endif
     #ifdef __APPLE__
     installationDirectory = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");

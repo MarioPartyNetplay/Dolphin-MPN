@@ -15,6 +15,7 @@ public:
     
 public slots:
     void startDownload();
+    void updateProgress(qint64 size, qint64 total);
 
 signals:
     void progressUpdated(qint64 size, qint64 total);
