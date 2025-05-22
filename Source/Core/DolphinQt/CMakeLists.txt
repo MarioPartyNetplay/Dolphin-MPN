@@ -247,6 +247,8 @@ add_executable(dolphin-mpn
   DiscordHandler.h
   DiscordJoinRequestDialog.cpp
   DiscordJoinRequestDialog.h
+  EmulatedUSB/WiiSpeakWindow.cpp
+  EmulatedUSB/WiiSpeakWindow.h
   FIFO/FIFOAnalyzer.cpp
   FIFO/FIFOAnalyzer.h
   FIFO/FIFOPlayerWindow.cpp
