@@ -49,8 +49,7 @@ void DownloadWorker::startDownload()
     }
 }
 
-
-void DownloadWorker::updateProgress(s64 dlnow, s64 dltotal)
+void DownloadWorker::updateProgress(qint64 dlnow, qint64 dltotal) // Change s64 to qint64
 {
     emit progressUpdated(dlnow, dltotal); // Emit progress signal
     qDebug() << "Download progress:" << dlnow << "/" << dltotal; // Debug statement

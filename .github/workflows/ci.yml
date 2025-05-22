@@ -79,7 +79,7 @@
         mkdir -p build/OUT
         mv build/Binaries/Dolphin-MPN.app build/OUT/
         cd build/OUT
-        xattr -cr build/OUT/Dolphin-MPN.app
+        xattr -cr Dolphin-MPN.app
         zip -r DolphinMPN-macOS-x86_64.zip Dolphin-MPN.app
         rm -rf Dolphin-MPN.app
     - name: Upload Build Artifact
