@@ -17,7 +17,7 @@ void DownloadWorker::startDownload()
 
     // Set the progress callback
     httpRequest.SetProgressCallback([this](s64 dltotal, s64 dlnow, s64 ultotal, s64 ulnow) {
-        emit progressUpdated(dlnow, dltotal); // Emit progress signal
+        QMetaObject::invokeMethod(this, "updateProgress", Qt::QueuedConnection, Q_ARG(s64, dlnow), Q_ARG(s64, dltotal));
         return true; // Continue the download
     });
 
@@ -47,4 +47,9 @@ void DownloadWorker::startDownload()
     {
         emit errorOccurred(QStringLiteral("Failed to download update file.")); // This should also work
     }
+}
+
+void DownloadWorker::updateProgress(qint64 dlnow, qint64 dltotal) // Change s64 to qint64
+{
+    emit progressUpdated(dlnow, dltotal); // Emit progress signal
 }
