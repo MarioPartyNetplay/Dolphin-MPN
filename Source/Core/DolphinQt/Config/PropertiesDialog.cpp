@@ -104,7 +104,7 @@ PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& ga
   layout->addWidget(close_box);
 
   setLayout(layout);
-  tab_widget->setCurrentIndex(3);
+  tab_widget->setCurrentIndex(4);
 }
 
 GeckoDialog::GeckoDialog(QWidget* parent) : QDialog(parent)
