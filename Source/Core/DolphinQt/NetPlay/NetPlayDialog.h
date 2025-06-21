@@ -118,9 +118,6 @@ private:
 
   void SendMessage(const std::string& message);
 
-  void OnActiveGeckoCodes(std::string codeStr);
-  void OnActiveARCodes(std::string codeStr);
-
   // Chat
   QGroupBox* m_chat_box;
   QTextEdit* m_chat_edit;

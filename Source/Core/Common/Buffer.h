@@ -14,6 +14,15 @@ namespace Common
 
 namespace detail
 {
+template <typename T>
+struct MakeUniqueForOverwriteHelper
+{
+  static std::unique_ptr<T[]> make(std::size_t size)
+  {
+    return std::make_unique_for_overwrite<T[]>(size);
+  }
+};
+
 template <auto MakeFunc>
 class BufferBase final
 {
@@ -83,7 +92,7 @@ private:
 }  // namespace detail
 
 template <typename T>
-using UniqueBuffer = detail::BufferBase<std::make_unique_for_overwrite<T[]>>;
+using UniqueBuffer = detail::BufferBase<detail::MakeUniqueForOverwriteHelper<T>::make>;
 
 // TODO: std::make_shared_for_overwrite requires GCC 12.1+
 // template <typename T>

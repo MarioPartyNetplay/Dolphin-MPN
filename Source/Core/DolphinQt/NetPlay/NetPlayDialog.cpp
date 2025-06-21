@@ -133,12 +133,6 @@ void NetPlayDialog::CreateMainLayout()
   m_game_button = new QPushButton;
   m_start_button = new QPushButton(tr("Start"));
   m_buffer_size_box = new QSpinBox;
-  m_buffer_size_box->setToolTip(
-      tr("Set the buffer based on the ping. The buffer should be ping ÷ 8 (rounded up).\nFor a "
-         "simple method, "
-         "use 8 for 64 ping and less, 12 for 100 ping and less, and 16 for 150 ping and "
-         "less.\nGames above 150 ping will be very laggy and are not recommended for competitive "
-         "play."));
   m_buffer_label = new QLabel(tr("Buffer:"));
   m_quit_button = new QPushButton(tr("Quit"));
   m_splitter = new QSplitter(Qt::Horizontal);
@@ -266,7 +260,7 @@ void NetPlayDialog::CreateMainLayout()
 
   m_main_layout->addLayout(options_widget, 2, 0, 1, -1, Qt::AlignRight);
   m_main_layout->setRowStretch(1, 1000);
-  m_buffer_size_box->setFixedSize(100, 20);
+
   setLayout(m_main_layout);
 }
 
@@ -415,7 +409,7 @@ void NetPlayDialog::ConnectWidgets()
         Settings::Instance().GetNetPlayClient()->RequestStopGame();
       }
       if (state == Core::State::Uninitialized)
-        DisplayMessage(tr("Stopped game, Please wait for everyone to close the game before relaunching!"), "red");
+        DisplayMessage(tr("Stopped game"), "red");
     }
   });
 
@@ -937,7 +931,7 @@ void NetPlayDialog::OnPadBufferChanged(u32 buffer)
   });
   DisplayMessage(m_host_input_authority ? tr("Max buffer size changed to %1").arg(buffer) :
                                           tr("Buffer size changed to %1").arg(buffer),
-                 "orange");
+                 "darkcyan");
 
   m_buffer_size = static_cast<int>(buffer);
 }
@@ -978,13 +972,9 @@ void NetPlayDialog::OnHostInputAuthorityChanged(bool enabled)
 
 void NetPlayDialog::OnDesync(u32 frame, const std::string& player)
 {
-  DisplayMessage(tr("Possible desync detected: %1 might have desynced at frame %2. Game restart advised.")
+  DisplayMessage(tr("Possible desync detected: %1 might have desynced at frame %2")
                      .arg(QString::fromStdString(player), QString::number(frame)),
                  "red", OSD::Duration::VERY_LONG);
-
-  OSD::AddTypedMessage(OSD::MessageType::NetPlayDesync,
-                       "Possible desync detected. Game restart advised.",
-                       OSD::Duration::VERY_LONG, OSD::Color::RED);
 }
 
 void NetPlayDialog::OnConnectionLost()
@@ -1292,14 +1282,4 @@ void NetPlayDialog::SetHostWiiSyncData(std::vector<u64> titles, std::string redi
   const auto client = Settings::Instance().GetNetPlayClient();
   if (client)
     client->SetWiiSyncData(nullptr, std::move(titles), std::move(redirect_folder));
-}
-
-void NetPlayDialog::OnActiveGeckoCodes(std::string codeStr)
-{
-  DisplayMessage(QString::fromStdString(codeStr), "cornflowerblue");
-}
-
-void NetPlayDialog::OnActiveARCodes(std::string codeStr)
-{
-  DisplayMessage(QString::fromStdString(codeStr), "cornflowerblue");
 }
