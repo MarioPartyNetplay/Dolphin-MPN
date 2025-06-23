@@ -63,7 +63,7 @@
         name: DolphinMPN-ubuntu-22.04-linux-x86_64
         path: build/OUT/
         
-  build_macos:
+  build_macos_universal:
     runs-on: macos-15
     steps:
     - uses: actions/checkout@v2
@@ -92,9 +92,36 @@
       with:
         name: DolphinMPN-macOS
         path: build/OUT/
+  build_windows_arm64:
+    runs-on: windows-11-arm
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Submodules
+      run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.0.2
+      with:
+        vs-version: '16.6.2'
+    - name: Build
+      run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal /property:Configuration=Release /property:Platform=ARM64
+    - name: Trusted Signing
+      uses: azure/trusted-signing-action@v0.5.1
+      with:
+        azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+        endpoint: https://eus.codesigning.azure.net/
+        trusted-signing-account-name: TabithaHanegan
+        certificate-profile-name: vscx-certificate-profile
+        files-folder: Binary/ARM64/
+        files-folder-filter: exe,dll
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DolphinMPN-windows-arm64
+        path: Binary/ARM64/
 
-
-  build_windows:
+  build_windows_x86_64:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
