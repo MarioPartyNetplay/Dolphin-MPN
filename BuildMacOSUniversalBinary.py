@@ -44,11 +44,13 @@ DEFAULT_CONFIG = {
 
     # Location for CMake to search for files (default is for homebrew)
     "arm64_cmake_prefix":  "/opt/homebrew",
+    "x86_64_cmake_prefix": "/usr/local",
 
     # Locations to qt5 directories for arm and x64 libraries
     # The default values of these paths are taken from the default
     # paths used for homebrew
     "arm64_qt5_path":  "/opt/homebrew/opt/qt5",
+    "x86_64_qt5_path": "/usr/local/opt/qt5",
 
     # Identity to use for code signing. "-" indicates that the app will not
     # be cryptographically signed/notarized but will instead just use a
@@ -58,17 +60,21 @@ DEFAULT_CONFIG = {
     # permissions needed for ARM builds
     "codesign_identity":  "-",
 
+    # Minimum macOS version for each architecture slice
+    "arm64_mac_os_deployment_target":  "11.0.0",
+    "x86_64_mac_os_deployment_target": "10.15.0",
+
     # CMake Generator to use for building
-    "generator": "Ninja",
+    "generator": "Unix Makefiles",
     "build_type": "Release",
 
     "run_unit_tests": False,
 
     # Whether our autoupdate functionality is enabled or not.
-    "autoupdate": True,
+    "autoupdate": False,
 
     # The distributor for this build.
-    "distributor": "None"
+    "distributor": "Mario Party Netplay"
 }
 
 # Architectures to build for. This is explicitly left out of the command line
@@ -77,7 +83,7 @@ DEFAULT_CONFIG = {
 # 2) Single architecture builds should utilize the normal generated cmake
 #    project files rather than this wrapper script
 
-ARCHITECTURES = ["arm64"]
+ARCHITECTURES = ["x86_64", "arm64"]
 
 
 def parse_args(conf=DEFAULT_CONFIG):
@@ -139,6 +145,11 @@ def parse_args(conf=DEFAULT_CONFIG):
              f"--{arch}_qt5_path",
              help=f"Install path for {arch} qt5 libraries",
              default=conf[arch+"_qt5_path"])
+
+        parser.add_argument(
+             f"--{arch}_mac_os_deployment_target",
+             help=f"Deployment architecture for {arch} slice",
+             default=conf[arch+"_mac_os_deployment_target"])
 
     return vars(parser.parse_args())
 
@@ -286,7 +297,8 @@ def build(config):
                 "-DCMAKE_PREFIX_PATH="+prefix_path,
                 "-DCMAKE_SYSTEM_PROCESSOR="+arch,
                 "-DCMAKE_IGNORE_PATH="+ignore_path,
-                "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0.0",
+                "-DCMAKE_OSX_DEPLOYMENT_TARGET="
+                + config[arch+"_mac_os_deployment_target"],
                 "-DMACOS_CODE_SIGNING_IDENTITY="
                 + config["codesign_identity"],
                 '-DMACOS_CODE_SIGNING="ON"',
