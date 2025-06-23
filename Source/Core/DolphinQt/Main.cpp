@@ -95,7 +95,6 @@ static bool QtMsgAlertHandler(const char* caption, const char* text, bool yes_no
       return QMessageBox::NoIcon;
     }());
 
-    SetQWidgetWindowDecorations(&message_box);
     const int button = message_box.exec();
     if (button == QMessageBox::Yes)
       return true;
@@ -178,6 +177,8 @@ int main(int argc, char* argv[])
   const std::vector<std::string> args = parser->args();
 
 #ifdef _WIN32
+  QtUtils::InstallWindowDecorationFilter(&app);
+
   FreeConsole();
 #endif
 
@@ -291,7 +292,6 @@ int main(int argc, char* argv[])
                       "This authorization can be revoked at any time through Dolphin's "
                       "settings.\n\nNone of this information will be sent to the staff at Mario Party Netplay."));
 
-      SetQWidgetWindowDecorations(&analytics_prompt);
       const int answer = analytics_prompt.exec();
 
       Config::SetBase(Config::MAIN_ANALYTICS_PERMISSION_ASKED, true);

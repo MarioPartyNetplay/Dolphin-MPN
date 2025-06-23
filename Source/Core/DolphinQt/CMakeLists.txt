@@ -69,8 +69,8 @@ add_executable(dolphin-mpn
   Config/ControllerInterface/DualShockUDPClientWidget.h
   Config/ControllerInterface/ServerStringValidator.cpp
   Config/ControllerInterface/ServerStringValidator.h
-  Config/ControllersWindow.cpp
-  Config/ControllersWindow.h
+  Config/ControllersPane.cpp
+  Config/ControllersPane.h
   Config/FilesystemWidget.cpp
   Config/FilesystemWidget.h
   Config/FreeLookWidget.cpp
@@ -221,6 +221,8 @@ add_executable(dolphin-mpn
   Debugger/CodeViewWidget.h
   Debugger/CodeWidget.cpp
   Debugger/CodeWidget.h
+  Debugger/EditSymbolDialog.cpp
+  Debugger/EditSymbolDialog.h
   Debugger/GekkoSyntaxHighlight.cpp
   Debugger/GekkoSyntaxHighlight.h
   Debugger/JitBlockTableModel.cpp

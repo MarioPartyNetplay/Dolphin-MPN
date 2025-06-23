@@ -29,10 +29,8 @@
 #include "DolphinQt/Config/HardcoreWarningWidget.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
-#include "DolphinQt/QtUtils/SetWindowDecorations.h"
+#include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
-
-#include "UICommon/GameFile.h"
 
 GeckoCodeWidget::GeckoCodeWidget(std::string game_id, std::string gametdb_id, u16 game_revision,
                                  bool restart_required)
@@ -76,7 +74,7 @@ void GeckoCodeWidget::CreateWidgets()
 #ifdef USE_RETRO_ACHIEVEMENTS
   m_hc_warning = new HardcoreWarningWidget(this);
 #endif  // USE_RETRO_ACHIEVEMENTS
-  m_code_list = new QListWidget;
+  m_code_list = new QtUtils::MinimumSizeHintWidget<QListWidget>;
   m_name_label = new QLabel;
   m_creator_label = new QLabel;
 
@@ -144,8 +142,6 @@ void GeckoCodeWidget::CreateWidgets()
   btn_layout->addWidget(m_remove_code);
 
   layout->addLayout(btn_layout);
-
-  WrapInScrollArea(this, layout);
 }
 
 void GeckoCodeWidget::ConnectWidgets()
@@ -217,7 +213,6 @@ void GeckoCodeWidget::AddCode()
   code.enabled = true;
 
   m_cheat_code_editor->SetGeckoCode(&code);
-  SetQWidgetWindowDecorations(m_cheat_code_editor);
   if (m_cheat_code_editor->exec() == QDialog::Rejected)
     return;
 
@@ -235,7 +230,6 @@ void GeckoCodeWidget::EditCode()
   const int index = item->data(Qt::UserRole).toInt();
 
   m_cheat_code_editor->SetGeckoCode(&m_gecko_codes[index]);
-  SetQWidgetWindowDecorations(m_cheat_code_editor);
   if (m_cheat_code_editor->exec() == QDialog::Rejected)
     return;
 

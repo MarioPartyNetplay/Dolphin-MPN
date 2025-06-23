@@ -107,7 +107,7 @@ void GeneralPane::ConnectLayout()
 #endif
 
   // Advanced
-  connect(m_combobox_speedlimit, &QComboBox::currentIndexChanged, [this]() {
+  connect(m_combobox_speedlimit, &QComboBox::currentIndexChanged, [this] {
     Config::SetBaseOrCurrent(Config::MAIN_EMULATION_SPEED,
                              m_combobox_speedlimit->currentIndex() * 0.1f);
     Config::Save();
@@ -373,7 +373,6 @@ void GeneralPane::GenerateNewIdentity()
   message_box.setIcon(QMessageBox::Information);
   message_box.setWindowTitle(tr("Identity Generation"));
   message_box.setText(tr("New identity generated."));
-  SetQWidgetWindowDecorations(&message_box);
   message_box.exec();
 }
 #endif

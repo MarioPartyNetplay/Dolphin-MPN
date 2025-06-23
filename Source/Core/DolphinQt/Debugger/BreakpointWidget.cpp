@@ -25,7 +25,6 @@
 #include "DolphinQt/Debugger/BreakpointDialog.h"
 #include "DolphinQt/Debugger/MemoryWidget.h"
 #include "DolphinQt/Host.h"
-#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 
@@ -52,6 +51,41 @@ enum TableColumns
   CONDITION_COLUMN = 9,
 };
 }  // namespace
+
+// Fix icons not centering properly in a QTableWidget.
+class CustomDelegate : public QStyledItemDelegate
+{
+public:
+  CustomDelegate(BreakpointWidget* parent) : QStyledItemDelegate(parent) {}
+
+private:
+  void paint(QPainter* painter, const QStyleOptionViewItem& option,
+             const QModelIndex& index) const override
+  {
+    Q_ASSERT(index.isValid());
+
+    // Fetch normal drawing logic.
+    QStyleOptionViewItem opt = option;
+    initStyleOption(&opt, index);
+
+    // Disable drawing icon the normal way.
+    opt.icon = QIcon();
+    opt.decorationSize = QSize(0, 0);
+
+    // Default draw command for paint.
+    QApplication::style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter, 0);
+
+    // Draw pixmap at the center of the tablewidget cell
+    QPixmap pix = qvariant_cast<QPixmap>(index.data(Qt::DecorationRole));
+    if (!pix.isNull())
+    {
+      const QRect r = option.rect;
+      const QSize size = pix.deviceIndependentSize().toSize();
+      const QPoint p = QPoint((r.width() - size.width()) / 2, (r.height() - size.height()) / 2);
+      painter->drawPixmap(r.topLeft() + p, pix);
+    }
+  }
+};
 
 BreakpointWidget::BreakpointWidget(QWidget* parent)
     : QDockWidget(parent), m_system(Core::System::GetInstance())
@@ -88,7 +122,7 @@ BreakpointWidget::BreakpointWidget(QWidget* parent)
     setHidden(!enabled || !Settings::Instance().IsBreakpointsVisible());
   });
 
-  connect(&Settings::Instance(), &Settings::ThemeChanged, this, [this]() {
+  connect(&Settings::Instance(), &Settings::ThemeChanged, this, [this] {
     UpdateIcons();
     Update();
   });
@@ -402,7 +436,6 @@ void BreakpointWidget::OnNewBreakpoint()
 {
   BreakpointDialog* dialog = new BreakpointDialog(this);
   dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-  SetQWidgetWindowDecorations(dialog);
   dialog->exec();
 }
 
@@ -413,7 +446,6 @@ void BreakpointWidget::OnEditBreakpoint(u32 address, bool is_instruction_bp)
     auto* dialog = new BreakpointDialog(
         this, m_system.GetPowerPC().GetBreakPoints().GetRegularBreakpoint(address));
     dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    SetQWidgetWindowDecorations(dialog);
     dialog->exec();
   }
   else
@@ -421,7 +453,6 @@ void BreakpointWidget::OnEditBreakpoint(u32 address, bool is_instruction_bp)
     auto* dialog =
         new BreakpointDialog(this, m_system.GetPowerPC().GetMemChecks().GetMemCheck(address));
     dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    SetQWidgetWindowDecorations(dialog);
     dialog->exec();
   }
 
@@ -488,7 +519,7 @@ void BreakpointWidget::OnContextMenu(const QPoint& pos)
 
     menu->addAction(tr("Show in Code"), [this, bp_address] { emit ShowCode(bp_address); });
     menu->addAction(tr("Edit..."), [this, bp_address] { OnEditBreakpoint(bp_address, true); });
-    menu->addAction(tr("Delete"), [this, &bp_address]() {
+    menu->addAction(tr("Delete"), [this, &bp_address] {
       m_system.GetPowerPC().GetBreakPoints().Remove(bp_address);
       emit Host::GetInstance()->PPCBreakpointsChanged();
     });
@@ -501,7 +532,7 @@ void BreakpointWidget::OnContextMenu(const QPoint& pos)
 
     menu->addAction(tr("Show in Memory"), [this, bp_address] { emit ShowMemory(bp_address); });
     menu->addAction(tr("Edit..."), [this, bp_address] { OnEditBreakpoint(bp_address, false); });
-    menu->addAction(tr("Delete"), [this, &bp_address]() {
+    menu->addAction(tr("Delete"), [this, &bp_address] {
       const QSignalBlocker blocker(Settings::Instance());
       m_system.GetPowerPC().GetMemChecks().Remove(bp_address);
       emit Host::GetInstance()->PPCBreakpointsChanged();

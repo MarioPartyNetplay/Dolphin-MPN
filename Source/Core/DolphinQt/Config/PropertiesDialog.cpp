@@ -7,7 +7,6 @@
 
 #include <QDialogButtonBox>
 #include <QPushButton>
-#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include "DiscIO/Enums.h"
@@ -24,28 +23,22 @@
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
 
 #include "UICommon/GameFile.h"
-#include "VideoCommon/VideoConfig.h"
 
 PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& game)
-    : QDialog(parent)
+    : StackedSettingsWindow{parent}, m_filepath(game.GetFilePath())
 {
   setWindowTitle(QStringLiteral("%1: %2 - %3")
                      .arg(QString::fromStdString(game.GetFileName()),
                           QString::fromStdString(game.GetGameID()),
                           QString::fromStdString(game.GetLongName())));
-  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
-  QVBoxLayout* layout = new QVBoxLayout();
-
-  QTabWidget* tab_widget = new QTabWidget(this);
-  InfoWidget* info = new InfoWidget(game);
-
-  ARCodeWidget* ar = new ARCodeWidget(game.GetGameID(), game.GetRevision());
-  GeckoCodeWidget* gecko =
+  auto* const info = new InfoWidget(game);
+  auto* const ar = new ARCodeWidget(game.GetGameID(), game.GetRevision());
+  auto* const gecko =
       new GeckoCodeWidget(game.GetGameID(), game.GetGameTDBID(), game.GetRevision());
-  PatchesWidget* patches = new PatchesWidget(game);
-  GameConfigWidget* game_config = new GameConfigWidget(game);
-  GraphicsModListWidget* graphics_mod_list = new GraphicsModListWidget(game);
+  auto* const patches = new PatchesWidget(game);
+  auto* const game_config = new GameConfigWidget(game);
+  auto* const graphics_mod_list = new GraphicsModListWidget(game);
 
   connect(gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
           &PropertiesDialog::OpenGeneralSettings);
@@ -80,20 +73,18 @@ PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& ga
     std::shared_ptr<DiscIO::Volume> volume = DiscIO::CreateVolume(game.GetFilePath());
     if (volume)
     {
-      VerifyWidget* verify = new VerifyWidget(volume);
-      tab_widget->addTab(GetWrappedWidget(verify, this, padding_width, padding_height),
-                         tr("Verify"));
+      auto* const verify = new VerifyWidget(volume);
+      AddPane(verify, tr("Verify"));
 
       if (DiscIO::IsDisc(game.GetPlatform()))
       {
-        FilesystemWidget* filesystem = new FilesystemWidget(volume);
-        tab_widget->addTab(GetWrappedWidget(filesystem, this, padding_width, padding_height),
-                           tr("Filesystem"));
+        auto* const filesystem = new FilesystemWidget(volume);
+        AddPane(filesystem, tr("Filesystem"));
       }
     }
   }
 
-  layout->addWidget(tab_widget);
+  connect(this, &QDialog::rejected, graphics_mod_list, &GraphicsModListWidget::SaveToDisk);
 
   QDialogButtonBox* close_box = new QDialogButtonBox(QDialogButtonBox::Close);
 
@@ -157,4 +148,5 @@ GeckoDialog::GeckoDialog(QWidget* parent) : QDialog(parent)
 
   layout->addWidget(close_box);
   setLayout(layout);
+  OnDoneCreatingPanes();
 }
