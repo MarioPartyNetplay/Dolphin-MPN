@@ -186,7 +186,7 @@ void HiresTexture::Update()
                     {
                         auto hires_texture = std::make_shared<HiresTexture>(
                             has_arbitrary_mipmaps,
-                            system.GetCustomAssetLoader().LoadGameTexture(filename, s_file_library));
+                            Core::GetSystem().GetCustomAssetLoader().LoadGameTexture(filename, s_file_library));
                         s_hires_texture_cache.try_emplace(filename, std::move(hires_texture));
                     }
                 }
