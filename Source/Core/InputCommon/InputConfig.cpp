@@ -218,3 +218,18 @@ void InputConfig::GenerateControllerTextures(const Common::IniFile& file)
 
   m_dynamic_input_tex_config_manager.GenerateTextures(file, controller_names);
 }
+
+void InputConfig::GenerateControllerTextures()
+{
+  const std::string ini_filename = File::GetUserPath(D_CONFIG_IDX) + m_ini_name + ".ini";
+
+  Common::IniFile inifile;
+  inifile.Load(ini_filename);
+
+  for (auto& controller : m_controllers)
+  {
+    controller->SaveConfig(inifile.GetOrCreateSection(controller->GetName()));
+  }
+
+  GenerateControllerTextures(inifile);
+}
