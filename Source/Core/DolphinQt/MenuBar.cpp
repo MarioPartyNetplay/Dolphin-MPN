@@ -67,7 +67,6 @@
 #include "DolphinQt/QtUtils/NonAutodismissibleMenu.h"
 #include "DolphinQt/QtUtils/ParallelProgressDialog.h"
 #include "DolphinQt/QtUtils/QueueOnObject.h"
-#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/Updater.h"
 
@@ -293,7 +292,7 @@ void MenuBar::AddToolsMenu()
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
   m_achievements_dev_menu = tools_menu->addMenu(tr("RetroAchievements Development"));
   AchievementManager::GetInstance().SetDevMenuUpdateCallback(
-      [this]() { QueueOnObject(this, [this] { this->UpdateAchievementDevelopmentMenu(); }); });
+      [this] { QueueOnObject(this, [this] { this->UpdateAchievementDevelopmentMenu(); }); });
   m_achievements_dev_menu->menuAction()->setVisible(false);
 #endif  // RC_CLIENT_SUPPORTS_RAINTEGRATION
   tools_menu->addSeparator();
@@ -403,7 +402,7 @@ void MenuBar::AddStateLoadMenu(QMenu* emu_menu)
   {
     QAction* action = m_state_load_slots_menu->addAction(QString{});
 
-    connect(action, &QAction::triggered, this, [=, this]() { emit StateLoadSlotAt(i); });
+    connect(action, &QAction::triggered, this, [=, this] { emit StateLoadSlotAt(i); });
   }
 }
 
@@ -420,7 +419,7 @@ void MenuBar::AddStateSaveMenu(QMenu* emu_menu)
   {
     QAction* action = m_state_save_slots_menu->addAction(QString{});
 
-    connect(action, &QAction::triggered, this, [=, this]() { emit StateSaveSlotAt(i); });
+    connect(action, &QAction::triggered, this, [=, this] { emit StateSaveSlotAt(i); });
   }
 }
 
@@ -437,7 +436,7 @@ void MenuBar::AddStateSlotMenu(QMenu* emu_menu)
     if (Settings::Instance().GetStateSlot() == i)
       action->setChecked(true);
 
-    connect(action, &QAction::triggered, this, [=, this]() { emit SetStateSlot(i); });
+    connect(action, &QAction::triggered, this, [=, this] { emit SetStateSlot(i); });
     connect(this, &MenuBar::SetStateSlot, [action, i](const int slot) {
       if (slot == i)
         action->setChecked(true);
@@ -626,7 +625,7 @@ void MenuBar::AddOptionsMenu()
 
   m_reset_ignore_panic_handler = options_menu->addAction(tr("Reset Ignore Panic Handler"));
 
-  connect(m_reset_ignore_panic_handler, &QAction::triggered, this, []() {
+  connect(m_reset_ignore_panic_handler, &QAction::triggered, this, [] {
     Config::DeleteKey(Config::LayerType::CurrentRun, Config::MAIN_USE_PANIC_HANDLERS);
   });
 
@@ -1147,7 +1146,7 @@ void MenuBar::UpdateAchievementDevelopmentMenu()
       }
       auto* ra_dev_menu_item = m_achievements_dev_menu->addAction(
           QString::fromStdString(menu_item.label), this,
-          [menu_item]() { AchievementManager::GetInstance().ActivateDevMenuItem(menu_item.id); });
+          [menu_item] { AchievementManager::GetInstance().ActivateDevMenuItem(menu_item.id); });
       ra_dev_menu_item->setEnabled(menu_item.enabled);
       // Recommended hardcode by RAIntegration.dll developer Jamiras
       ra_dev_menu_item->setCheckable(i < 2);
@@ -1376,7 +1375,6 @@ void MenuBar::CheckNAND()
 
   {
     NANDRepairDialog dialog(result, this);
-    SetQWidgetWindowDecorations(&dialog);
     if (dialog.exec() != QDialog::Accepted)
       return;
   }
@@ -1547,7 +1545,6 @@ void MenuBar::GenerateSymbolsFromRSOAuto()
 
     return matches;
   });
-  SetQWidgetWindowDecorations(progress.GetRaw());
   progress.GetRaw()->exec();
 
   const auto matches = future.get();

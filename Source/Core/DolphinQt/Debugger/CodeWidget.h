@@ -33,7 +33,7 @@ class CodeWidget : public QDockWidget
   Q_OBJECT
 public:
   explicit CodeWidget(QWidget* parent = nullptr);
-  ~CodeWidget();
+  ~CodeWidget() override;
 
   void Step();
   void StepOver();
@@ -61,11 +61,13 @@ private:
   void UpdateCallstack();
   void UpdateFunctionCalls(const Common::Symbol* symbol);
   void UpdateFunctionCallers(const Common::Symbol* symbol);
+  void UpdateNotes();
 
   void OnPPCSymbolsChanged();
   void OnSearchAddress();
   void OnSearchSymbols();
   void OnSelectSymbol();
+  void OnSelectNote();
   void OnSelectCallstack();
   void OnSelectFunctionCallers();
   void OnSelectFunctionCalls();
@@ -84,6 +86,7 @@ private:
   QListWidget* m_callstack_list;
   QLineEdit* m_search_symbols;
   QListWidget* m_symbols_list;
+  QListWidget* m_note_list;
   QLineEdit* m_search_calls;
   QListWidget* m_function_calls_list;
   QLineEdit* m_search_callers;

@@ -88,7 +88,7 @@ GameConfigWidget::GameConfigWidget(const UICommon::GameFile& game) : m_game(game
   }
 
   // Fails to change font if it's directly called at this time. Is there a better workaround?
-  QTimer::singleShot(100, this, [this]() {
+  QTimer::singleShot(100, this, [this] {
     SetItalics();
     Config::OnConfigChanged();
   });
@@ -205,14 +205,11 @@ void GameConfigWidget::CreateWidgets()
 
   auto* gfx_tabs = new QTabWidget;
 
-  gfx_tabs->addTab(GetWrappedWidget(new GeneralWidget(this, m_layer.get()), this, 125, 100),
-                   tr("General"));
-  gfx_tabs->addTab(GetWrappedWidget(new EnhancementsWidget(this, m_layer.get()), this, 125, 100),
+  gfx_tabs->addTab(GetWrappedWidget(new GeneralWidget(this, m_layer.get())), tr("General"));
+  gfx_tabs->addTab(GetWrappedWidget(new EnhancementsWidget(this, m_layer.get())),
                    tr("Enhancements"));
-  gfx_tabs->addTab(GetWrappedWidget(new HacksWidget(this, m_layer.get()), this, 125, 100),
-                   tr("Hacks"));
-  gfx_tabs->addTab(GetWrappedWidget(new AdvancedWidget(this, m_layer.get()), this, 125, 100),
-                   tr("Advanced"));
+  gfx_tabs->addTab(GetWrappedWidget(new HacksWidget(this, m_layer.get())), tr("Hacks"));
+  gfx_tabs->addTab(GetWrappedWidget(new AdvancedWidget(this, m_layer.get())), tr("Advanced"));
   const int editor_index = tab_widget->addTab(advanced_widget, tr("Editor"));
   gfx_layout->addWidget(gfx_tabs);
 

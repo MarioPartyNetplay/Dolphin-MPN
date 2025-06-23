@@ -27,7 +27,6 @@ class BreakpointWidget;
 struct BootParameters;
 class CheatsManager;
 class CodeWidget;
-class ControllersWindow;
 class DiscordHandler;
 class DragEnterEvent;
 class FIFOPlayerWindow;
@@ -87,7 +86,7 @@ class MainWindow final : public QMainWindow
 public:
   explicit MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
                       const std::string& movie_path);
-  ~MainWindow();
+  ~MainWindow() override;
 
   WindowSystemInfo GetWindowSystemInfo() const;
 
@@ -274,6 +273,7 @@ private:
 #ifdef USE_RETRO_ACHIEVEMENTS
   AchievementsWindow* m_achievements_window = nullptr;
   Config::ConfigChangedCallbackID m_config_changed_callback_id;
+  bool m_former_hardcore_setting = false;
 #endif  // USE_RETRO_ACHIEVEMENTS
 
   AssemblerWidget* m_assembler_widget;
