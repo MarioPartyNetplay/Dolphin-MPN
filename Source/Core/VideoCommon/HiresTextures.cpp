@@ -184,9 +184,10 @@ void HiresTexture::Update()
                     // Cache the texture if necessary
                     if (g_ActiveConfig.bCacheHiresTextures)
                     {
+                        auto& system = Core::System::GetInstance();
                         auto hires_texture = std::make_shared<HiresTexture>(
                             has_arbitrary_mipmaps,
-                            Core::GetSystem().GetCustomAssetLoader().LoadGameTexture(filename, s_file_library));
+                            system.GetCustomAssetLoader().LoadGameTexture(filename, s_file_library));
                         s_hires_texture_cache.try_emplace(filename, std::move(hires_texture));
                     }
                 }
