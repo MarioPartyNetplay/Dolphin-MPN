@@ -69,9 +69,12 @@
     - uses: actions/checkout@v2
     - name: Setup Submodules
       run: git config --global --add safe.directory . && git submodule update --init --recursive
-    - name : Setup Packages
+    - name: Install Homebrew packages (arm64)
       run: |
-        brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio mesa curl git
+        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio mesa git
+    - name: Install Homebrew packages (x86_64 via Rosetta)
+      run: |
+        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio mesa git
     - name: Build
       run: |
         mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py

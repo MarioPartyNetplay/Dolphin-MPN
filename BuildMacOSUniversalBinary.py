@@ -289,6 +289,7 @@ def build(config):
         subprocess.check_call([
                 "cmake", "../../", "-G", config["generator"],
                 "-DCMAKE_BUILD_TYPE=" + config["build_type"],
+                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
                 '-DCMAKE_CXX_FLAGS="-DMACOS_UNIVERSAL_BUILD=1"',
                 '-DCMAKE_C_FLAGS="-DMACOS_UNIVERSAL_BUILD=1"',
                 # System name needs to be specified for CMake to use
