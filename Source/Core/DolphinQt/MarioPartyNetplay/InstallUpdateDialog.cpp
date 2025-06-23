@@ -95,35 +95,88 @@ void InstallUpdateDialog::install()
     return;
   }
 
+#ifdef __APPLE__
+  if (this->filename.endsWith(QStringLiteral(".dmg")))
+  {
+    QString appPath = QCoreApplication::applicationDirPath() + QStringLiteral("/../../../");
+    QString appPid = QString::number(QCoreApplication::applicationPid());
+    this->temporaryDirectory = QDir::toNativeSeparators(this->temporaryDirectory);
+    fullFilePath = QDir::toNativeSeparators(fullFilePath);
+    appPath = QDir::toNativeSeparators(appPath);
+
+    // DMG extraction logic for macOS
+    this->label->setText(QStringLiteral("Mounting DMG and installing %1...").arg(this->filename));
+    this->progressBar->setValue(50);
+
+    QString mountPoint = QStringLiteral("/Volumes/Dolphin-MPN-Update");
+    QString dmgPath = fullFilePath;
+    QString appBundleName = QStringLiteral("Dolphin-MPN.app");
+    QString appSource = mountPoint + QDir::separator() + appBundleName;
+    QString appDest = appPath + QDir::separator() + appBundleName;
+
+    QStringList scriptLines = {
+        QStringLiteral("#!/bin/bash"),
+        QStringLiteral("set -e"),
+        QStringLiteral("echo '== Terminating application with PID ") + appPid + QStringLiteral("'"),
+        QStringLiteral("kill -9 ") + appPid,
+        QStringLiteral("echo '== Mounting DMG'"),
+        QStringLiteral("hdiutil attach \"") + dmgPath + QStringLiteral("\" -mountpoint \"") + mountPoint + QStringLiteral("\""),
+        QStringLiteral("echo '== Removing old application files'"),
+        QStringLiteral("rm -rf \"") + appDest + QStringLiteral("\""),
+        QStringLiteral("echo '== Copying new app bundle to ") + appPath + QStringLiteral("'"),
+        QStringLiteral("cp -R \"") + appSource + QStringLiteral("\" \"") + appPath + QStringLiteral("\""),
+        QStringLiteral("echo '== Unmounting DMG'"),
+        QStringLiteral("hdiutil detach \"") + mountPoint + QStringLiteral("\""),
+        QStringLiteral("echo '== Launching the updated application'"),
+        QStringLiteral("open \"") + appDest + QStringLiteral("\""),
+        QStringLiteral("echo '== Cleaning up temporary files'"),
+        QStringLiteral("rm -rf \"") + this->temporaryDirectory + QStringLiteral("\""),
+        QStringLiteral("exit 0")
+    };
+    this->writeAndRunScript(scriptLines);
+    return;
+  }
+#endif
+
   this->label->setText(QStringLiteral("Extracting %1...").arg(this->filename));
   this->progressBar->setValue(50);
-
   QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
 
-  // Hack to remove stuck directory
-  QDir extractDirectoryHack(extractDirectory);
-  if (extractDirectoryHack.exists()) {
-    extractDirectoryHack.removeRecursively();
-  }
-
-  // Ensure the extract directory exists before attempting to unzip
-  QDir dir(this->temporaryDirectory);
-  if (!QDir(extractDirectory).exists())
+  if (this->filename.endsWith(QStringLiteral(".zip")))
   {
-    if (!dir.mkdir(QStringLiteral("Dolphin-MPN")))
+    // Hack to remove stuck directory
+    QDir extractDirectoryHack(extractDirectory);
+    if (extractDirectoryHack.exists()) {
+      extractDirectoryHack.removeRecursively();
+    }
+
+    // Ensure the extract directory exists before attempting to unzip
+    QDir dir(this->temporaryDirectory);
+    if (!QDir(extractDirectory).exists())
+    {
+      if (!dir.mkdir(QStringLiteral("Dolphin-MPN")))
+      {
+        QMessageBox::critical(this, QStringLiteral("Error"),
+                              QStringLiteral("Failed to create extract directory."));
+        this->reject();
+        return;
+      }
+    }
+
+    // Attempt to unzip files into the extract directory
+    if (!unzipFile(fullFilePath.toStdString(), extractDirectory.toStdString()))
     {
       QMessageBox::critical(this, QStringLiteral("Error"),
-                            QStringLiteral("Failed to create extract directory."));
+                            QStringLiteral("Unzip failed: Unable to extract files."));
       this->reject();
       return;
     }
   }
-
-  // Attempt to unzip files into the extract directory
-  if (!unzipFile(fullFilePath.toStdString(), extractDirectory.toStdString()))
+  else
   {
+    // If not a zip or dmg, show error and abort
     QMessageBox::critical(this, QStringLiteral("Error"),
-                          QStringLiteral("Unzip failed: Unable to extract files."));
+                          QStringLiteral("Unsupported update file format: %1").arg(this->filename));
     this->reject();
     return;
   }
