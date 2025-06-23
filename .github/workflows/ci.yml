@@ -69,6 +69,9 @@
     - uses: actions/checkout@v2
     - name: Setup Submodules
       run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - name : Setup Packages
+      run: |
+        brew install ninja qt6 cmake ffmpeg libevdev libusb libxrandr libxi pango libsvg bluez alsa-lib pulseaudio mesa curl git
     - name: Build
       run: |
         mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
