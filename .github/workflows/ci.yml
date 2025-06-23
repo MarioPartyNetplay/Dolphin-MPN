@@ -79,19 +79,18 @@
       run: |
         mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
     - name: Prepare macOS Build Artifact
-      # yes we have to double zip to preserve perms.
       run: |
         mv build/Binaries/Dolphin.app build/Binaries/Dolphin-MPN.app
         mkdir -p build/OUT
         mv build/Binaries/Dolphin-MPN.app build/OUT/
         cd build/OUT
         xattr -cr Dolphin-MPN.app
-        zip -r DolphinMPN-macOS-x86_64.zip Dolphin-MPN.app
+        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS.dmg
         rm -rf Dolphin-MPN.app
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-macOS-x86_64
+        name: DolphinMPN-macOS
         path: build/OUT/
 
 
