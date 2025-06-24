@@ -5,12 +5,7 @@
 
 #include <algorithm>
 
-#include <mz.h>
-#include <mz_zip.h>
-#include <mz_zip_rw.h>
-
 #include <unzip.h>
-
 #include "Common/CommonTypes.h"
 #include "Common/ScopeGuard.h"
 
@@ -29,10 +24,10 @@ inline bool ReadFileFromZip(unzFile file, u8* destination, u64 len
 {
   const u64 MAX_BUFFER_SIZE = 65535;
 
-  if (mz_zip_reader_entry_open(zip_reader) != MZ_OK)
+  if (unzOpenCurrentFile(file) != UNZ_OK)
     return false;
 
-  Common::ScopeGuard guard{[&] { mz_zip_reader_entry_close(zip_reader); }};
+  Common::ScopeGuard guard{[&] { unzCloseCurrentFile(file); }};
 
   u64 bytes_to_go = len;
   while (bytes_to_go > 0)
@@ -40,7 +35,7 @@ inline bool ReadFileFromZip(unzFile file, u8* destination, u64 len
     // NOTE: multiples of 4G can't cause read_len == 0 && bytes_to_go > 0, as MAX_BUFFER_SIZE is
     // small.
     const u32 read_len = static_cast<u32>(std::min(bytes_to_go, MAX_BUFFER_SIZE));
-    const int rv = mz_zip_reader_entry_read(zip_reader, destination, read_len);
+    const int rv = unzReadCurrentFile(file, destination, read_len);
     if (rv < 0)
       return false;
 
@@ -56,11 +51,10 @@ inline bool ReadFileFromZip(unzFile file, u8* destination, u64 len
 #endif
 
   return unzEndOfFile(file) == 1;
-  return bytes_to_go == 0;
 }
 
 template <typename ContiguousContainer>
-bool ReadFileFromZip(void* file, ContiguousContainer* destination)
+bool ReadFileFromZip(unzFile file, ContiguousContainer* destination)
 {
   return ReadFileFromZip(file, reinterpret_cast<u8*>(destination->data()), destination->size()
 #ifdef __unix__
