@@ -3,10 +3,15 @@
 
 #include "DolphinQt/Debugger/BreakpointWidget.h"
 
+#include <QApplication>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QSignalBlocker>
+#include <QStyleOptionViewItem>
+#include <QStyledItemDelegate>
 #include <QTableWidget>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -148,6 +153,7 @@ void BreakpointWidget::CreateWidgets()
   m_toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 
   m_table = new QTableWidget;
+  m_table->setItemDelegate(new CustomDelegate(this));
   m_table->setTabKeyNavigation(false);
   m_table->setContentsMargins(0, 0, 0, 0);
   m_table->setColumnCount(10);

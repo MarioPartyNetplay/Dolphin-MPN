@@ -24,6 +24,8 @@ namespace Core
 class System;
 }
 
+class CustomDelegate;
+
 class BreakpointWidget : public QDockWidget
 {
   Q_OBJECT
