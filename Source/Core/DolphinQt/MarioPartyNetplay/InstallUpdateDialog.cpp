@@ -15,6 +15,9 @@
 #include <QMessageBox>
 #include "Common/MinizipUtil.h"
 #include <Common/Logging/Log.h>
+#include <minizip/mz.h>
+#include <minizip/mz_zip.h>
+#include <minizip/mz_zip_rw.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -234,71 +237,47 @@ void InstallUpdateDialog::install()
 
 bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::string& destDir)
 {
-  unzFile zipFile = unzOpen(zipFilePath.c_str());
-  if (!zipFile)
-  {
-    return false;  // Failed to open zip file
-  }
-
-  if (unzGoToFirstFile(zipFile) != UNZ_OK)
-  {
-    unzClose(zipFile);
-    return false;  // No files in zip
-  }
-
-  do
-  {
-    char filename[256];
-    unz_file_info fileInfo;
-    if (unzGetCurrentFileInfo(zipFile, &fileInfo, filename, sizeof(filename), nullptr, 0, nullptr,
-                              0) != UNZ_OK)
+    void* reader = nullptr;
+    if (mz_zip_reader_create(&reader) != MZ_OK)
+        return false;
+    if (mz_zip_reader_open_file(reader, zipFilePath.c_str()) != MZ_OK)
     {
-      unzClose(zipFile);
-      return false;  // Failed to get file info
+        mz_zip_reader_delete(&reader);
+        return false;
     }
-
-    // Skip User/GC and User/GameSettings directories
-    if (std::string(filename).find("User/GC") == 0 || std::string(filename).find("User/GameSettings") == 0)
+    int32_t entry_status = mz_zip_reader_goto_first_entry(reader);
+    while (entry_status == MZ_OK)
     {
-        continue;  // Skip these directories
+        mz_zip_file* file_info = nullptr;
+        mz_zip_reader_entry_get_info(reader, &file_info);
+        if (file_info == nullptr)
+        {
+            mz_zip_reader_close(reader);
+            mz_zip_reader_delete(&reader);
+            return false;
+        }
+        std::string out_path = destDir + "/" + file_info->filename;
+        if (file_info->filename[strlen(file_info->filename) - 1] == '/')
+        {
+            // Directory
+            QDir().mkpath(QString::fromStdString(out_path));
+        }
+        else
+        {
+            // File
+            QDir().mkpath(QFileInfo(QString::fromStdString(out_path)).path());
+            if (mz_zip_reader_entry_save_file(reader, out_path.c_str()) != MZ_OK)
+            {
+                mz_zip_reader_close(reader);
+                mz_zip_reader_delete(&reader);
+                return false;
+            }
+        }
+        entry_status = mz_zip_reader_goto_next_entry(reader);
     }
-
-    // Create full path for the extracted file
-    std::string fullPath = destDir + "/" + std::string(filename);
-    QString qFullPath = QString::fromStdString(fullPath);
-
-    // Handle directories
-    if (filename[std::strlen(filename) - 1] == '/')
-    {
-      QDir().mkpath(qFullPath);
-      continue;
-    }
-
-    // Ensure the directory structure exists
-    QDir().mkpath(QFileInfo(qFullPath).path());
-
-    // Prepare a buffer to store file data
-    std::vector<u8> fileData(fileInfo.uncompressed_size);
-    if (!Common::ReadFileFromZip(zipFile, &fileData))
-    {
-      unzClose(zipFile);
-      return false;  // Failed to read file from zip
-    }
-
-    // Write the file data to disk
-    QFile outFile(qFullPath);
-    if (!outFile.open(QIODevice::WriteOnly))
-    {
-      unzClose(zipFile);
-      return false;  // Failed to create output file
-    }
-
-    outFile.write(reinterpret_cast<const char*>(fileData.data()), fileData.size());
-    outFile.close();
-  } while (unzGoToNextFile(zipFile) == UNZ_OK);
-
-  unzClose(zipFile);
-  return true;  // Successfully unzipped all files
+    mz_zip_reader_close(reader);
+    mz_zip_reader_delete(&reader);
+    return true;
 }
 
 void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
