@@ -125,9 +125,6 @@ GeckoDialog::GeckoDialog(QWidget* parent) : QDialog(parent)
   connect(mp8_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
           &GeckoDialog::OpenGeneralSettings);
 
-  const int padding_width = 600;
-  const int padding_height = 1100;
-
   tab_widget->addTab(GetWrappedWidget(mp4_gecko), tr("Mario Party 4"));
   tab_widget->addTab(GetWrappedWidget(mp4dx_gecko), tr("Mario Party 4 DX"));
   tab_widget->addTab(GetWrappedWidget(mp5_gecko), tr("Mario Party 5"));
