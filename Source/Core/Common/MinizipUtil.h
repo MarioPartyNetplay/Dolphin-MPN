@@ -9,6 +9,8 @@
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
 
+#include <unzip.h>
+
 #include "Common/CommonTypes.h"
 #include "Common/ScopeGuard.h"
 
