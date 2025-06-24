@@ -5,9 +5,9 @@
 
 #include <algorithm>
 
-#include <minizip/mz.h>
-#include <minizip/mz_zip.h>
-#include <minizip/mz_zip_rw.h>
+#include <mz.h>
+#include <mz_zip.h>
+#include <mz_zip_rw.h>
 
 #include "Common/CommonTypes.h"
 #include "Common/ScopeGuard.h"
