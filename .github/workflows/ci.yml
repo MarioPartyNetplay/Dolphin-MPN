@@ -74,11 +74,11 @@
         arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         chmod +x /usr/local/bin/brew
         rm -f /usr/local/bin/idle3 /usr/local/bin/python3 /usr/local/bin/pip3
-        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio mesa git
+        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
 
     - name: Install Homebrew packages (arm64)
       run: |
-        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio mesa git
+        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
     - name: Build
       run: |
         mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
