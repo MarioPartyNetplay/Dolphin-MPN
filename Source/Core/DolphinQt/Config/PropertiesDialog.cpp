@@ -128,18 +128,12 @@ GeckoDialog::GeckoDialog(QWidget* parent) : QDialog(parent)
   const int padding_width = 600;
   const int padding_height = 1100;
 
-  tab_widget->addTab(GetWrappedWidget(mp4_gecko, this, padding_width, padding_height),
-                     tr("Mario Party 4"));
-  tab_widget->addTab(GetWrappedWidget(mp4dx_gecko, this, padding_width, padding_height),
-                     tr("Mario Party 4 DX"));
-  tab_widget->addTab(GetWrappedWidget(mp5_gecko, this, padding_width, padding_height),
-                     tr("Mario Party 5"));
-  tab_widget->addTab(GetWrappedWidget(mp6_gecko, this, padding_width, padding_height),
-                     tr("Mario Party 6"));
-  tab_widget->addTab(GetWrappedWidget(mp7_gecko, this, padding_width, padding_height),
-                     tr("Mario Party 7"));
-  tab_widget->addTab(GetWrappedWidget(mp8_gecko, this, padding_width, padding_height),
-                     tr("Mario Party 8"));
+  tab_widget->addTab(GetWrappedWidget(mp4_gecko), tr("Mario Party 4"));
+  tab_widget->addTab(GetWrappedWidget(mp4dx_gecko), tr("Mario Party 4 DX"));
+  tab_widget->addTab(GetWrappedWidget(mp5_gecko), tr("Mario Party 5"));
+  tab_widget->addTab(GetWrappedWidget(mp6_gecko), tr("Mario Party 6"));
+  tab_widget->addTab(GetWrappedWidget(mp7_gecko), tr("Mario Party 7"));
+  tab_widget->addTab(GetWrappedWidget(mp8_gecko), tr("Mario Party 8"));
 
   layout->addWidget(tab_widget);
 
