@@ -70,9 +70,6 @@ add_library(minizip STATIC
   minizip-ng/mz_zip_rw.h
 )
 
-# Make the minizip library depend on the header fix
-add_dependencies(minizip ${CMAKE_CURRENT_BINARY_DIR}/headers_fixed)
-
 dolphin_disable_warnings(minizip)
 
 if (UNIX)
