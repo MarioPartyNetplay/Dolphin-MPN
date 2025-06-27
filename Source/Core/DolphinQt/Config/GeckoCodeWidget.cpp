@@ -142,6 +142,8 @@ void GeckoCodeWidget::CreateWidgets()
   btn_layout->addWidget(m_remove_code);
 
   layout->addLayout(btn_layout);
+  
+  setLayout(layout);
 }
 
 void GeckoCodeWidget::ConnectWidgets()

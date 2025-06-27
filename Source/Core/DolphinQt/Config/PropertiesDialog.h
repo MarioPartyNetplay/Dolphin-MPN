@@ -30,7 +30,7 @@ private:
   const std::string m_filepath;
 };
 
-class GeckoDialog final : public QDialog
+class GeckoDialog final : public StackedSettingsWindow
 {
   Q_OBJECT
 public:

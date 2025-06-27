@@ -444,6 +444,11 @@ PRIVATE
   uicommon
   imgui
   implot
+  minizip-ng::minizip-ng
+)
+
+target_include_directories(dolphin-mpn PRIVATE
+  ${CMAKE_SOURCE_DIR}/Externals/minizip-ng
 )
 
 if (WIN32)

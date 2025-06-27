@@ -13,7 +13,7 @@
 
 #include "DolphinQt/Settings.h"
 
-namespace
+namespace QtUtils
 {
 
 void SetQWidgetWindowDecorations(QWidget* widget)
@@ -65,11 +65,6 @@ public:
 private:
   QObject* const m_decoration_filter = new WindowDecorationFilter{this};
 };
-
-}  // namespace
-
-namespace QtUtils
-{
 
 void InstallWindowDecorationFilter(QApplication* app)
 {

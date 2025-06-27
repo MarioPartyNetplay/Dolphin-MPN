@@ -5,13 +5,12 @@ include(CheckIncludeFile)
 
 add_library(minizip STATIC
   minizip-ng/mz.h
-  # minizip-ng/compat/crypt.h
-  # minizip-ng/compat/ioapi.c
-  # minizip-ng/compat/ioapi.h
-  # minizip-ng/compat/unzip.c
-  # minizip-ng/compat/unzip.h
-  # minizip-ng/compat/zip.c
-  # minizip-ng/compat/zip.h
+  minizip-ng/compat/ioapi.c
+  minizip-ng/compat/ioapi.h
+  minizip-ng/compat/unzip.c
+  minizip-ng/compat/unzip.h
+  minizip-ng/compat/zip.c
+  minizip-ng/compat/zip.h
   minizip-ng/mz_crypt.c
   minizip-ng/mz_crypt.h
   minizip-ng/mz_os.c

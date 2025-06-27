@@ -15,9 +15,9 @@
 #include <QMessageBox>
 #include "Common/MinizipUtil.h"
 #include <Common/Logging/Log.h>
-#include <minizip/mz.h>
-#include <minizip/mz_zip.h>
-#include <minizip/mz_zip_rw.h>
+#include <mz.h>
+#include <mz_zip.h>
+#include <mz_zip_rw.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -237,8 +237,8 @@ void InstallUpdateDialog::install()
 
 bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::string& destDir)
 {
-    void* reader = nullptr;
-    if (mz_zip_reader_create(&reader) != MZ_OK)
+    void* reader = mz_zip_reader_create();
+    if (!reader)
         return false;
     if (mz_zip_reader_open_file(reader, zipFilePath.c_str()) != MZ_OK)
     {

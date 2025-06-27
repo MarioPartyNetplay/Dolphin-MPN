@@ -149,7 +149,6 @@ void HiresTexture::Update()
     }
 
     const std::vector<std::string> extensions{".png", ".dds"};
-    auto& system = Core::System::GetInstance();
 
     for (const auto& texture_directory : texture_directories)
     {

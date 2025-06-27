@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -56,17 +57,12 @@ PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& ga
   connect(graphics_mod_list, &GraphicsModListWidget::OpenGraphicsSettings, this,
           &PropertiesDialog::OpenGraphicsSettings);
 
-  const int padding_width = 600;
-  const int padding_height = 1100;
-  tab_widget->addTab(GetWrappedWidget(info, this, padding_width, padding_height), tr("Info"));
-  tab_widget->addTab(GetWrappedWidget(game_config, this, padding_width, padding_height),
-                     tr("Game Config"));
-  tab_widget->addTab(GetWrappedWidget(patches, this, padding_width, padding_height), tr("Patches"));
-  tab_widget->addTab(GetWrappedWidget(ar, this, padding_width, padding_height), tr("AR Codes"));
-  tab_widget->addTab(GetWrappedWidget(gecko, this, padding_width, padding_height),
-                     tr("Gecko Codes"));
-  tab_widget->addTab(GetWrappedWidget(graphics_mod_list, this, padding_width, padding_height),
-                     tr("Graphics Mods"));
+  AddWrappedPane(info, tr("Info"));
+  AddWrappedPane(game_config, tr("Game Config"));
+  AddWrappedPane(patches, tr("Patches"));
+  AddWrappedPane(ar, tr("AR Codes"));
+  AddWrappedPane(gecko, tr("Gecko Codes"));
+  AddWrappedPane(graphics_mod_list, tr("Graphics Mods"));
 
   if (game.GetPlatform() != DiscIO::Platform::ELFOrDOL)
   {
@@ -92,19 +88,26 @@ PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& ga
   connect(close_box, &QDialogButtonBox::rejected, graphics_mod_list,
           &GraphicsModListWidget::SaveToDisk);
 
-  layout->addWidget(close_box);
+  // Get the layout from the base class and add the close button
+  auto* layout = qobject_cast<QHBoxLayout*>(this->layout());
+  if (layout)
+  {
+    auto* right_side = qobject_cast<QVBoxLayout*>(layout->itemAt(1)->layout());
+    if (right_side)
+    {
+      right_side->addWidget(close_box);
+    }
+  }
 
-  setLayout(layout);
-  tab_widget->setCurrentIndex(4);
+  OnDoneCreatingPanes();
 }
 
-GeckoDialog::GeckoDialog(QWidget* parent) : QDialog(parent)
+GeckoDialog::GeckoDialog(QWidget* parent) : StackedSettingsWindow(parent)
 {
   setWindowTitle(QStringLiteral("%1").arg(QString::fromStdString("Modifications")));
   setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
-  QVBoxLayout* layout = new QVBoxLayout();
-  QTabWidget* tab_widget = new QTabWidget(this);
+  // Create Gecko code widgets for each Mario Party game
   GeckoCodeWidget* mp4_gecko = new GeckoCodeWidget("GMPE01", "GMPE01", 0);
   GeckoCodeWidget* mp4dx_gecko = new GeckoCodeWidget("GMPEDX", "GMPEDX", 0);
   GeckoCodeWidget* mp5_gecko = new GeckoCodeWidget("GP5E01", "GP5E01", 0);
@@ -125,19 +128,26 @@ GeckoDialog::GeckoDialog(QWidget* parent) : QDialog(parent)
   connect(mp8_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
           &GeckoDialog::OpenGeneralSettings);
 
-  tab_widget->addTab(GetWrappedWidget(mp4_gecko), tr("Mario Party 4"));
-  tab_widget->addTab(GetWrappedWidget(mp4dx_gecko), tr("Mario Party 4 DX"));
-  tab_widget->addTab(GetWrappedWidget(mp5_gecko), tr("Mario Party 5"));
-  tab_widget->addTab(GetWrappedWidget(mp6_gecko), tr("Mario Party 6"));
-  tab_widget->addTab(GetWrappedWidget(mp7_gecko), tr("Mario Party 7"));
-  tab_widget->addTab(GetWrappedWidget(mp8_gecko), tr("Mario Party 8"));
+  // Add each Mario Party game as a pane using the new list layout
+  AddWrappedPane(mp4_gecko, tr("Mario Party 4"));
+  AddWrappedPane(mp4dx_gecko, tr("Mario Party 4 DX"));
+  AddWrappedPane(mp5_gecko, tr("Mario Party 5"));
+  AddWrappedPane(mp6_gecko, tr("Mario Party 6"));
+  AddWrappedPane(mp7_gecko, tr("Mario Party 7"));
+  AddWrappedPane(mp8_gecko, tr("Mario Party 8"));
 
-  layout->addWidget(tab_widget);
+  // Get the layout from the base class and add the close button
+  auto* layout = qobject_cast<QHBoxLayout*>(this->layout());
+  if (layout)
+  {
+    auto* right_side = qobject_cast<QVBoxLayout*>(layout->itemAt(1)->layout());
+    if (right_side)
+    {
+      QDialogButtonBox* close_box = new QDialogButtonBox(QDialogButtonBox::Close);
+      connect(close_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+      right_side->addWidget(close_box);
+    }
+  }
 
-  QDialogButtonBox* close_box = new QDialogButtonBox(QDialogButtonBox::Close);
-  connect(close_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
-
-  layout->addWidget(close_box);
-  setLayout(layout);
   OnDoneCreatingPanes();
 }

@@ -58,6 +58,7 @@ class WatchWidget;
 class WiiTASInputWindow;
 class WiiSpeakWindow;
 struct WindowSystemInfo;
+class ControllersPane;
 
 namespace Core
 {
@@ -251,7 +252,7 @@ private:
   u32 m_state_slot = 1;
   std::unique_ptr<BootParameters> m_pending_boot;
   GeckoDialog* m_gecko_dialog = nullptr;
-  ControllersWindow* m_controllers_window = nullptr;
+  ControllersPane* m_controllers_window = nullptr;
   SettingsWindow* m_settings_window = nullptr;
   GraphicsWindow* m_graphics_window = nullptr;
   FIFOPlayerWindow* m_fifo_window = nullptr;
