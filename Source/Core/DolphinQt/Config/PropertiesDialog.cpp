@@ -106,6 +106,7 @@ GeckoDialog::GeckoDialog(QWidget* parent) : StackedSettingsWindow(parent)
 {
   setWindowTitle(QStringLiteral("%1").arg(QString::fromStdString("Modifications")));
   setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  resize(300, 400);
 
   // Create Gecko code widgets for each Mario Party game
   GeckoCodeWidget* mp4_gecko = new GeckoCodeWidget("GMPE01", "GMPE01", 0);
@@ -135,19 +136,6 @@ GeckoDialog::GeckoDialog(QWidget* parent) : StackedSettingsWindow(parent)
   AddWrappedPane(mp6_gecko, tr("Mario Party 6"));
   AddWrappedPane(mp7_gecko, tr("Mario Party 7"));
   AddWrappedPane(mp8_gecko, tr("Mario Party 8"));
-
-  // Get the layout from the base class and add the close button
-  auto* layout = qobject_cast<QHBoxLayout*>(this->layout());
-  if (layout)
-  {
-    auto* right_side = qobject_cast<QVBoxLayout*>(layout->itemAt(1)->layout());
-    if (right_side)
-    {
-      QDialogButtonBox* close_box = new QDialogButtonBox(QDialogButtonBox::Close);
-      connect(close_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
-      right_side->addWidget(close_box);
-    }
-  }
 
   OnDoneCreatingPanes();
 }
