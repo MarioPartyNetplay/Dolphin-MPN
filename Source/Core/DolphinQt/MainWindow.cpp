@@ -14,6 +14,7 @@
 #include <QIcon>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QStackedWidget>
 #include <QStyleHints>
@@ -37,6 +38,7 @@
 #endif
 
 #include "Common/Config/Config.h"
+#include "Common/HttpRequest.h"
 #include "Common/ScopeGuard.h"
 #include "Common/Version.h"
 #include "Common/WindowSystemInfo.h"
@@ -104,6 +106,7 @@
 #include "DolphinQt/Host.h"
 #include "DolphinQt/HotkeyScheduler.h"
 #include "DolphinQt/InfinityBase/InfinityBaseWindow.h"
+#include "DolphinQt/MarioPartyNetplay/UpdateDialog.h"
 #include "DolphinQt/MenuBar.h"
 #include "DolphinQt/NKitWarningDialog.h"
 #include "DolphinQt/NetPlay/NetPlayBrowser.h"
@@ -115,6 +118,7 @@
 #include "DolphinQt/QtUtils/ParallelProgressDialog.h"
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/QtUtils/WindowActivationEventFilter.h"
 #include "DolphinQt/RenderWidget.h"
 #include "DolphinQt/ResourcePackManager.h"
@@ -1362,7 +1366,9 @@ void MainWindow::ShowUpdateDialog()
           // Create and show the UpdateDialog with the fetched data
           bool forced = false; // Set this based on your logic
           UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+#ifdef _WIN32
           QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
           updater.exec();
         } else {
           QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
@@ -1399,7 +1405,9 @@ void MainWindow::CheckForUpdatesAuto()
           // Create and show the UpdateDialog with the fetched data
           bool forced = false; // Set this based on your logic
           UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+#ifdef _WIN32
           QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
           updater.exec();
         }
     }
