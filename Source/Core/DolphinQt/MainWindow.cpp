@@ -66,6 +66,7 @@
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/IOS.h"
 #include "Core/IOS/Uids.h"
+#include "Core/IOS/USB/Bluetooth/WiimoteDevice.h"
 #include "Core/NetPlayClient.h"
 #include "Core/NetPlayCommon.h"
 #include "Core/NetPlayServer.h"
@@ -2189,8 +2190,8 @@ void MainWindow::OnConnectWiiRemote(int id)
   const Core::CPUThreadGuard guard(m_system);
   if (const auto bt = WiiUtils::GetBluetoothEmuDevice())
   {
-    const auto wm = bt->AccessWiimoteByIndex(id);
-    wm->Activate(!wm->IsConnected());
+    if (const auto wm = bt->AccessWiimoteByIndex(id))
+      wm->Activate(!wm->IsConnected());
   }
 }
 
