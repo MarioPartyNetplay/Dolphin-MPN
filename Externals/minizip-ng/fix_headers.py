@@ -110,18 +110,7 @@ def main():
     if not fix_mz_zip_header(mz_zip_path):
         return 1
     
-    print("Header fixes completed successfully!")
-    print("\nNext steps:")
-    print("1. Commit these changes to your forked minizip-ng repository")
-    print("2. Update the submodule in Dolphin-MPN:")
-    print("   cd minizip-ng")
-    print("   git add .")
-    print("   git commit -m 'Fix missing mz_strm.h includes'")
-    print("   git push origin main")
-    print("   cd ../..")
-    print("   git add Externals/minizip-ng")
-    print("   git commit -m 'Update minizip-ng submodule with header fixes'")
-    
+    print("Header fixes completed successfully!")    
     return 0
 
 if __name__ == "__main__":
