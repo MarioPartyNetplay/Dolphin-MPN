@@ -12,6 +12,8 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QIcon>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMimeData>
 #include <QStackedWidget>
 #include <QStyleHints>
@@ -82,6 +84,7 @@
 #include "DolphinQt/Config/LogConfigWidget.h"
 #include "DolphinQt/Config/LogWidget.h"
 #include "DolphinQt/Config/Mapping/MappingWindow.h"
+#include "DolphinQt/Config/PropertiesDialog.h"
 #include "DolphinQt/Config/SettingsWindow.h"
 #include "DolphinQt/Debugger/AssemblerWidget.h"
 #include "DolphinQt/Debugger/BreakpointWidget.h"
@@ -1351,7 +1354,7 @@ void MainWindow::ShowUpdateDialog()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
         QJsonObject jsonObject = jsonDoc.object();
       
-        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
         QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
 
         if (currentVersion != latestVersion)
@@ -1388,7 +1391,7 @@ void MainWindow::CheckForUpdatesAuto()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
         QJsonObject jsonObject = jsonDoc.object();
       
-        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
         QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
 
         if (currentVersion != latestVersion)
