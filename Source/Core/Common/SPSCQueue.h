@@ -38,7 +38,7 @@ public:
 #endif
   }
   
-  void notify_one() const
+  void notify_one()
   {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L && \
     (!defined(__APPLE__) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 110000)
@@ -51,7 +51,7 @@ public:
 #endif
   }
   
-  void notify_all() const
+  void notify_all()
   {
 #if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L && \
     (!defined(__APPLE__) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 110000)
@@ -195,7 +195,7 @@ private:
       m_size.notify_one();
   }
 
-  AtomicWaitCompat<std::size_t> m_size;
+  AtomicWaitCompat<std::size_t> mutable m_size;
 };
 }  // namespace detail
 
