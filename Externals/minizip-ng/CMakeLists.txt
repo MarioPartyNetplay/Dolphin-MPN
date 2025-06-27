@@ -3,6 +3,32 @@ project(minizip C)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
 
+# Find Python executable
+find_package(Python3 QUIET)
+if(NOT Python3_FOUND)
+  find_package(Python QUIET)
+endif()
+
+if(Python3_FOUND)
+  set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+elseif(Python_FOUND)
+  set(PYTHON_EXECUTABLE ${Python_EXECUTABLE})
+else()
+  # Fallback to just 'python'
+  set(PYTHON_EXECUTABLE python)
+endif()
+
+# Add custom command to run the header fix script before building
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/headers_fixed
+  COMMAND ${CMAKE_COMMAND} -E echo "Running header fix script..."
+  COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/fix_headers.py
+  COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/headers_fixed
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fix_headers.py
+  COMMENT "Fixing minizip-ng headers"
+  VERBATIM
+)
+
 add_library(minizip STATIC
   minizip-ng/mz.h
   minizip-ng/compat/ioapi.c
@@ -43,6 +69,10 @@ add_library(minizip STATIC
   minizip-ng/mz_zip_rw.c
   minizip-ng/mz_zip_rw.h
 )
+
+# Make the minizip library depend on the header fix
+add_dependencies(minizip ${CMAKE_CURRENT_BINARY_DIR}/headers_fixed)
+
 dolphin_disable_warnings(minizip)
 
 if (UNIX)

@@ -22,6 +22,10 @@
       <AdditionalIncludeDirectories>minizip-ng;minizip-ng\compat;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>HAVE_ZLIB;ZLIB_COMPAT;MZ_ZIP_NO_CRYPTO;MZ_ZIP_NO_ENCRYPTION;HAVE_STDINT_H;HAVE_INTTYPES_H;NO_FSEEKO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <PreBuildEvent>
+      <Command>python "$(ProjectDir)fix_headers.py"</Command>
+      <Message>Running minizip-ng header fix script...</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="minizip-ng\mz_crypt.c" />
