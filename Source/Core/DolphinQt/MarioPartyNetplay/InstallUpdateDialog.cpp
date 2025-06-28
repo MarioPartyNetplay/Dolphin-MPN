@@ -35,7 +35,7 @@ InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDi
       filename(filename),
       downloadUrl(downloadUrl) // Initialize member variables
 {
-    setWindowTitle(QStringLiteral("Installing %1...").arg(this->filename));
+    setWindowTitle(QStringLiteral("Dolphin MPN - Updater"));
     
     // Create UI components
     QVBoxLayout* layout = new QVBoxLayout(this);
@@ -223,7 +223,7 @@ void InstallUpdateDialog::install()
   this->progressBar->setValue(50);
   
   // Step bar for extraction
-  this->stepLabel->setText(QStringLiteral("0-0 files extracted..."));
+  this->stepLabel->setText(QStringLiteral("0 files extracted..."));
   this->stepProgressBar->setValue(0);
   this->stepProgressBar->setMinimum(0);
   this->stepProgressBar->setMaximum(100);
