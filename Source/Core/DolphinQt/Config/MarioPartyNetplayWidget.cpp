@@ -25,7 +25,7 @@ void MarioPartyNetplayWidget::CreateWidgets()
   auto* main_layout = new QVBoxLayout;
 
   // MPN Settings
-  auto* mpn_box = new QGroupBox(tr("Mario Party Netplay Settings"));
+  auto* mpn_box = new QGroupBox(tr("MPN Settings"));
   auto* mpn_layout = new QGridLayout();
 
   m_show_turn_count = new ConfigBool(tr("Show Turn Count"), Config::GFX_SHOW_MP_TURN, m_game_layer);

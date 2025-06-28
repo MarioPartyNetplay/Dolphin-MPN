@@ -205,7 +205,7 @@ void GameConfigWidget::CreateWidgets()
   tab_widget->addTab(gfx_tab_holder, tr("Graphics"));
 
   // Mario Party Netplay tab
-  tab_widget->addTab(GetWrappedWidget(new MarioPartyNetplayWidget(this, m_layer.get())), tr("Mario Party Netplay"));
+  tab_widget->addTab(GetWrappedWidget(new MarioPartyNetplayWidget(this, m_layer.get())), tr("MPN"));
 
   auto* gfx_tabs = new QTabWidget;
 

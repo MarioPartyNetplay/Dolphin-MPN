@@ -33,34 +33,24 @@ void MarioPartyNetplayPane::CreateLayout()
   m_main_layout = new QVBoxLayout;
 
   // Mario Party Netplay Settings
-  auto* mpn_group = new QGroupBox(tr("Mario Party Netplay Settings"));
+  auto* mpn_group = new QGroupBox(tr("MPN Settings"));
   auto* mpn_group_layout = new QVBoxLayout;
   mpn_group->setLayout(mpn_group_layout);
   m_main_layout->addWidget(mpn_group);
 
   m_checkbox_show_turn_count = new QCheckBox(tr("Show Turn Count"));
+  m_checkbox_show_turn_count->setToolTip(tr("Show the current MP turn in the Dolphin HUD."));
   mpn_group_layout->addWidget(m_checkbox_show_turn_count);
 
   m_checkbox_show_buttons_new = new QCheckBox(tr("Per-controller Buttons"));
+  m_checkbox_show_buttons_new->setToolTip(tr("Change the in-game MP buttons to buttons to match your selected controller."));
   mpn_group_layout->addWidget(m_checkbox_show_buttons_new);
 
   m_checkbox_log_turn_count_to_file = new QCheckBox(tr("Log Turn Count to File"));
+  m_checkbox_log_turn_count_to_file->setToolTip(tr("Logs the current turn count to a file for tracking purposes."));
   mpn_group_layout->addWidget(m_checkbox_log_turn_count_to_file);
 
-  // Add descriptions
-  auto* turn_count_description = new QLabel(tr("Show the current MP turn in the Dolphin HUD."));
-  turn_count_description->setWordWrap(true);
-  mpn_group_layout->addWidget(turn_count_description);
-
-  auto* buttons_description = new QLabel(tr("Change the in-game MP buttons to buttons to match "
-                                           "your selected controller."));
-  buttons_description->setWordWrap(true);
-  mpn_group_layout->addWidget(buttons_description);
-
-  auto* log_description = new QLabel(tr("Logs the current turn count to a file for tracking purposes."));
-  log_description->setWordWrap(true);
-  mpn_group_layout->addWidget(log_description);
-
+  mpn_group_layout->addStretch(1);
   m_main_layout->addStretch(1);
   setLayout(m_main_layout);
 }
