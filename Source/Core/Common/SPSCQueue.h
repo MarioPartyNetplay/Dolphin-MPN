@@ -8,6 +8,8 @@
 
 #include <atomic>
 #include <cassert>
+#include <condition_variable>
+#include <mutex>
 
 #include "Common/TypeUtils.h"
 
@@ -16,6 +18,90 @@ namespace Common
 
 namespace detail
 {
+// Compatibility layer for C++20 atomic wait/notify
+template <typename T>
+class AtomicWaitCompat
+{
+public:
+  AtomicWaitCompat() = default;
+  
+  void wait(T old_value, std::memory_order order = std::memory_order_seq_cst) const
+  {
+#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L && \
+    (!defined(__APPLE__) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 110000)
+    // Use C++20 atomic wait if available and on macOS 11.0+
+    m_value.wait(old_value, order);
+#else
+    // Fallback for older systems
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_cv.wait(lock, [this, old_value] { return m_value.load(std::memory_order_acquire) != old_value; });
+#endif
+  }
+  
+  void notify_one()
+  {
+#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L && \
+    (!defined(__APPLE__) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 110000)
+    // Use C++20 atomic notify if available and on macOS 11.0+
+    m_value.notify_one();
+#else
+    // Fallback for older systems
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_cv.notify_one();
+#endif
+  }
+  
+  void notify_all()
+  {
+#if defined(__cpp_lib_atomic_wait) && __cpp_lib_atomic_wait >= 201907L && \
+    (!defined(__APPLE__) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 110000)
+    // Use C++20 atomic notify if available and on macOS 11.0+
+    m_value.notify_all();
+#else
+    // Fallback for older systems
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_cv.notify_all();
+#endif
+  }
+  
+  // Proxy methods to std::atomic
+  T load(std::memory_order order = std::memory_order_seq_cst) const
+  {
+    return m_value.load(order);
+  }
+  
+  void store(T desired, std::memory_order order = std::memory_order_seq_cst)
+  {
+    m_value.store(desired, order);
+#if !defined(__cpp_lib_atomic_wait) || __cpp_lib_atomic_wait < 201907L || \
+    (defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED < 110000)
+    // Notify on store for fallback implementation
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_cv.notify_all();
+#endif
+  }
+  
+  T fetch_add(T arg, std::memory_order order = std::memory_order_seq_cst)
+  {
+    T result = m_value.fetch_add(arg, order);
+#if !defined(__cpp_lib_atomic_wait) || __cpp_lib_atomic_wait < 201907L || \
+    (defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED < 110000)
+    // Notify on fetch_add for fallback implementation
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_cv.notify_all();
+#endif
+    return result;
+  }
+
+private:
+  std::atomic<T> m_value{0};
+#if !defined(__cpp_lib_atomic_wait) || __cpp_lib_atomic_wait < 201907L || \
+    (defined(__APPLE__) && __MAC_OS_X_VERSION_MIN_REQUIRED < 110000)
+  mutable std::mutex m_mutex;
+  mutable std::condition_variable m_cv;
+#endif
+};
+
 template <typename T, bool IncludeWaitFunctionality>
 class SPSCQueueBase final
 {
@@ -109,7 +195,7 @@ private:
       m_size.notify_one();
   }
 
-  std::atomic<std::size_t> m_size = 0;
+  AtomicWaitCompat<std::size_t> mutable m_size;
 };
 }  // namespace detail
 

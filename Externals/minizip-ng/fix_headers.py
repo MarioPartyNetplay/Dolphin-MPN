@@ -87,8 +87,39 @@ def fix_mz_zip_header(file_path):
     print(f"No callback types found in {file_path}, skipping")
     return True
 
+def fix_mz_strm_os_posix(file_path):
+    """Wrap O_NOFOLLOW usage with #ifdef O_NOFOLLOW ... #endif in mz_strm_os_posix.c"""
+    if not os.path.exists(file_path):
+        print(f"Error: File {file_path} not found")
+        return False
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Patch the line: mode_open |= O_NOFOLLOW;
+    # Only patch if not already inside an #ifdef
+    if 'mode_open |= O_NOFOLLOW;' in content and '#ifdef O_NOFOLLOW' not in content:
+        new_content = re.sub(
+            r'(\s+if \(mode & MZ_OPEN_MODE_NOFOLLOW\)\s*)mode_open \|= O_NOFOLLOW;',
+            r'\1#ifdef O_NOFOLLOW\n    mode_open |= O_NOFOLLOW;\n#endif',
+            content
+        )
+        if new_content == content:
+            # fallback: patch any occurrence
+            new_content = content.replace(
+                'mode_open |= O_NOFOLLOW;',
+                '#ifdef O_NOFOLLOW\n        mode_open |= O_NOFOLLOW;\n#endif'
+            )
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        print(f"Patched O_NOFOLLOW usage in {file_path}")
+        return True
+    else:
+        print(f"No O_NOFOLLOW patch needed in {file_path}")
+        return True
+
 def main():
-    """Main function to fix all minizip headers"""
+    """Main function to fix all minizip headers and patch O_NOFOLLOW usage"""
     
     # Get the minizip-ng directory path (relative to this script)
     minizip_dir = "minizip-ng"
@@ -108,6 +139,11 @@ def main():
     # Fix mz_zip.h if needed
     mz_zip_path = os.path.join(minizip_dir, "mz_zip.h")
     if not fix_mz_zip_header(mz_zip_path):
+        return 1
+    
+    # Patch mz_strm_os_posix.c for O_NOFOLLOW
+    mz_strm_os_posix_path = os.path.join(minizip_dir, "mz_strm_os_posix.c")
+    if not fix_mz_strm_os_posix(mz_strm_os_posix_path):
         return 1
     
     print("Header fixes completed successfully!")    

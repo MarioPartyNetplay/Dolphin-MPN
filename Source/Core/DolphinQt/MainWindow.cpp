@@ -4,144 +4,33 @@
 #include "DolphinQt/MainWindow.h"
 
 #include <QApplication>
-#include <QByteArray>
-#include <QClipboard>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QIcon>
-#include <QInputDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QListWidget>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QProgressDialog>
-#include <QScreen>
-#include <QScrollArea>
-#include <QShortcut>
 #include <QStackedWidget>
 #include <QStyleHints>
-#include <QTimer>
-#include <QUrl>
 #include <QVBoxLayout>
 #include <QWindow>
 
 #include <fmt/format.h>
 
-#include "Common/CommonPaths.h"
-#include "Common/Config/Config.h"
-#include "Common/FileUtil.h"
-#include "Common/HttpRequest.h"
-#include "Common/Logging/Log.h"
-#include "Common/MsgHandler.h"
-#include "Common/ScopeGuard.h"
-#include "Common/StringUtil.h"
-#include "Common/Thread.h"
-#include "Common/Version.h"
+#include <future>
+#include <optional>
+#include <variant>
 
-#include "Core/Config/AchievementSettings.h"
-#include "Core/Config/MainSettings.h"
-#include "Core/Config/SYSCONFSettings.h"
-#include "Core/Config/SessionSettings.h"
-#include "Core/ConfigLoaders/GameConfigLoader.h"
-#include "Core/ConfigManager.h"
-#include "Core/Core.h"
-#include "Core/Debugger/RSO.h"
-#include "Core/HW/EXI/EXI_Device.h"
-#include "Core/HW/GCMemcard/GCMemcard.h"
-#include "Core/HW/GCMemcard/GCMemcardDirectory.h"
-#include "Core/HW/GCMemcard/GCMemcardRaw.h"
-#include "Core/HW/Sram.h"
-#include "Core/HW/WiiSave.h"
-#include "Core/HW/WiiSaveStructs.h"
-#include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
-#include "Core/HW/WiimoteReal/WiimoteReal.h"
-#include "Core/IOS/ES/ES.h"
-#include "Core/IOS/FS/FileSystem.h"
-#include "Core/IOS/IOS.h"
-#include "Core/IOS/Uids.h"
-#include "Core/NetPlayClient.h"
-#include "Core/NetPlayCommon.h"
-#include "Core/NetPlayServer.h"
-#include "Core/State.h"
-#include "Core/System.h"
-#include "Core/WiiUtils.h"
-
-#include "DiscIO/Blob.h"
-#include "DiscIO/Enums.h"
-#include "DiscIO/NANDImporter.h"
-#include "DiscIO/RiivolutionPatcher.h"
-#include "DiscIO/Volume.h"
-
-#include "DolphinQt/AboutDialog.h"
-#include "DolphinQt/Config/ControllersPane.h"
-#include "DolphinQt/Config/Graphics/GraphicsWindow.h"
-#include "DolphinQt/Config/PropertiesDialog.h"
-#include "DolphinQt/Config/SettingsWindow.h"
-#include "DolphinQt/Debugger/AssemblerWidget.h"
-#include "DolphinQt/Debugger/BreakpointWidget.h"
-#include "DolphinQt/Debugger/CodeWidget.h"
-#include "DolphinQt/Debugger/JITWidget.h"
-#include "DolphinQt/Config/LogWidget.h"
-#include "DolphinQt/Config/LogConfigWidget.h"
-#include "DolphinQt/Debugger/MemoryWidget.h"
-#include "DolphinQt/Debugger/NetworkWidget.h"
-#include "DolphinQt/Debugger/RegisterWidget.h"
-#include "DolphinQt/Debugger/ThreadWidget.h"
-#include "DolphinQt/Debugger/WatchWidget.h"
-#include "DolphinQt/FIFO/FIFOPlayerWindow.h"
-#include "DolphinQt/GameList/GameList.h"
-#include "DolphinQt/GameList/GameListModel.h"
-#include "DolphinQt/Host.h"
-#include "DolphinQt/InfinityBase/InfinityBaseWindow.h"
-#include "DolphinQt/MenuBar.h"
-#include "DolphinQt/NetPlay/NetPlayBrowser.h"
-#include "DolphinQt/NetPlay/NetPlayDialog.h"
-#include "DolphinQt/NetPlay/NetPlaySetupDialog.h"
-#include "DolphinQt/QtUtils/ModalMessageBox.h"
-#include "DolphinQt/QtUtils/ParallelProgressDialog.h"
-#include "DolphinQt/QtUtils/QtUtils.h"
-#include "DolphinQt/QtUtils/SetWindowDecorations.h"
-#include "DolphinQt/RenderWidget.h"
-#include "DolphinQt/Resources.h"
-#include "DolphinQt/SearchBar.h"
-#include "DolphinQt/Settings.h"
-#include "DolphinQt/SkylanderPortal/SkylanderPortalWindow.h"
-#include "DolphinQt/TAS/GCTASInputWindow.h"
-#include "DolphinQt/TAS/GBATASInputWindow.h"
-#include "DolphinQt/TAS/WiiTASInputWindow.h"
-#include "DolphinQt/ToolBar.h"
-#include "DolphinQt/EmulatedUSB/WiiSpeakWindow.h"
- 
-#include "InputCommon/ControllerEmu/ControlGroup/Attachments.h"
-#include "InputCommon/InputConfig.h"
-
-#include "UICommon/GameFile.h"
-#include "UICommon/UICommon.h"
-
-#include "VideoCommon/VideoBackendBase.h"
-
-#ifdef USE_RETRO_ACHIEVEMENTS
-#include "DolphinQt/Achievements/AchievementsWindow.h"
-#include "Core/AchievementManager.h"
-#endif  // USE_RETRO_ACHIEVEMENTS
-
-#ifdef HAVE_XRANDR
-#include "UICommon/X11Utils.h"
-#endif
-
-#ifdef __unix__
+#if defined(__unix__) || defined(__unix) || defined(__APPLE__)
 #include <signal.h>
-#endif
 
-#ifdef __APPLE__
-#include <sys/sysctl.h>
+#include "QtUtils/SignalDaemon.h"
 #endif
 
 #ifndef _WIN32
@@ -149,13 +38,10 @@
 #endif
 
 #include "Common/Config/Config.h"
+#include "Common/HttpRequest.h"
 #include "Common/ScopeGuard.h"
 #include "Common/Version.h"
 #include "Common/WindowSystemInfo.h"
-#include "Common/HttpRequest.h"
-#include "Common/scmrev.h"
-#include "Common/ScopeGuard.h"
-#include "Common/StringUtil.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/Boot/Boot.h"
@@ -220,10 +106,8 @@
 #include "DolphinQt/Host.h"
 #include "DolphinQt/HotkeyScheduler.h"
 #include "DolphinQt/InfinityBase/InfinityBaseWindow.h"
-#include "DolphinQt/MenuBar.h"
-#include "DolphinQt/MarioPartyNetplay/DownloadUpdateDialog.h"
-#include "DolphinQt/MarioPartyNetplay/InstallUpdateDialog.h"
 #include "DolphinQt/MarioPartyNetplay/UpdateDialog.h"
+#include "DolphinQt/MenuBar.h"
 #include "DolphinQt/NKitWarningDialog.h"
 #include "DolphinQt/NetPlay/NetPlayBrowser.h"
 #include "DolphinQt/NetPlay/NetPlayDialog.h"
@@ -234,6 +118,7 @@
 #include "DolphinQt/QtUtils/ParallelProgressDialog.h"
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/QtUtils/WindowActivationEventFilter.h"
 #include "DolphinQt/RenderWidget.h"
 #include "DolphinQt/ResourcePackManager.h"
@@ -392,8 +277,6 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   InitCoreCallbacks();
 
   NetPlayInit();
-
-  CheckForUpdatesAuto();
 
 #ifdef USE_RETRO_ACHIEVEMENTS
   AchievementManager::GetInstance().Init(reinterpret_cast<void*>(winId()));
@@ -1475,7 +1358,7 @@ void MainWindow::ShowUpdateDialog()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
         QJsonObject jsonObject = jsonDoc.object();
       
-        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
         QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
 
         if (currentVersion != latestVersion)
@@ -1483,7 +1366,9 @@ void MainWindow::ShowUpdateDialog()
           // Create and show the UpdateDialog with the fetched data
           bool forced = false; // Set this based on your logic
           UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+#ifdef _WIN32
           QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
           updater.exec();
         } else {
           QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
@@ -1512,7 +1397,7 @@ void MainWindow::CheckForUpdatesAuto()
         QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
         QJsonObject jsonObject = jsonDoc.object();
       
-        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
         QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
 
         if (currentVersion != latestVersion)
@@ -1520,7 +1405,9 @@ void MainWindow::CheckForUpdatesAuto()
           // Create and show the UpdateDialog with the fetched data
           bool forced = false; // Set this based on your logic
           UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+#ifdef _WIN32
           QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
           updater.exec();
         }
     }
@@ -2047,6 +1934,14 @@ void MainWindow::OnImportNANDBackup()
 
 void MainWindow::OnPlayRecording()
 {
+  if (AchievementManager::GetInstance().IsHardcoreModeActive())
+  {
+    ModalMessageBox::critical(
+        this, tr("Error"),
+        tr("Playback of input recordings is disabled in RetroAchievements hardcore mode."));
+    return;
+  }
+
   QString dtm_file = DolphinFileDialog::getOpenFileName(
       this, tr("Select the Recording File to Play"), QString(), tr("Dolphin TAS Movies (*.dtm)"));
 
@@ -2181,7 +2076,7 @@ void MainWindow::OnConnectWiiRemote(int id)
   const Core::CPUThreadGuard guard(m_system);
   if (const auto bt = WiiUtils::GetBluetoothEmuDevice())
   {
-    const auto wm = bt->AccessWiimoteByIndex(id);
+    if (const auto wm = bt->AccessWiimoteByIndex(id))
     wm->Activate(!wm->IsConnected());
   }
 }
