@@ -85,13 +85,14 @@
     - name: Prepare macOS Build Artifact
       run: |
         cd build/universal
-        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS.dmg
+        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
         rm -rf Dolphin-MPN.app
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-macOS
+        name: DolphinMPN-macOS-universal
         path: build/universal/
+
   build_windows_arm64:
     runs-on: windows-11-arm
     steps:
