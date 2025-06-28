@@ -139,12 +139,12 @@ SettingsWindow::SettingsWindow(QWidget* parent) : StackedSettingsWindow{parent}
   AddWrappedPane(new GeneralPane, tr("General"));
   AddWrappedPane(new ControllersPane, tr("Controllers"));
   AddWrappedPane(new InterfacePane, tr("Interface"));
+  AddWrappedPane(new MarioPartyNetplayPane, tr("Mario Party Netplay"));
   AddWrappedPane(new AudioPane, tr("Audio"));
   AddWrappedPane(new PathPane, tr("Paths"));
   AddWrappedPane(new GameCubePane, tr("GameCube"));
   AddWrappedPane(new WiiPane, tr("Wii"));
   AddWrappedPane(new AdvancedPane, tr("Advanced"));
-  AddWrappedPane(new MarioPartyNetplayPane, tr("Mario Party Netplay"));
 
   OnDoneCreatingPanes();
 }
