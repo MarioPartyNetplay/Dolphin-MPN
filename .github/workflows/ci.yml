@@ -87,6 +87,11 @@
         cd build/universal
         hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
         rm -rf Dolphin-MPN.app
+        rm -rf DolphinQt.app
+        rm -f dolphin-mpn-nogui
+        rm -f dolphin-tool
+        rm -f traversal_server
+
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
