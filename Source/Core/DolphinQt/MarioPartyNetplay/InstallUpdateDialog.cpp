@@ -3,7 +3,10 @@
 *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
 */
 
+#include "Common/MinizipUtil.h"
 #include "InstallUpdateDialog.h"
+#include "DownloadWorker.h"
+
 #include <QCoreApplication>
 #include <QProcess>
 #include <QDir>
@@ -13,8 +16,8 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QMessageBox>
-#include "Common/MinizipUtil.h"
-#include <Common/Logging/Log.h>
+#include <QThread>
+
 #include <mz.h>
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
@@ -25,31 +28,103 @@
 #endif
 
 // Constructor implementation
-InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename)
+InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename, QString downloadUrl)
     : QDialog(parent), // Only pass the parent
       installationDirectory(installationDirectory),
       temporaryDirectory(temporaryDirectory),
-      filename(filename) // Initialize member variables
+      filename(filename),
+      downloadUrl(downloadUrl) // Initialize member variables
 {
     setWindowTitle(QStringLiteral("Installing %1...").arg(this->filename));
     
     // Create UI components
     QVBoxLayout* layout = new QVBoxLayout(this);
-    label = new QLabel(QStringLiteral("Installing %1...").arg(this->filename), this);
+    label = new QLabel(QStringLiteral("Preparing installation..."), this);
     progressBar = new QProgressBar(this);
+    stepLabel = new QLabel(QStringLiteral("Preparing..."), this);
+    stepProgressBar = new QProgressBar(this);
 
-    // Set up the layout
+    // Always show both bars and the step label
+    progressBar->setVisible(true);
+    stepLabel->setVisible(true);
+    stepProgressBar->setVisible(true);
+
+    // Add widgets in order: label, master bar, step label, step bar
     layout->addWidget(label);
     layout->addWidget(progressBar);
+    layout->addWidget(stepLabel);
+    layout->addWidget(stepProgressBar);
 
     setLayout(layout);
 
-    startTimer(100);
+    // Set a minimum size to ensure both bars are visible
+    setMinimumSize(400, 150);
+
+    // If we have a download URL, start with download, otherwise start with installation
+    if (!downloadUrl.isEmpty()) {
+        startTimer(100); // Start download process
+    } else {
+        startTimer(100); // Start installation process
+    }
 }
 
 // Destructor implementation
 InstallUpdateDialog::~InstallUpdateDialog(void)
 {
+}
+
+void InstallUpdateDialog::download()
+{
+    this->label->setText(QStringLiteral("Step 1/3: Downloading"));
+    this->progressBar->setValue(0);
+    this->progressBar->setMinimum(0);
+    this->progressBar->setMaximum(100);
+    
+    // Step bar for download
+    this->stepLabel->setText(QStringLiteral("0% Downloaded ..."));
+    this->stepProgressBar->setValue(0);
+    this->stepProgressBar->setMinimum(0);
+    this->stepProgressBar->setMaximum(100);
+    
+    this->layout()->update();
+    this->updateGeometry();
+    
+    // Create the worker and thread for download
+    DownloadWorker* worker = new DownloadWorker(downloadUrl, (temporaryDirectory + QDir::separator() + filename));
+    QThread* thread = new QThread;
+
+    // Move the worker to the thread
+    worker->moveToThread(thread);
+
+    // Connect signals and slots
+    connect(thread, &QThread::started, worker, &DownloadWorker::startDownload, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::progressUpdated, this, [this](qint64 size, qint64 total) {
+        if (total <= 0) {
+            this->stepProgressBar->setValue(0);
+            this->progressBar->setValue(0);
+            return;
+        }
+        int downloadProgress = (size * 100) / total;
+        this->stepProgressBar->setValue(downloadProgress);
+        
+        int mainProgress = (size * 50) / total;
+        this->progressBar->setValue(mainProgress);
+        
+        this->stepLabel->setText(QStringLiteral("(%0%) Downloaded...").arg(downloadProgress));
+    }, Qt::QueuedConnection);
+    connect(worker, &DownloadWorker::finished, thread, &QThread::quit, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::finished, worker, &DownloadWorker::deleteLater, Qt::UniqueConnection);
+    connect(worker, &DownloadWorker::finished, this, [this]() {
+        this->install();
+    }, Qt::QueuedConnection);
+    connect(worker, &DownloadWorker::errorOccurred, this, [this](const QString& errorMsg) {
+        QMessageBox::critical(this, QStringLiteral("Error"), errorMsg);
+        this->reject();
+    }, Qt::QueuedConnection);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater, Qt::UniqueConnection);
+
+    // Start the thread
+    thread->start();
 }
 
 void InstallUpdateDialog::install()
@@ -70,7 +145,10 @@ void InstallUpdateDialog::install()
 
   if (this->filename.endsWith(QStringLiteral(".exe")))
   {
-    this->label->setText(QStringLiteral("Executing %1...").arg(this->filename));
+    this->label->setText(QStringLiteral("Step 3/3: Finishing up"));
+    this->progressBar->setValue(50);
+    this->stepLabel->setText(QStringLiteral("Update complete. Restarting..."));
+    this->stepProgressBar->setValue(100);
 
 #ifdef _WIN32
     QStringList scriptLines = {
@@ -85,8 +163,7 @@ void InstallUpdateDialog::install()
             appPath + QStringLiteral("\""),
         QStringLiteral(")"),
         QStringLiteral("IF NOT ERRORLEVEL 0 ("),
-        QStringLiteral("   start \"\" cmd /c \"echo Update failed, check the log for more "
-                       "information && pause\""),
+        QStringLiteral("   start \"\" cmd /c \"echo Update failed, check the log for more information && pause\""),
         QStringLiteral(")"),
         QStringLiteral("rmdir /S /Q \"") + this->temporaryDirectory + QStringLiteral("\""),
         QStringLiteral("exit") + QStringLiteral("\""),
@@ -108,7 +185,7 @@ void InstallUpdateDialog::install()
     appPath = QDir::toNativeSeparators(appPath);
 
     // DMG extraction logic for macOS
-    this->label->setText(QStringLiteral("Mounting DMG and installing %1...").arg(this->filename));
+    this->label->setText(QStringLiteral("Step 3/3: Finishing up"));
     this->progressBar->setValue(50);
 
     QString mountPoint = QStringLiteral("/Volumes/Dolphin-MPN-Update");
@@ -137,12 +214,23 @@ void InstallUpdateDialog::install()
         QStringLiteral("exit 0")
     };
     this->writeAndRunScript(scriptLines);
+    this->progressBar->setValue(50);
     return;
   }
 #endif
 
-  this->label->setText(QStringLiteral("Extracting %1...").arg(this->filename));
+  this->label->setText(QStringLiteral("Step 2/3: Extracting").arg(this->filename));
   this->progressBar->setValue(50);
+  
+  // Step bar for extraction
+  this->stepLabel->setText(QStringLiteral("0-0 files extracted..."));
+  this->stepProgressBar->setValue(0);
+  this->stepProgressBar->setMinimum(0);
+  this->stepProgressBar->setMaximum(100);
+  this->layout()->update();
+  this->updateGeometry();
+  QThread::msleep(100);
+  
   QString extractDirectory = this->temporaryDirectory + QDir::separator() + QStringLiteral("Dolphin-MPN");
 
   if (this->filename.endsWith(QStringLiteral(".zip")))
@@ -167,7 +255,20 @@ void InstallUpdateDialog::install()
     }
 
     // Attempt to unzip files into the extract directory
-    if (!unzipFile(fullFilePath.toStdString(), extractDirectory.toStdString()))
+    if (!unzipFile(fullFilePath.toStdString(), extractDirectory.toStdString(), 
+                   [this](int current, int total) {
+                       // Update step progress bar (0-100%)
+                       int extractionProgress = (current * 100) / total;
+                       this->stepProgressBar->setValue(extractionProgress);
+                       
+                       // Update master progress bar (50-95% range for extraction)
+                       int mainProgress = 50 + (current * 45 / total); // 50% to 95%
+                       this->progressBar->setValue(mainProgress);
+                       
+                       this->stepLabel->setText(QStringLiteral("(%2/%3) files extracted... ")
+                                               .arg(current)
+                                               .arg(total));
+                   }))
     {
       QMessageBox::critical(this, QStringLiteral("Error"),
                             QStringLiteral("Unzip failed: Unable to extract files."));
@@ -184,8 +285,10 @@ void InstallUpdateDialog::install()
     return;
   }
 
-  this->label->setText(QStringLiteral("Executing update script..."));
-  this->progressBar->setValue(100);
+  this->label->setText(QStringLiteral("Step 3/3: Finishing up..."));
+  this->progressBar->setValue(95); // Start final steps at 95%
+  this->stepLabel->setText(QStringLiteral("Finishing up..."));
+  this->stepProgressBar->setValue(100);
 
   extractDirectory = QDir::toNativeSeparators(extractDirectory);
 
@@ -205,6 +308,7 @@ void InstallUpdateDialog::install()
       QStringLiteral("rm -rf \"") + this->temporaryDirectory + QStringLiteral("\""),
       QStringLiteral("exit 0")};
   this->writeAndRunScript(scriptLines);
+  this->progressBar->setValue(50); // Complete at 50%
 #endif
 
 #ifdef _WIN32
@@ -231,21 +335,36 @@ void InstallUpdateDialog::install()
 
   };
   this->writeAndRunScript(scriptLines);
+  this->progressBar->setValue(50); // Complete at 50%
 #endif
 }
 
 
-bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::string& destDir)
+bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::string& destDir, std::function<void(int, int)> progressCallback)
 {
     void* reader = mz_zip_reader_create();
     if (!reader)
         return false;
+    
     if (mz_zip_reader_open_file(reader, zipFilePath.c_str()) != MZ_OK)
     {
         mz_zip_reader_delete(&reader);
         return false;
     }
+    
+    // First pass: count total files
+    int total_files = 0;
+    int32_t count_status = mz_zip_reader_goto_first_entry(reader);
+    while (count_status == MZ_OK)
+    {
+        total_files++;
+        count_status = mz_zip_reader_goto_next_entry(reader);
+    }
+    
+    // Reset to first entry for extraction
     int32_t entry_status = mz_zip_reader_goto_first_entry(reader);
+    int current_file = 0;
+    
     while (entry_status == MZ_OK)
     {
         mz_zip_file* file_info = nullptr;
@@ -256,6 +375,7 @@ bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::s
             mz_zip_reader_delete(&reader);
             return false;
         }
+        
         std::string out_path = destDir + "/" + file_info->filename;
         if (file_info->filename[strlen(file_info->filename) - 1] == '/')
         {
@@ -273,8 +393,16 @@ bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::s
                 return false;
             }
         }
+        
+        current_file++;
+        if (progressCallback)
+        {
+            progressCallback(current_file, total_files);
+        }
+        
         entry_status = mz_zip_reader_goto_next_entry(reader);
     }
+    
     mz_zip_reader_close(reader);
     mz_zip_reader_delete(&reader);
     return true;
@@ -364,5 +492,12 @@ void InstallUpdateDialog::launchProcess(QString file, QStringList arguments)
 void InstallUpdateDialog::timerEvent(QTimerEvent *event)
 {
     this->killTimer(event->timerId());
-    this->install();
+    
+    // If we have a download URL, start with download, otherwise start with installation
+    if (!downloadUrl.isEmpty()) {
+        this->download();
+    } else {
+        this->install();
+    }
 }
+
