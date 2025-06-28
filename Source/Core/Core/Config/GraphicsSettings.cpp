@@ -53,6 +53,8 @@ const Info<bool> GFX_SHOW_MP_TURN{{System::GFX, "Settings", "ShowMPTurn"}, false
 const Info<bool> GFX_SHOW_NETPLAY_MESSAGES{{System::GFX, "Settings", "ShowNetPlayMessages"}, false};
 const Info<bool> GFX_LOG_RENDER_TIME_TO_FILE{{System::GFX, "Settings", "LogRenderTimeToFile"},
                                              false};
+const Info<bool> GFX_LOG_TURN_COUNT_TO_FILE{{System::GFX, "Settings", "LogTurnCountToFile"},
+                                            false};
 const Info<bool> GFX_OVERLAY_STATS{{System::GFX, "Settings", "OverlayStats"}, false};
 const Info<bool> GFX_OVERLAY_PROJ_STATS{{System::GFX, "Settings", "OverlayProjStats"}, false};
 const Info<bool> GFX_OVERLAY_SCISSOR_STATS{{System::GFX, "Settings", "OverlayScissorStats"}, false};
@@ -62,7 +64,7 @@ const Info<bool> GFX_DUMP_BASE_TEXTURES{{System::GFX, "Settings", "DumpBaseTextu
 const Info<int> GFX_TEXTURE_PNG_COMPRESSION_LEVEL{
     {System::GFX, "Settings", "TexturePNGCompressionLevel"}, 6};
 const Info<bool> GFX_HIRES_TEXTURES{{System::GFX, "Settings", "HiresTextures"}, true};
-const Info<bool> GFX_HIRES_TEXTURES1{{System::GFX, "Settings", "HiresTextures1"}, false};
+const Info<bool> PER_CTRL_BUTTONS{{System::GFX, "Settings", "HiresTextures1"}, false};
 const Info<bool> GFX_CACHE_HIRES_TEXTURES{{System::GFX, "Settings", "CacheHiresTextures"}, false};
 const Info<bool> GFX_DUMP_EFB_TARGET{{System::GFX, "Settings", "DumpEFBTarget"}, false};
 const Info<bool> GFX_DUMP_XFB_TARGET{{System::GFX, "Settings", "DumpXFBTarget"}, false};

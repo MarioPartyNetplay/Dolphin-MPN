@@ -109,6 +109,7 @@ void VideoConfig::Refresh()
   bShowMPTurn = Config::Get(Config::GFX_SHOW_MP_TURN);
   bShowNetPlayMessages = Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES);
   bLogRenderTimeToFile = Config::Get(Config::GFX_LOG_RENDER_TIME_TO_FILE);
+  bLogTurnCountToFile = Config::Get(Config::GFX_LOG_TURN_COUNT_TO_FILE);
   bOverlayStats = Config::Get(Config::GFX_OVERLAY_STATS);
   bOverlayProjStats = Config::Get(Config::GFX_OVERLAY_PROJ_STATS);
   bOverlayScissorStats = Config::Get(Config::GFX_OVERLAY_SCISSOR_STATS);
@@ -116,7 +117,7 @@ void VideoConfig::Refresh()
   bDumpMipmapTextures = Config::Get(Config::GFX_DUMP_MIP_TEXTURES);
   bDumpBaseTextures = Config::Get(Config::GFX_DUMP_BASE_TEXTURES);
   bHiresTextures = Config::Get(Config::GFX_HIRES_TEXTURES);
-  bHiresTextures1 = Config::Get(Config::GFX_HIRES_TEXTURES1);
+  bHiresTextures1 = Config::Get(Config::PER_CTRL_BUTTONS);
   bCacheHiresTextures = Config::Get(Config::GFX_CACHE_HIRES_TEXTURES);
   bDumpEFBTarget = Config::Get(Config::GFX_DUMP_EFB_TARGET);
   bDumpXFBTarget = Config::Get(Config::GFX_DUMP_XFB_TARGET);

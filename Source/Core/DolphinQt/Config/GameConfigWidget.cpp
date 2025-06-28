@@ -32,6 +32,7 @@
 #include "DolphinQt/Config/Graphics/EnhancementsWidget.h"
 #include "DolphinQt/Config/Graphics/GeneralWidget.h"
 #include "DolphinQt/Config/Graphics/HacksWidget.h"
+#include "DolphinQt/Config/MarioPartyNetplayWidget.h"
 #include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
 
@@ -202,6 +203,9 @@ void GameConfigWidget::CreateWidgets()
   auto* gfx_layout = new QVBoxLayout;
   gfx_tab_holder->setLayout(gfx_layout);
   tab_widget->addTab(gfx_tab_holder, tr("Graphics"));
+
+  // Mario Party Netplay tab
+  tab_widget->addTab(GetWrappedWidget(new MarioPartyNetplayWidget(this, m_layer.get())), tr("Mario Party Netplay"));
 
   auto* gfx_tabs = new QTabWidget;
 

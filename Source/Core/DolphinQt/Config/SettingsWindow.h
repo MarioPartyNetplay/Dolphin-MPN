@@ -36,6 +36,7 @@ enum class SettingsWindowPaneIndex : int
   General = 0,
   Controllers,
   Interface,
+  MarioPartyNetplay,
   Audio,
   Paths,
   GameCube,

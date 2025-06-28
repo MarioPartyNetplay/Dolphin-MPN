@@ -174,6 +174,8 @@ add_executable(dolphin-mpn
   Config/Mapping/WiimoteEmuMotionControl.h
   Config/Mapping/WiimoteEmuMotionControlIMU.cpp
   Config/Mapping/WiimoteEmuMotionControlIMU.h
+  Config/MarioPartyNetplayWidget.cpp
+  Config/MarioPartyNetplayWidget.h
   Config/NewPatchDialog.cpp
   Config/NewPatchDialog.h
   Config/PatchesWidget.cpp
@@ -368,6 +370,8 @@ add_executable(dolphin-mpn
   Settings/GeneralPane.h
   Settings/InterfacePane.cpp
   Settings/InterfacePane.h
+  Settings/MarioPartyNetplayPane.cpp
+  Settings/MarioPartyNetplayPane.h
   Settings/PathPane.cpp
   Settings/PathPane.h
   Settings/USBDeviceAddToWhitelistDialog.cpp
