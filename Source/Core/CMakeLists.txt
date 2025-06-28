@@ -28,7 +28,7 @@ if (WIN32 AND ENABLE_AUTOUPDATE)
 endif()
 
 if (APPLE AND ENABLE_QT)
-  set(DOLPHIN_MAC_BUNDLE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Dolphin.app")
+  set(DOLPHIN_MAC_BUNDLE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Dolphin-MPN.app")
 
   add_custom_target(build_final_bundle ALL
     COMMAND ${CMAKE_COMMAND} -E remove_directory

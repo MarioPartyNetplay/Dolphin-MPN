@@ -342,14 +342,14 @@ def build(config):
             "-t",
             "-e", "preserve",
             config["codesign_identity"],
-            dst_app+"/Dolphin.app/Contents/Helpers/Dolphin Updater.app"])
+            dst_app+"/Dolphin-MPN.app/Contents/Helpers/Dolphin Updater.app"])
 
     subprocess.check_call([
         "../Tools/mac-codesign.sh",
         "-t",
         "-e", "preserve",
         config["codesign_identity"],
-        dst_app+"/Dolphin.app"])
+        dst_app+"/Dolphin-MPN.app"])
 
     print("Built Universal Binary successfully!")
 
