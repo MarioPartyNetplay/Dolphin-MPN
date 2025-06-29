@@ -174,6 +174,8 @@ def recursive_merge_binaries(src0, src1, dst):
     3) Files that exist in both trees and are non-identical are lipo'd
     4) Symlinks are created in the destination tree to mirror the hierarchy in
        the source trees
+    5) Qt frameworks and other architecture-specific libraries must exist in
+       both architectures to be included in the final binary
     """
 
     # Check that all files present in the folder are of the same type and that
@@ -210,12 +212,21 @@ def recursive_merge_binaries(src0, src1, dst):
             # Symlinks will be fixed after files are resolved
             continue
 
+        # Special handling for Qt frameworks and other architecture-specific libraries
+        # These must exist in both architectures to be included
+        if (filename.endswith('.framework') or 
+            filename.endswith('.dylib') or 
+            filename in ['QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtDBus'] or
+            'Qt' in filename):
+            if not os.path.exists(newpath1):
+                print(f"WARNING: Skipping {filename} as it only exists in one architecture")
+                continue
+
         if not os.path.exists(newpath1):
             if os.path.isdir(newpath0):
                 shutil.copytree(newpath0, new_dst_path)
             else:
                 shutil.copy(newpath0, new_dst_path)
-
             continue
 
         if os.path.isdir(newpath1):
@@ -233,6 +244,16 @@ def recursive_merge_binaries(src0, src1, dst):
         filename = os.path.basename(newpath1)
         newpath0 = os.path.join(src0, filename)
         new_dst_path = os.path.join(dst, filename)
+        
+        # Skip Qt frameworks and other architecture-specific libraries that don't exist in both
+        if (filename.endswith('.framework') or 
+            filename.endswith('.dylib') or 
+            filename in ['QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtDBus'] or
+            'Qt' in filename):
+            if not os.path.exists(newpath0):
+                print(f"WARNING: Skipping {filename} as it only exists in one architecture")
+                continue
+                
         if (not os.path.exists(newpath0)) and (not os.path.islink(newpath1)):
             if os.path.isdir(newpath1):
                 shutil.copytree(newpath1, new_dst_path)
@@ -337,6 +358,25 @@ def build(config):
     src_app1 = ARCHITECTURES[1]+"/Binaries/"
 
     recursive_merge_binaries(src_app0, src_app1, dst_app)
+    
+    # Post-merge cleanup: Remove any remaining architecture-specific Qt frameworks
+    # that might cause runtime crashes
+    frameworks_dir = os.path.join(dst_app, "Dolphin-MPN.app", "Contents", "Frameworks")
+    if os.path.exists(frameworks_dir):
+        for item in os.listdir(frameworks_dir):
+            item_path = os.path.join(frameworks_dir, item)
+            if (item.endswith('.framework') and 
+                ('Qt' in item or item in ['QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtDBus'])):
+                # Check if this is a universal binary
+                try:
+                    result = subprocess.run(['lipo', '-info', os.path.join(item_path, 'Versions', 'A', item.replace('.framework', ''))], 
+                                          capture_output=True, text=True)
+                    if 'x86_64 arm64' not in result.stdout:
+                        print(f"WARNING: Removing architecture-specific framework: {item}")
+                        shutil.rmtree(item_path)
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    print(f"WARNING: Removing potentially problematic framework: {item}")
+                    shutil.rmtree(item_path)
     
     if config["autoupdate"]:
         subprocess.check_call([
