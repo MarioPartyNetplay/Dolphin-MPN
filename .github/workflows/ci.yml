@@ -84,19 +84,18 @@
         mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
     - name: Prepare macOS Build Artifact
       run: |
-        cd build/universal
-        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
+        mv build/Binaries/Dolphin.app build/Binaries/Dolphin-MPN.app
+        mkdir -p build/OUT
+        mv build/Binaries/Dolphin-MPN.app build/OUT/
+        cd build/OUT
+        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-x86_64.dmg
         rm -rf Dolphin-MPN.app
-        rm -rf DolphinQt.app
-        rm -f dolphin-mpn-nogui
-        rm -f dolphin-tool
-        rm -f traversal_server
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-macOS-universal
-        path: build/universal/
+        name: DolphinMPN-macOS-x86_64
+        path: build/OUT/
 
   build_windows_arm64:
     runs-on: windows-11-arm
