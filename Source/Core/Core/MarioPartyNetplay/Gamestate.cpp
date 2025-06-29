@@ -6,11 +6,15 @@
 #include "Gamestate.h"
 #include "Core/System.h"
 #include "Core/ConfigManager.h"
+#include "TurnCountLogger.h"
 
 #include <chrono>
 static auto lastTriggerTime = std::chrono::steady_clock::now();
 static bool waiting = false;
 static int storedSceneId = -1; // Variable to store the previous scene ID
+static MarioPartyNetplay::TurnCountLogger s_turn_count_logger;
+static u32 s_last_current_turn = 0;
+static u32 s_last_total_turns = 0;
 mpn_state_t CurrentState;
 
 
@@ -164,6 +168,9 @@ void mpn_per_frame()
   {
     uint8_t Needs = 0;
 
+    // Initialize turn count logger if not already done
+    s_turn_count_logger.Initialize();
+
     if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
       if (!waiting) {
           lastTriggerTime = std::chrono::steady_clock::now();
@@ -179,6 +186,23 @@ void mpn_per_frame()
 
     mpn_update_board();
     mpn_update_discord();
+
+    // Log turn count changes
+    if (CurrentState.IsMarioParty && CurrentState.Addresses)
+    {
+      u32 current_turn = mpn_read_value(CurrentState.Addresses->CurrentTurn, 1);
+      u32 total_turns = mpn_read_value(CurrentState.Addresses->TotalTurns, 1);
+      
+      // Log if turn count has changed
+      if (current_turn != s_last_current_turn || total_turns != s_last_total_turns)
+      {
+        // Log turn count in simple format
+        s_turn_count_logger.LogTurnCount(current_turn, total_turns);
+        
+        s_last_current_turn = current_turn;
+        s_last_total_turns = total_turns;
+      }
+    }
 
     Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 

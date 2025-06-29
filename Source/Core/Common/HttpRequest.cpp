@@ -34,11 +34,14 @@ public:
   s32 GetLastResponseCode();
   Response Fetch(const std::string& url, Method method, const Headers& headers, const u8* payload,
                  size_t size, AllowedReturnCodes codes = AllowedReturnCodes::Ok_Only,
-                 std::span<Multiform> multiform = {});
+                 const std::vector<Multiform>& multiform = {});
 
   static int CurlProgressCallback(Impl* impl, curl_off_t dltotal, curl_off_t dlnow,
                                   curl_off_t ultotal, curl_off_t ulnow);
   std::string EscapeComponent(const std::string& string);
+  std::string GetFinalUrl() const { return m_final_url; }
+
+  void SetProgressCallback(ProgressCallback callback);
 
 private:
   static inline std::once_flag s_curl_was_initialized;
@@ -46,6 +49,7 @@ private:
   Headers m_response_headers;
   std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> m_curl{nullptr, curl_easy_cleanup};
   std::string m_error_string;
+  std::string m_final_url;
 };
 
 HttpRequest::HttpRequest(std::chrono::milliseconds timeout_ms, ProgressCallback callback)
@@ -54,6 +58,15 @@ HttpRequest::HttpRequest(std::chrono::milliseconds timeout_ms, ProgressCallback 
 }
 
 HttpRequest::~HttpRequest() = default;
+
+void HttpRequest::SetProgressCallback(ProgressCallback callback)
+{
+    m_callback = std::move(callback);
+    if (m_impl)
+    {
+        m_impl->SetProgressCallback(m_callback);
+    }
+}
 
 bool HttpRequest::IsValid() const
 {
@@ -115,8 +128,8 @@ int HttpRequest::Impl::CurlProgressCallback(Impl* impl, curl_off_t dltotal, curl
     // Call the progress callback with the current download progress
     if (impl->m_callback)
     {
-        return !impl->m_callback(static_cast<s64>(dltotal), static_cast<s64>(dlnow),
-                                 static_cast<s64>(ultotal), static_cast<s64>(ulnow));
+        return impl->m_callback(static_cast<s64>(dltotal), static_cast<s64>(dlnow),
+                                 static_cast<s64>(ultotal), static_cast<s64>(ulnow)) ? 0 : 1;
     }
     return 0; // If no callback, continue
 }
@@ -184,7 +197,7 @@ void HttpRequest::Impl::UseIPv4()
 }
 
 HttpRequest::Response HttpRequest::PostMultiform(const std::string& url,
-                                                 std::span<Multiform> multiform,
+                                                 const std::vector<Multiform>& multiform,
                                                  const Headers& headers, AllowedReturnCodes codes)
 {
   return m_impl->Fetch(url, Impl::Method::POST, headers, nullptr, 0, codes, multiform);
@@ -194,6 +207,20 @@ void HttpRequest::Impl::FollowRedirects(long max)
 {
   curl_easy_setopt(m_curl.get(), CURLOPT_FOLLOWLOCATION, 1);
   curl_easy_setopt(m_curl.get(), CURLOPT_MAXREDIRS, max);
+}
+
+void HttpRequest::Impl::SetProgressCallback(ProgressCallback callback)
+{
+    m_callback = std::move(callback);
+    if (m_curl)
+    {
+        curl_easy_setopt(m_curl.get(), CURLOPT_NOPROGRESS, m_callback == nullptr);
+        if (m_callback)
+        {
+            curl_easy_setopt(m_curl.get(), CURLOPT_PROGRESSDATA, this);
+            curl_easy_setopt(m_curl.get(), CURLOPT_XFERINFOFUNCTION, CurlProgressCallback);
+        }
+    }
 }
 
 std::string HttpRequest::Impl::GetHeaderValue(std::string_view name) const
@@ -242,13 +269,13 @@ static size_t header_callback(char* buffer, size_t size, size_t nitems, void* us
 HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method method,
                                                const Headers& headers, const u8* payload,
                                                size_t size, AllowedReturnCodes codes,
-                                               std::span<Multiform> multiform)
+                                               const std::vector<Multiform>& multiform)
 {
   m_response_headers.clear();
-  curl_easy_setopt(m_curl.get(), CURLOPT_POST, method == Method::POST);
+  curl_easy_setopt(m_curl.get(), CURLOPT_POST, method == Impl::Method::POST);
   curl_easy_setopt(m_curl.get(), CURLOPT_URL, url.c_str());
 
-  if (method == Method::POST && multiform.empty())
+  if (method == Impl::Method::POST && multiform.empty())
   {
       curl_easy_setopt(m_curl.get(), CURLOPT_POSTFIELDS, payload);
       curl_easy_setopt(m_curl.get(), CURLOPT_POSTFIELDSIZE, size);
@@ -275,9 +302,9 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
   {
     if (!value)
       list = curl_slist_append(list, (name + ':').c_str());
-    else if (value->empty())
+    else if (value && value->empty())
       list = curl_slist_append(list, (name + ';').c_str());
-    else
+    else if (value)
       list = curl_slist_append(list, (name + ": " + *value).c_str());
   }
   
@@ -292,13 +319,20 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
   curl_easy_setopt(m_curl.get(), CURLOPT_WRITEFUNCTION, CurlWriteCallback);
   curl_easy_setopt(m_curl.get(), CURLOPT_WRITEDATA, &buffer);
 
-  const char* type = method == Method::POST ? "POST" : "GET";
+  const char* type = method == Impl::Method::POST ? "POST" : "GET";
   const CURLcode res = curl_easy_perform(m_curl.get());
   if (res != CURLE_OK)
   {
     ERROR_LOG_FMT(COMMON, "Failed to {} {}: {}", type, url, m_error_string);
     return {};
   }
+
+  // Store the final URL after redirects
+  char* final_url = nullptr;
+  if (curl_easy_getinfo(m_curl.get(), CURLINFO_EFFECTIVE_URL, &final_url) == CURLE_OK && final_url)
+    m_final_url = final_url;
+  else
+    m_final_url.clear();
 
   if (codes == AllowedReturnCodes::All)
     return buffer;
@@ -322,5 +356,10 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
   }
 
   return buffer;
+}
+
+std::string HttpRequest::GetFinalUrl() const
+{
+  return m_impl->GetFinalUrl();
 }
 }  // namespace Common

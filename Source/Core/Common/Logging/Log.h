@@ -61,6 +61,7 @@ enum class LogType : int
   SERIALINTERFACE,
   SP1,
   SYMBOLS,
+  MPN,
   VIDEO,
   VIDEOINTERFACE,
   WII_IPC,

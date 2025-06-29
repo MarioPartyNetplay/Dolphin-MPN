@@ -65,10 +65,12 @@
   <ItemGroup>
     <ClCompile Include="Core\MarioPartyNetplay\Discord.cpp" />
     <ClCompile Include="Core\MarioPartyNetplay\Gamestate.cpp" />
+    <ClCompile Include="Core\MarioPartyNetplay\TurnCountLogger.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Core\MarioPartyNetplay\Discord.h" />
     <ClInclude Include="Core\MarioPartyNetplay\Gamestate.h" />
+    <ClInclude Include="Core\MarioPartyNetplay\TurnCountLogger.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

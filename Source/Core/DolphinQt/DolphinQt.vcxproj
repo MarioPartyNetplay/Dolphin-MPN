@@ -103,6 +103,7 @@
     <ClCompile Include="Config\InfoWidget.cpp" />
     <ClCompile Include="Config\LogConfigWidget.cpp" />
     <ClCompile Include="Config\LogWidget.cpp" />
+    <ClCompile Include="Config\MarioPartyNetplayWidget.cpp" />
     <ClCompile Include="Config\Mapping\FreeLookGeneral.cpp" />
     <ClCompile Include="Config\Mapping\FreeLookRotation.cpp" />
     <ClCompile Include="Config\Mapping\GBAPadEmu.cpp" />
@@ -188,7 +189,6 @@
     <ClCompile Include="InfinityBase/InfinityBaseWindow.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="MainWindow.cpp" />
-    <ClCompile Include="MarioPartyNetplay/DownloadUpdateDialog.cpp" />
     <ClCompile Include="MarioPartyNetplay/DownloadWorker.cpp" />
     <ClCompile Include="MarioPartyNetplay/InstallUpdateDialog.cpp" />
     <ClCompile Include="MarioPartyNetplay/UpdateDialog.cpp" />
@@ -234,6 +234,7 @@
     <ClCompile Include="Settings\GameCubePane.cpp" />
     <ClCompile Include="Settings\GeneralPane.cpp" />
     <ClCompile Include="Settings\InterfacePane.cpp" />
+    <ClCompile Include="Settings\MarioPartyNetplayPane.cpp" />
     <ClCompile Include="Settings\PathPane.cpp" />
     <ClCompile Include="Settings\USBDeviceAddToWhitelistDialog.cpp" />
     <ClCompile Include="Settings\WiiPane.cpp" />
@@ -333,6 +334,7 @@
     <QtMoc Include="Config\InfoWidget.h" />
     <QtMoc Include="Config\LogConfigWidget.h" />
     <QtMoc Include="Config\LogWidget.h" />
+    <QtMoc Include="Config\MarioPartyNetplayWidget.h" />
     <QtMoc Include="Config\Mapping\FreeLookGeneral.h" />
     <QtMoc Include="Config\Mapping\FreeLookRotation.h" />
     <QtMoc Include="Config\Mapping\GBAPadEmu.h" />
@@ -411,7 +413,6 @@
     <QtMoc Include="HotkeyScheduler.h" />
     <QtMoc Include="InfinityBase/InfinityBaseWindow.h" />
     <QtMoc Include="MainWindow.h" />
-    <QtMoc Include="MarioPartyNetplay/DownloadUpdateDialog.h" />
     <QtMoc Include="MarioPartyNetplay/DownloadWorker.h" />
     <QtMoc Include="MarioPartyNetplay/InstallUpdateDialog.h" />
     <QtMoc Include="MarioPartyNetplay/UpdateDialog.h" />
@@ -447,6 +448,7 @@
     <QtMoc Include="Settings\GameCubePane.h" />
     <QtMoc Include="Settings\GeneralPane.h" />
     <QtMoc Include="Settings\InterfacePane.h" />
+    <QtMoc Include="Settings\MarioPartyNetplayPane.h" />
     <QtMoc Include="Settings\PathPane.h" />
     <QtMoc Include="Settings\USBDeviceAddToWhitelistDialog.h" />
     <QtMoc Include="Settings\WiiPane.h" />

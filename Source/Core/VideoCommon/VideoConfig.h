@@ -259,6 +259,7 @@ struct VideoConfig final
   bool bTexFmtOverlayEnable = false;
   bool bTexFmtOverlayCenter = false;
   bool bLogRenderTimeToFile = false;
+  bool bLogTurnCountToFile = false;
 
   // Render
   bool bWireFrame = false;

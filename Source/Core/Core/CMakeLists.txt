@@ -473,6 +473,8 @@ add_library(core
   MarioPartyNetplay/Discord.h
   MarioPartyNetplay/Gamestate.cpp
   MarioPartyNetplay/Gamestate.h
+  MarioPartyNetplay/TurnCountLogger.cpp
+  MarioPartyNetplay/TurnCountLogger.h
   MemTools.cpp
   MemTools.h
   Movie.cpp

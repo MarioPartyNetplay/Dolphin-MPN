@@ -34,13 +34,14 @@ private:
 enum class SettingsWindowPaneIndex : int
 {
   General = 0,
-  Controllers,
-  Interface,
-  Audio,
-  Paths,
-  GameCube,
-  Wii,
-  Advanced,
+  Controllers = 1,
+  Interface = 2,
+  MarioPartyNetplay = 3,
+  Audio = 4,
+  Paths = 5,
+  GameCube = 6,
+  Wii = 7,
+  Advanced = 8,
 };
 
 class SettingsWindow final : public StackedSettingsWindow
