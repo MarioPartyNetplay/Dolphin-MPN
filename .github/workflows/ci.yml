@@ -74,7 +74,6 @@
         mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_CXX_FLAGS="-Xclang -fcolor-diagnostics" -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8
     - name: Prepare macOS Build Artifact
       run: |
-        mv build/Binaries/Dolphin.app build/Binaries/Dolphin-MPN.app
         mkdir -p build/OUT
         mv build/Binaries/Dolphin-MPN.app build/OUT/
         cd build/OUT
