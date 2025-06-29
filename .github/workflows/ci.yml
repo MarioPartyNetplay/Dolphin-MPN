@@ -64,24 +64,14 @@
         path: build/OUT/
         
   build_macos_universal:
-    runs-on: macos-15
+    runs-on: macos11-x64-nayla
     steps:
     - uses: actions/checkout@v2
     - name: Setup Submodules
       run: git config --global --add safe.directory . && git submodule update --init --recursive
-    - name: Install Homebrew packages (x86_64 via Rosetta)
-      run: |
-        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        chmod +x /usr/local/bin/brew
-        rm -f /usr/local/bin/idle3 /usr/local/bin/python3 /usr/local/bin/pip3
-        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
-
-    - name: Install Homebrew packages (arm64)
-      run: |
-        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
     - name: Build
       run: |
-        mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
+        mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_CXX_FLAGS="-Xclang -fcolor-diagnostics" -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8
     - name: Prepare macOS Build Artifact
       run: |
         mv build/Binaries/Dolphin.app build/Binaries/Dolphin-MPN.app
@@ -96,35 +86,6 @@
       with:
         name: DolphinMPN-macOS-x86_64
         path: build/OUT/
-
-  build_windows_arm64:
-    runs-on: windows-11-arm
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory . && git submodule update --init --recursive
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v1.0.2
-      with:
-        vs-version: '16.6.2'
-    - name: Build
-      run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal /property:Configuration=Release /property:Platform=ARM64
-    - name: Trusted Signing
-      uses: azure/trusted-signing-action@v0.5.1
-      with:
-        azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-        endpoint: https://eus.codesigning.azure.net/
-        trusted-signing-account-name: TabithaHanegan
-        certificate-profile-name: vscx-certificate-profile
-        files-folder: Binary/ARM64/
-        files-folder-filter: exe,dll
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DolphinMPN-windows-arm64
-        path: Binary/ARM64/
 
   build_windows_x86_64:
     runs-on: windows-latest
