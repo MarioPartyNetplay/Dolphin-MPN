@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The current tooling supported in CMake, Homebrew, and Qt6 are insufficient for
+The current tooling supported in CMake, Homebrew, and Qt5 are insufficient for
 creating macOS universal binaries automatically for applications like Dolphin
 which have more complicated build requirements (like different libraries, build
 flags and source files for each target architecture).
@@ -46,11 +46,11 @@ DEFAULT_CONFIG = {
     "arm64_cmake_prefix":  "/opt/homebrew",
     "x86_64_cmake_prefix": "/usr/local",
 
-    # Locations to qt6 directories for arm and x64 libraries
+    # Locations to qt5 directories for arm and x64 libraries
     # The default values of these paths are taken from the default
     # paths used for homebrew
-    "arm64_qt6_path":  "/opt/homebrew/opt/qt6",
-    "x86_64_qt6_path": "/usr/local/opt/qt6",
+    "arm64_qt5_path":  "/opt/homebrew/opt/qt5",
+    "x86_64_qt5_path": "/usr/local/opt/qt5",
 
     # Identity to use for code signing. "-" indicates that the app will not
     # be cryptographically signed/notarized but will instead just use a
@@ -60,10 +60,6 @@ DEFAULT_CONFIG = {
     # permissions needed for ARM builds
     "codesign_identity":  "-",
 
-    # Minimum macOS version for each architecture slice
-    "arm64_mac_os_deployment_target":  "11.0.0",
-    "x86_64_mac_os_deployment_target": "10.15.0",
-
     # CMake Generator to use for building
     "generator": "Unix Makefiles",
     "build_type": "Release",
@@ -71,10 +67,10 @@ DEFAULT_CONFIG = {
     "run_unit_tests": False,
 
     # Whether our autoupdate functionality is enabled or not.
-    "autoupdate": False,
+    "autoupdate": True,
 
     # The distributor for this build.
-    "distributor": "Mario Party Netplay"
+    "distributor": "None"
 }
 
 # Architectures to build for. This is explicitly left out of the command line
@@ -142,14 +138,9 @@ def parse_args(conf=DEFAULT_CONFIG):
              dest=arch+"_cmake_prefix")
 
         parser.add_argument(
-             f"--{arch}_qt6_path",
-             help=f"Install path for {arch} qt6 libraries",
-             default=conf[arch+"_qt6_path"])
-
-        parser.add_argument(
-             f"--{arch}_mac_os_deployment_target",
-             help=f"Deployment architecture for {arch} slice",
-             default=conf[arch+"_mac_os_deployment_target"])
+             f"--{arch}_qt5_path",
+             help=f"Install path for {arch} qt5 libraries",
+             default=conf[arch+"_qt5_path"])
 
     return vars(parser.parse_args())
 
@@ -174,8 +165,6 @@ def recursive_merge_binaries(src0, src1, dst):
     3) Files that exist in both trees and are non-identical are lipo'd
     4) Symlinks are created in the destination tree to mirror the hierarchy in
        the source trees
-    5) Qt frameworks and other architecture-specific libraries must exist in
-       both architectures to be included in the final binary
     """
 
     # Check that all files present in the folder are of the same type and that
@@ -212,21 +201,12 @@ def recursive_merge_binaries(src0, src1, dst):
             # Symlinks will be fixed after files are resolved
             continue
 
-        # Special handling for Qt frameworks and other architecture-specific libraries
-        # These must exist in both architectures to be included
-        if (filename.endswith('.framework') or 
-            filename.endswith('.dylib') or 
-            filename in ['QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtDBus'] or
-            'Qt' in filename):
-            if not os.path.exists(newpath1):
-                print(f"WARNING: Skipping {filename} as it only exists in one architecture")
-                continue
-
         if not os.path.exists(newpath1):
             if os.path.isdir(newpath0):
                 shutil.copytree(newpath0, new_dst_path)
             else:
                 shutil.copy(newpath0, new_dst_path)
+
             continue
 
         if os.path.isdir(newpath1):
@@ -244,16 +224,6 @@ def recursive_merge_binaries(src0, src1, dst):
         filename = os.path.basename(newpath1)
         newpath0 = os.path.join(src0, filename)
         new_dst_path = os.path.join(dst, filename)
-        
-        # Skip Qt frameworks and other architecture-specific libraries that don't exist in both
-        if (filename.endswith('.framework') or 
-            filename.endswith('.dylib') or 
-            filename in ['QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtDBus'] or
-            'Qt' in filename):
-            if not os.path.exists(newpath0):
-                print(f"WARNING: Skipping {filename} as it only exists in one architecture")
-                continue
-                
         if (not os.path.exists(newpath0)) and (not os.path.islink(newpath1)):
             if os.path.isdir(newpath1):
                 shutil.copytree(newpath1, new_dst_path)
@@ -293,7 +263,7 @@ def build(config):
             os.mkdir(arch)
 
         # Place Qt on the prefix path.
-        prefix_path = config[arch+"_qt6_path"]+';'+config[arch+"_cmake_prefix"]
+        prefix_path = config[arch+"_qt5_path"]+';'+config[arch+"_cmake_prefix"]
 
         env = os.environ.copy()
         env["CMAKE_OSX_ARCHITECTURES"] = arch
@@ -302,17 +272,14 @@ def build(config):
         # Add the other architecture's prefix path to the ignore path so that
         # CMake doesn't try to pick up the wrong architecture's libraries when
         # cross compiling.
-        ignore_paths = []
+        ignore_path = ""
         for a in ARCHITECTURES:
             if a != arch:
-                ignore_paths.append(config[a+"_cmake_prefix"])
-                ignore_paths.append(config[a+"_qt6_path"])
-        ignore_path = ";".join(ignore_paths)
+                ignore_path = config[a+"_cmake_prefix"]
 
         subprocess.check_call([
                 "cmake", "../../", "-G", config["generator"],
                 "-DCMAKE_BUILD_TYPE=" + config["build_type"],
-                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
                 '-DCMAKE_CXX_FLAGS="-DMACOS_UNIVERSAL_BUILD=1"',
                 '-DCMAKE_C_FLAGS="-DMACOS_UNIVERSAL_BUILD=1"',
                 # System name needs to be specified for CMake to use
@@ -321,8 +288,7 @@ def build(config):
                 "-DCMAKE_PREFIX_PATH="+prefix_path,
                 "-DCMAKE_SYSTEM_PROCESSOR="+arch,
                 "-DCMAKE_IGNORE_PATH="+ignore_path,
-                "-DCMAKE_OSX_DEPLOYMENT_TARGET="
-                + config[arch+"_mac_os_deployment_target"],
+                "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0.0",
                 "-DMACOS_CODE_SIGNING_IDENTITY="
                 + config["codesign_identity"],
                 '-DMACOS_CODE_SIGNING="ON"',
@@ -358,40 +324,6 @@ def build(config):
     src_app1 = ARCHITECTURES[1]+"/Binaries/"
 
     recursive_merge_binaries(src_app0, src_app1, dst_app)
-    
-    # Post-merge cleanup: Remove any remaining architecture-specific Qt frameworks
-    # that might cause runtime crashes
-    frameworks_dir = os.path.join(dst_app, "Dolphin-MPN.app", "Contents", "Frameworks")
-    if os.path.exists(frameworks_dir):
-        for item in os.listdir(frameworks_dir):
-            item_path = os.path.join(frameworks_dir, item)
-            if (item.endswith('.framework') and 
-                ('Qt' in item or item in ['QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtDBus'])):
-                # Check if this is a universal binary
-                try:
-                    result = subprocess.run(['lipo', '-info', os.path.join(item_path, 'Versions', 'A', item.replace('.framework', ''))], 
-                                          capture_output=True, text=True)
-                    if 'x86_64 arm64' not in result.stdout:
-                        print(f"WARNING: Removing architecture-specific framework: {item}")
-                        shutil.rmtree(item_path)
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    print(f"WARNING: Removing potentially problematic framework: {item}")
-                    shutil.rmtree(item_path)
-    
-    if config["autoupdate"]:
-        subprocess.check_call([
-            "../Tools/mac-codesign.sh",
-            "-t",
-            "-e", "preserve",
-            config["codesign_identity"],
-            dst_app+"/Dolphin-MPN.app/Contents/Helpers/Dolphin Updater.app"])
-
-    subprocess.check_call([
-        "../Tools/mac-codesign.sh",
-        "-t",
-        "-e", "preserve",
-        config["codesign_identity"],
-        dst_app+"/Dolphin-MPN.app"])
 
     print("Built Universal Binary successfully!")
 

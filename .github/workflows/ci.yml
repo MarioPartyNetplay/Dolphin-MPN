@@ -64,27 +64,39 @@
         path: build/OUT/
         
   build_macos_universal:
-    runs-on: macos11-x64-nayla
+    runs-on: macos-15
     steps:
     - uses: actions/checkout@v2
     - name: Setup Submodules
       run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - name: Install Homebrew packages (x86_64 via Rosetta)
+      run: |
+        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        chmod +x /usr/local/bin/brew
+        rm -f /usr/local/bin/idle3 /usr/local/bin/python3 /usr/local/bin/pip3
+        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+
+    - name: Install Homebrew packages (arm64)
+      run: |
+        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
     - name: Build
       run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_CXX_FLAGS="-Xclang -fcolor-diagnostics" -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8
+        mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
     - name: Prepare macOS Build Artifact
       run: |
-        mkdir -p build/OUT
-        mv build/Binaries/Dolphin-MPN.app build/OUT/
-        cd build/OUT
-        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-x86_64.dmg
+        cd build/universal
+        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
         rm -rf Dolphin-MPN.app
+        rm -rf DolphinQt.app
+        rm -f dolphin-mpn-nogui
+        rm -f dolphin-tool
+        rm -f traversal_server
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-macOS-x86_64
-        path: build/OUT/
+        name: DolphinMPN-macOS-universal
+        path: build/universal/
 
   build_windows_x86_64:
     runs-on: windows-latest
