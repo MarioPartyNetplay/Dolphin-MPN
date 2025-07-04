@@ -240,7 +240,16 @@ enum : u8
 using PlayerId = u8;
 using FrameNum = u32;
 using PadIndex = s8;
-using PadMappingArray = std::array<PlayerId, 4>;
+
+struct PadMapping
+{
+  std::vector<PlayerId> players{};
+  bool operator==(const PadMapping& other) const { return players == other.players; }
+  bool operator!=(const PadMapping& other) const { return players != other.players; }
+};
+
+using PadMappingArray = std::array<PadMapping, 4>;
+
 struct GBAConfig
 {
   bool enabled = false;

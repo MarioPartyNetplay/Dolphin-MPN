@@ -25,6 +25,7 @@
 #include "Core/SyncIdentifier.h"
 #include "InputCommon/GCPadStatus.h"
 #include "UICommon/NetPlayIndex.h"
+#include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
 
 namespace NetPlay
 {
@@ -148,6 +149,12 @@ private:
   void UpdatePadMapping();
   void UpdateGBAConfig();
   void UpdateWiimoteMapping();
+  
+  // Input aggregation functions
+  void AggregatePadInputs(PadIndex pad_index);
+  GCPadStatus CombinePadInputs(const std::vector<GCPadStatus>& inputs);
+  void AggregateWiimoteInputs(PadIndex pad_index);
+  WiimoteEmu::SerializedWiimoteState CombineWiimoteInputs(const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs);
   std::vector<std::pair<std::string, std::string>> GetInterfaceListInternal() const;
   void ChunkedDataThreadFunc();
   void ChunkedDataSend(sf::Packet&& packet, PlayerId pid, const TargetMode target_mode);
@@ -187,6 +194,10 @@ private:
 
   std::unordered_map<u32, std::vector<std::pair<PlayerId, u64>>> m_timebase_by_frame;
   bool m_desync_detected = false;
+
+  // Store inputs from each player for each pad when multiple players are assigned
+  std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_inputs_by_player{};
+  std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_inputs_by_player{};
 
   struct
   {

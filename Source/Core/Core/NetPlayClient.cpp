@@ -633,8 +633,18 @@ void NetPlayClient::OnChunkedDataAbort(sf::Packet& packet)
 
 void NetPlayClient::OnPadMapping(sf::Packet& packet)
 {
-  for (PlayerId& mapping : m_pad_map)
-    packet >> mapping;
+  for (auto& mapping : m_pad_map)
+  {
+    mapping.players.clear();
+    u8 player_count;
+    packet >> player_count;
+    for (u8 i = 0; i < player_count; ++i)
+    {
+      PlayerId pid;
+      packet >> pid;
+      mapping.players.push_back(pid);
+    }
+  }
 
   UpdateDevices();
 
@@ -643,8 +653,18 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
 
 void NetPlayClient::OnWiimoteMapping(sf::Packet& packet)
 {
-  for (PlayerId& mapping : m_wiimote_map)
-    packet >> mapping;
+  for (auto& mapping : m_wiimote_map)
+  {
+    mapping.players.clear();
+    u8 player_count;
+    packet >> player_count;
+    for (u8 i = 0; i < player_count; ++i)
+    {
+      PlayerId pid;
+      packet >> pid;
+      mapping.players.push_back(pid);
+    }
+  }
 
   m_dialog->Update();
 }
@@ -1775,13 +1795,13 @@ bool NetPlayClient::StartGame(const std::string& path)
     Movie::WiimoteEnabledArray wiimotes{};
     for (unsigned int i = 0; i < 4; ++i)
     {
-      if (m_pad_map[i] > 0 && m_gba_config[i].enabled)
+      if (!m_pad_map[i].players.empty() && m_gba_config[i].enabled)
         controllers[i] = Movie::ControllerType::GBA;
-      else if (m_pad_map[i] > 0)
+      else if (!m_pad_map[i].players.empty())
         controllers[i] = Movie::ControllerType::GC;
       else
         controllers[i] = Movie::ControllerType::None;
-      wiimotes[i] = m_wiimote_map[i] > 0;
+      wiimotes[i] = !m_wiimote_map[i].players.empty();
     }
     movie.BeginRecordingInput(controllers, wiimotes);
   }
@@ -1789,7 +1809,7 @@ bool NetPlayClient::StartGame(const std::string& path)
   for (unsigned int i = 0; i < 4; ++i)
   {
     Config::SetCurrent(Config::GetInfoForWiimoteSource(i),
-                       m_wiimote_map[i] > 0 ? WiimoteSource::Emulated : WiimoteSource::None);
+                       !m_wiimote_map[i].players.empty() ? WiimoteSource::Emulated : WiimoteSource::None);
   }
 
   // boot game
@@ -1889,13 +1909,26 @@ void NetPlayClient::UpdateDevices()
   u8 pad = 0;
 
   auto& si = Core::System::GetInstance().GetSerialInterface();
-  for (auto player_id : m_pad_map)
+  for (const auto& mapping : m_pad_map)
   {
-    if (m_gba_config[pad].enabled && player_id > 0)
+    bool has_local_player = false;
+    bool has_any_player = false;
+    
+    for (PlayerId player_id : mapping.players)
+    {
+      has_any_player = true;
+      if (player_id == m_local_player->pid)
+      {
+        has_local_player = true;
+        break;
+      }
+    }
+    
+    if (m_gba_config[pad].enabled && has_any_player)
     {
       si.ChangeDevice(SerialInterface::SIDEVICE_GC_GBA_EMULATED, pad);
     }
-    else if (player_id == m_local_player->pid)
+    else if (has_local_player)
     {
       // Use local controller types for local controllers if they are compatible
       const SerialInterface::SIDevices si_device =
@@ -1915,7 +1948,7 @@ void NetPlayClient::UpdateDevices()
       }
       local_pad++;
     }
-    else if (player_id > 0)
+    else if (has_any_player)
     {
       si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
     }
@@ -2276,7 +2309,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
   {
     for (size_t i = 0; i < m_pad_map.size(); i++)
     {
-      if (m_pad_map[i] <= 0)
+      if (m_pad_map[i].players.empty())
         continue;
 
       while (!m_first_pad_status_received[i])
@@ -2290,7 +2323,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 
     for (size_t i = 0; i < m_pad_map.size(); i++)
     {
-      if (m_pad_map[i] == 0 || m_pad_buffer[i].Size() > 0)
+      if (m_pad_map[i].players.empty() || m_pad_buffer[i].Size() > 0)
         continue;
 
       const GCPadStatus& pad_status = m_last_pad_status[i];
@@ -2298,7 +2331,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
       AddPadStateToPacket(static_cast<int>(i), pad_status, packet);
     }
   }
-  else if (m_pad_map[pad_num] != 0)
+  else if (!m_pad_map[pad_num].players.empty())
   {
     while (!m_first_pad_status_received[pad_num])
     {
@@ -2406,23 +2439,36 @@ bool NetPlayClient::LocalPlayerHasControllerMapped() const
 bool NetPlayClient::IsFirstInGamePad(int ingame_pad) const
 {
   return std::none_of(m_pad_map.begin(), m_pad_map.begin() + ingame_pad,
-                      [](auto mapping) { return mapping > 0; });
+                      [](const auto& mapping) { return !mapping.players.empty(); });
 }
 
 int NetPlayClient::NumLocalPads() const
 {
-  return std::ranges::count(m_pad_map, m_local_player->pid);
+  int count = 0;
+  for (const auto& mapping : m_pad_map)
+  {
+    if (std::find(mapping.players.begin(), mapping.players.end(), m_local_player->pid) != mapping.players.end())
+      ++count;
+  }
+  return count;
 }
 
 int NetPlayClient::NumLocalWiimotes() const
 {
-  return std::ranges::count(m_wiimote_map, m_local_player->pid);
+  int count = 0;
+  for (const auto& mapping : m_wiimote_map)
+  {
+    if (std::find(mapping.players.begin(), mapping.players.end(), m_local_player->pid) != mapping.players.end())
+      ++count;
+  }
+  return count;
 }
 
 static int InGameToLocal(int ingame_pad, const PadMappingArray& pad_map, PlayerId local_player_pid)
 {
   // not our pad
-  if (pad_map[ingame_pad] != local_player_pid)
+  const auto& players = pad_map[ingame_pad].players;
+  if (std::find(players.begin(), players.end(), local_player_pid) == players.end())
     return 4;
 
   int local_pad = 0;
@@ -2430,7 +2476,8 @@ static int InGameToLocal(int ingame_pad, const PadMappingArray& pad_map, PlayerI
 
   for (; pad < ingame_pad; ++pad)
   {
-    if (pad_map[pad] == local_player_pid)
+    const auto& pad_players = pad_map[pad].players;
+    if (std::find(pad_players.begin(), pad_players.end(), local_player_pid) != pad_players.end())
       local_pad++;
   }
 
@@ -2446,7 +2493,8 @@ static int LocalToInGame(int local_pad, const PadMappingArray& pad_map, PlayerId
   int ingame_pad = 0;
   for (; ingame_pad < 4; ingame_pad++)
   {
-    if (pad_map[ingame_pad] == local_player_pid)
+    const auto& players = pad_map[ingame_pad].players;
+    if (std::find(players.begin(), players.end(), local_player_pid) != players.end())
       local_pad_count++;
 
     if (local_pad_count == local_pad)
@@ -2478,10 +2526,12 @@ int NetPlayClient::LocalWiimoteToInGameWiimote(int local_wiimote) const
 
 bool NetPlayClient::PlayerHasControllerMapped(const PlayerId pid) const
 {
-  const auto mapping_matches_player_id = [pid](const PlayerId& mapping) { return mapping == pid; };
+  const auto mapping_contains_player_id = [pid](const PadMapping& mapping) {
+    return std::find(mapping.players.begin(), mapping.players.end(), pid) != mapping.players.end();
+  };
 
-  return std::ranges::any_of(m_pad_map, mapping_matches_player_id) ||
-         std::ranges::any_of(m_wiimote_map, mapping_matches_player_id);
+  return std::ranges::any_of(m_pad_map, mapping_contains_player_id) ||
+         std::ranges::any_of(m_wiimote_map, mapping_contains_player_id);
 }
 
 bool NetPlayClient::IsLocalPlayer(const PlayerId pid) const
@@ -2654,11 +2704,19 @@ std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
   std::vector<size_t> gc_slots, gba_slots, wiimote_slots;
   for (size_t i = 0; i < pad_map.size(); ++i)
   {
-    if (pad_map[i] == pid && !gba_config[i].enabled)
-      gc_slots.push_back(i + 1);
-    if (pad_map[i] == pid && gba_config[i].enabled)
-      gba_slots.push_back(i + 1);
-    if (wiimote_map[i] == pid)
+    // Check if this player is in the pad mapping for this slot
+    const auto& pad_players = pad_map[i].players;
+    if (std::find(pad_players.begin(), pad_players.end(), pid) != pad_players.end())
+    {
+      if (!gba_config[i].enabled)
+        gc_slots.push_back(i + 1);
+      else
+        gba_slots.push_back(i + 1);
+    }
+    
+    // Check if this player is in the wiimote mapping for this slot
+    const auto& wii_players = wiimote_map[i].players;
+    if (std::find(wii_players.begin(), wii_players.end(), pid) != wii_players.end())
       wiimote_slots.push_back(i + 1);
   }
   std::vector<std::string> groups;
@@ -2720,25 +2778,48 @@ PadDetails GetPadDetails(int pad_num)
     return res;
 
   auto pad_map = netplay_client->GetPadMapping();
-  if (pad_map[pad_num] <= 0)
+  if (pad_map[pad_num].players.empty())
     return res;
 
+  std::vector<std::string> player_names;
   for (auto player : netplay_client->GetPlayers())
   {
-    if (player->pid == pad_map[pad_num])
-      res.player_name = player->name;
+    if (std::find(pad_map[pad_num].players.begin(), pad_map[pad_num].players.end(), player->pid) != pad_map[pad_num].players.end())
+      player_names.push_back(player->name);
+  }
+  res.player_name = fmt::format("{}", fmt::join(player_names, ", "));
+
+  // Check if any local player controls this pad
+  bool has_local_player = false;
+  for (PlayerId pid : pad_map[pad_num].players)
+  {
+    if (netplay_client->IsLocalPlayer(pid))
+    {
+      has_local_player = true;
+      break;
+    }
   }
 
   int local_pad = 0;
   int non_local_pad = 0;
   for (int i = 0; i < pad_num; ++i)
   {
-    if (netplay_client->IsLocalPlayer(pad_map[i]))
+    bool slot_has_local = false;
+    for (PlayerId pid : pad_map[i].players)
+    {
+      if (netplay_client->IsLocalPlayer(pid))
+      {
+        slot_has_local = true;
+        break;
+      }
+    }
+    if (slot_has_local)
       ++local_pad;
     else
       ++non_local_pad;
   }
-  res.is_local = netplay_client->IsLocalPlayer(pad_map[pad_num]);
+  
+  res.is_local = has_local_player;
   res.local_pad = res.is_local ? local_pad : netplay_client->NumLocalPads() + non_local_pad;
   res.hide_gba = !res.is_local && netplay_client->GetNetSettings().hide_remote_gbas &&
                  netplay_client->LocalPlayerHasControllerMapped();
@@ -2807,7 +2888,8 @@ unsigned int NetPlay::NetPlay_GetLocalWiimoteForSlot(unsigned int slot)
   size_t player_count = 0;
   for (size_t i = 0; i < mapping.size(); ++i)
   {
-    if (mapping[i] == local_player_id)
+    const auto& players = mapping[i].players;
+    if (std::find(players.begin(), players.end(), local_player_id) != players.end())
     {
       slot_map[i] = static_cast<unsigned int>(player_count);
       ++player_count;
@@ -2815,7 +2897,8 @@ unsigned int NetPlay::NetPlay_GetLocalWiimoteForSlot(unsigned int slot)
   }
   for (size_t i = 0; i < mapping.size(); ++i)
   {
-    if (mapping[i] != local_player_id)
+    const auto& players = mapping[i].players;
+    if (!players.empty() && std::find(players.begin(), players.end(), local_player_id) == players.end())
     {
       slot_map[i] = static_cast<unsigned int>(player_count);
       ++player_count;

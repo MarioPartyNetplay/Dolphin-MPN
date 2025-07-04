@@ -4,24 +4,31 @@
 #pragma once
 
 #include <QDialog>
+#include <QDialogButtonBox>
+#include <QGridLayout>
+#include <QLabel>
+#include <QListWidget>
+#include <QCheckBox>
 
 #include "Core/NetPlayProto.h"
 
-class QCheckBox;
-class QGridLayout;
-class QComboBox;
-class QDialogButtonBox;
-
+// Forward declarations
 namespace NetPlay
 {
 class Player;
 }
 
+class QDialogButtonBox;
+class QGridLayout;
+class QLabel;
+class QListWidget;
+class QCheckBox;
+
 class PadMappingDialog : public QDialog
 {
   Q_OBJECT
 public:
-  explicit PadMappingDialog(QWidget* widget);
+  explicit PadMappingDialog(QWidget* parent = nullptr);
 
   int exec() override;
 
@@ -32,17 +39,20 @@ public:
 private:
   void CreateWidgets();
   void ConnectWidgets();
+  void UpdatePlayerLists();
+  void OnPlayerSelectionChanged();
 
-  void OnMappingChanged();
+  QGridLayout* m_main_layout;
+  QDialogButtonBox* m_button_box;
 
+  // Multi-selection lists for each port
+  std::array<QListWidget*, 4> m_gc_player_lists;
+  std::array<QListWidget*, 4> m_wii_player_lists;
+  std::array<QCheckBox*, 4> m_gba_boxes;
+
+  // Current mappings
   NetPlay::PadMappingArray m_pad_mapping;
   NetPlay::GBAConfigArray m_gba_config;
   NetPlay::PadMappingArray m_wii_mapping;
-
-  QGridLayout* m_main_layout;
-  std::array<QComboBox*, 4> m_gc_boxes;
-  std::array<QCheckBox*, 4> m_gba_boxes;
-  std::array<QComboBox*, 4> m_wii_boxes;
   std::vector<const NetPlay::Player*> m_players;
-  QDialogButtonBox* m_button_box;
 };

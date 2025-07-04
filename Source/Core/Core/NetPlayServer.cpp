@@ -133,9 +133,9 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
     PanicAlertFmtT("Enet Didn't Initialize");
   }
 
-  m_pad_map.fill(0);
+  m_pad_map.fill(PadMapping{});
   m_gba_config.fill({});
-  m_wiimote_map.fill(0);
+  m_wiimote_map.fill(PadMapping{});
 
   if (traversal_config.use_traversal)
   {
@@ -524,9 +524,9 @@ unsigned int NetPlayServer::OnDisconnect(const Client& player)
 
   if (m_is_running)
   {
-    for (PlayerId& mapping : m_pad_map)
+    for (const auto& mapping : m_pad_map)
     {
-      if (mapping == pid && pid != 1)
+      if (std::find(mapping.players.begin(), mapping.players.end(), pid) != mapping.players.end() && pid != 1)
       {
         std::lock_guard lkg(m_crit.game);
         m_is_running = false;
@@ -563,20 +563,24 @@ unsigned int NetPlayServer::OnDisconnect(const Client& player)
 
   for (size_t i = 0; i < m_pad_map.size(); ++i)
   {
-    if (m_pad_map[i] == pid)
+    auto& players = m_pad_map[i].players;
+    auto pad_it = std::find(players.begin(), players.end(), pid);
+    if (pad_it != players.end())
     {
-      m_pad_map[i] = 0;
+      players.erase(pad_it);
       m_gba_config[i].enabled = false;
       UpdatePadMapping();
       UpdateGBAConfig();
     }
   }
 
-  for (PlayerId& mapping : m_wiimote_map)
+  for (auto& mapping : m_wiimote_map)
   {
-    if (mapping == pid)
+    auto& players = mapping.players;
+    auto wii_it = std::find(players.begin(), players.end(), pid);
+    if (wii_it != players.end())
     {
-      mapping = 0;
+      players.erase(wii_it);
       UpdateWiimoteMapping();
     }
   }
@@ -639,9 +643,15 @@ void NetPlayServer::UpdatePadMapping()
 {
   sf::Packet spac;
   spac << MessageID::PadMapping;
-  for (PlayerId mapping : m_pad_map)
+  for (const auto& mapping : m_pad_map)
   {
-    spac << mapping;
+    // Send the number of players for this pad
+    spac << static_cast<u8>(mapping.players.size());
+    // Send each player ID
+    for (PlayerId pid : mapping.players)
+    {
+      spac << pid;
+    }
   }
   SendToClients(spac);
 }
@@ -665,9 +675,15 @@ void NetPlayServer::UpdateWiimoteMapping()
 {
   sf::Packet spac;
   spac << MessageID::WiimoteMapping;
-  for (PlayerId mapping : m_wiimote_map)
+  for (const auto& mapping : m_wiimote_map)
   {
-    spac << mapping;
+    // Send the number of players for this wiimote
+    spac << static_cast<u8>(mapping.players.size());
+    // Send each player ID
+    for (PlayerId pid : mapping.players)
+    {
+      spac << pid;
+    }
   }
   SendToClients(spac);
 }
@@ -794,7 +810,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     u32 cid;
     packet >> cid;
 
-    if (m_chunked_data_complete_count.contains(cid))
+    if (m_chunked_data_complete_count.find(cid) != m_chunked_data_complete_count.end())
     {
       m_chunked_data_complete_count[cid]++;
       m_chunked_data_complete_event.Set();
@@ -808,43 +824,79 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     if (player.current_game != m_current_game)
       break;
 
-    sf::Packet spac;
-    spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
+    bool has_multiple_players = false;
+    std::vector<PadIndex> pads_to_aggregate;
+    std::vector<std::pair<PadIndex, GCPadStatus>> single_player_inputs;
 
     while (!packet.endOfPacket())
     {
       PadIndex map;
       packet >> map;
 
-      // If the data is not from the correct player,
-      // then disconnect them.
-      if (m_pad_map.at(map) != player.pid)
+      const auto& pad_players = m_pad_map.at(map).players;
+      if (std::find(pad_players.begin(), pad_players.end(), player.pid) == pad_players.end())
       {
         return 1;
       }
 
       GCPadStatus pad;
       packet >> pad.button;
-      spac << map << pad.button;
       if (!m_gba_config.at(map).enabled)
       {
         packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
             pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
+      }
 
-        spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
-             << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
+      // Store the input for this player
+      m_pad_inputs_by_player[map][player.pid] = pad;
+
+      // Check if this pad has multiple players
+      if (pad_players.size() > 1)
+      {
+        has_multiple_players = true;
+        pads_to_aggregate.push_back(map);
+      }
+      else
+      {
+        single_player_inputs.emplace_back(map, pad);
       }
     }
 
-    if (m_host_input_authority)
+    // If any pad has multiple players, aggregate inputs
+    if (has_multiple_players)
     {
-      // Prevent crash before game stop if the golfer disconnects
-      if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
-        Send(m_players.at(m_current_golfer).socket, spac);
+      for (PadIndex pad : pads_to_aggregate)
+      {
+        AggregatePadInputs(pad);
+      }
     }
-    else
+
+    // Forward single player inputs normally
+    if (!single_player_inputs.empty())
     {
-      SendToClients(spac, player.pid);
+      sf::Packet spac;
+      spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
+
+      for (const auto& [map, pad] : single_player_inputs)
+      {
+        spac << map << pad.button;
+        if (!m_gba_config.at(map).enabled)
+        {
+          spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
+               << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
+        }
+      }
+
+      if (m_host_input_authority)
+      {
+        // Prevent crash before game stop if the golfer disconnects
+        if (m_current_golfer != 0 && m_players.find(m_current_golfer) != m_players.end())
+          Send(m_players.at(m_current_golfer).socket, spac);
+      }
+      else
+      {
+        SendToClients(spac, player.pid);
+      }
     }
   }
   break;
@@ -886,17 +938,17 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     if (player.current_game != m_current_game)
       break;
 
-    sf::Packet spac;
-    spac << MessageID::WiimoteData;
+    bool has_multiple_players = false;
+    std::vector<PadIndex> pads_to_aggregate;
+    std::vector<std::pair<PadIndex, WiimoteEmu::SerializedWiimoteState>> single_player_inputs;
 
     while (!packet.endOfPacket())
     {
       PadIndex map;
       packet >> map;
 
-      // If the data is not from the correct player,
-      // then disconnect them.
-      if (m_wiimote_map.at(map) != player.pid)
+      const auto& wii_players = m_wiimote_map.at(map).players;
+      if (std::find(wii_players.begin(), wii_players.end(), player.pid) == wii_players.end())
       {
         return 1;
       }
@@ -908,13 +960,46 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       for (size_t i = 0; i < pad.length; ++i)
         packet >> pad.data[i];
 
-      spac << map;
-      spac << pad.length;
-      for (size_t i = 0; i < pad.length; ++i)
-        spac << pad.data[i];
+      // Store the input for this player
+      m_wiimote_inputs_by_player[map][player.pid] = pad;
+
+      // Check if this pad has multiple players
+      if (wii_players.size() > 1)
+      {
+        has_multiple_players = true;
+        pads_to_aggregate.push_back(map);
+      }
+      else
+      {
+        single_player_inputs.emplace_back(map, pad);
+      }
     }
 
-    SendToClients(spac, player.pid);
+    // If any pad has multiple players, aggregate inputs
+    if (has_multiple_players)
+    {
+      for (PadIndex pad : pads_to_aggregate)
+      {
+        AggregateWiimoteInputs(pad);
+      }
+    }
+
+    // Forward single player inputs normally
+    if (!single_player_inputs.empty())
+    {
+      sf::Packet spac;
+      spac << MessageID::WiimoteData;
+
+      for (const auto& [map, pad] : single_player_inputs)
+      {
+        spac << map;
+        spac << pad.length;
+        for (size_t i = 0; i < pad.length; ++i)
+          spac << pad.data[i];
+      }
+
+      SendToClients(spac, player.pid);
+    }
   }
   break;
 
@@ -924,7 +1009,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     packet >> pid;
 
     // Check if player ID is valid and sender isn't a spectator
-    if (!m_players.contains(pid) || !PlayerHasControllerMapped(player.pid))
+    if (m_players.find(pid) == m_players.end() || !PlayerHasControllerMapped(player.pid))
       break;
 
     if (m_host_input_authority && m_settings.golf_mode && m_pending_golfer == 0 &&
@@ -1061,18 +1146,32 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
     std::vector<std::pair<PlayerId, u64>>& timebases = m_timebase_by_frame[frame];
     timebases.emplace_back(player.pid, timebase);
-    if (timebases.size() >= m_players.size())
+    
+    // Count unique pads instead of unique players for timebase synchronization
+    unsigned int unique_pads = 0;
+    for (const auto& mapping : m_pad_map)
+    {
+      if (!mapping.players.empty())
+        unique_pads++;
+    }
+    for (const auto& mapping : m_wiimote_map)
+    {
+      if (!mapping.players.empty())
+        unique_pads++;
+    }
+    
+    if (timebases.size() >= unique_pads)
     {
       // we have all records for this frame
 
-      if (!std::ranges::all_of(timebases, [&](std::pair<PlayerId, u64> pair) {
+      if (!std::all_of(timebases.begin(), timebases.end(), [&](std::pair<PlayerId, u64> pair) {
             return pair.second == timebases[0].second;
           }))
       {
         int pid_to_blame = 0;
         for (auto pair : timebases)
         {
-          if (std::ranges::all_of(timebases, [&](std::pair<PlayerId, u64> other) {
+          if (std::all_of(timebases.begin(), timebases.end(), [&](std::pair<PlayerId, u64> other) {
                 return other.first == pair.first || other.second != pair.second;
               }))
           {
@@ -1152,6 +1251,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       if (m_start_pending)
       {
         m_save_data_synced_players++;
+        
         if (m_save_data_synced_players >= m_players.size() - 1)
         {
           INFO_LOG_FMT(NETPLAY, "SyncSaveData: All players synchronized. ({} >= {})",
@@ -1209,7 +1309,9 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     {
       if (m_start_pending)
       {
-        if (++m_codes_synced_players >= m_players.size() - 1)
+        m_codes_synced_players++;
+        
+        if (m_codes_synced_players >= m_players.size() - 1)
         {
           INFO_LOG_FMT(NETPLAY, "SyncCodes: All players synchronized. ({} >= {})",
                        m_codes_synced_players, m_players.size() - 1);
@@ -1501,7 +1603,7 @@ bool NetPlayServer::RequestStartGame()
   if (!SetupNetSettings())
     return false;
 
-  bool start_now = true;
+    bool start_now = true;
 
   if (m_settings.savedata_load)
   {
@@ -1523,7 +1625,7 @@ bool NetPlayServer::RequestStartGame()
           std::move(titles),
           save_sync_info->redirected_save ? save_sync_info->redirected_save->m_target_path : "");
     }
-
+    
     if (m_players.size() > 1)
     {
       start_now = false;
@@ -1678,6 +1780,12 @@ bool NetPlayServer::StartGame()
 
   m_start_pending = false;
   m_is_running = true;
+
+  // Clear input storage when starting a new game
+  for (auto& pad_inputs : m_pad_inputs_by_player)
+    pad_inputs.clear();
+  for (auto& wii_inputs : m_wiimote_inputs_by_player)
+    wii_inputs.clear();
 
   return true;
 }
@@ -2239,20 +2347,21 @@ void NetPlayServer::KickPlayer(PlayerId player)
 
 bool NetPlayServer::PlayerHasControllerMapped(const PlayerId pid) const
 {
-  const auto mapping_matches_player_id = [pid](const PlayerId& mapping) { return mapping == pid; };
+  const auto mapping_contains_player_id = [pid](const PadMapping& mapping) {
+    return std::find(mapping.players.begin(), mapping.players.end(), pid) != mapping.players.end();
+  };
 
-  return std::ranges::any_of(m_pad_map, mapping_matches_player_id) ||
-         std::ranges::any_of(m_wiimote_map, mapping_matches_player_id);
+  return std::ranges::any_of(m_pad_map, mapping_contains_player_id) ||
+         std::ranges::any_of(m_wiimote_map, mapping_contains_player_id);
 }
 
 void NetPlayServer::AssignNewUserAPad(const Client& player)
 {
-  for (PlayerId& mapping : m_pad_map)
+  for (PadMapping& mapping : m_pad_map)
   {
-    // 0 means unmapped
-    if (mapping == 0)
+    if (mapping.players.empty())
     {
-      mapping = player.pid;
+      mapping.players.push_back(player.pid);
       break;
     }
   }
@@ -2541,5 +2650,123 @@ void NetPlayServer::ChunkedDataAbort()
   m_abort_chunked_data = true;
   m_chunked_data_event.Set();
   m_chunked_data_complete_event.Set();
+}
+
+void NetPlayServer::AggregatePadInputs(PadIndex pad_index)
+{
+  const auto& pad_players = m_pad_map.at(pad_index).players;
+  if (pad_players.size() <= 1)
+    return;  // No aggregation needed for single player
+
+  std::vector<GCPadStatus> inputs;
+  for (const auto& player_id : pad_players)
+  {
+    auto it = m_pad_inputs_by_player[pad_index].find(player_id);
+    if (it != m_pad_inputs_by_player[pad_index].end())
+    {
+      inputs.push_back(it->second);
+    }
+  }
+
+  if (inputs.size() > 1)
+  {
+    GCPadStatus aggregated = CombinePadInputs(inputs);
+    
+    // Send aggregated input to all clients
+    sf::Packet spac;
+    spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
+    spac << pad_index << aggregated.button;
+    if (!m_gba_config.at(pad_index).enabled)
+    {
+      spac << aggregated.analogA << aggregated.analogB << aggregated.stickX << aggregated.stickY 
+           << aggregated.substickX << aggregated.substickY << aggregated.triggerLeft 
+           << aggregated.triggerRight << aggregated.isConnected;
+    }
+
+    if (m_host_input_authority)
+    {
+      if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
+        Send(m_players.at(m_current_golfer).socket, spac);
+    }
+    else
+    {
+      SendToClients(spac);
+    }
+  }
+}
+
+GCPadStatus NetPlayServer::CombinePadInputs(const std::vector<GCPadStatus>& inputs)
+{
+  GCPadStatus result{};
+  
+  // Combine button presses (OR operation)
+  for (const auto& input : inputs)
+  {
+    result.button |= input.button;
+  }
+  
+  // For analog inputs, use the maximum value
+  for (const auto& input : inputs)
+  {
+    result.analogA = std::max(result.analogA, input.analogA);
+    result.analogB = std::max(result.analogB, input.analogB);
+    result.stickX = std::max(result.stickX, input.stickX);
+    result.stickY = std::max(result.stickY, input.stickY);
+    result.substickX = std::max(result.substickX, input.substickX);
+    result.substickY = std::max(result.substickY, input.substickY);
+    result.triggerLeft = std::max(result.triggerLeft, input.triggerLeft);
+    result.triggerRight = std::max(result.triggerRight, input.triggerRight);
+  }
+  
+  // If any input is connected, the result is connected
+  for (const auto& input : inputs)
+  {
+    if (input.isConnected)
+    {
+      result.isConnected = true;
+      break;
+    }
+  }
+  
+  return result;
+}
+
+void NetPlayServer::AggregateWiimoteInputs(PadIndex pad_index)
+{
+  const auto& wii_players = m_wiimote_map.at(pad_index).players;
+  if (wii_players.size() <= 1)
+    return;  // No aggregation needed for single player
+
+  std::vector<WiimoteEmu::SerializedWiimoteState> inputs;
+  for (const auto& player_id : wii_players)
+  {
+    auto it = m_wiimote_inputs_by_player[pad_index].find(player_id);
+    if (it != m_wiimote_inputs_by_player[pad_index].end())
+    {
+      inputs.push_back(it->second);
+    }
+  }
+
+  if (inputs.size() > 1)
+  {
+    WiimoteEmu::SerializedWiimoteState aggregated = CombineWiimoteInputs(inputs);
+    
+    // Send aggregated input to all clients
+    sf::Packet spac;
+    spac << MessageID::WiimoteData;
+    spac << pad_index;
+    spac << aggregated.length;
+    for (size_t i = 0; i < aggregated.length; ++i)
+      spac << aggregated.data[i];
+
+    SendToClients(spac);
+  }
+}
+
+WiimoteEmu::SerializedWiimoteState NetPlayServer::CombineWiimoteInputs(const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs)
+{
+  // For Wiimote inputs, just use the first input for now
+  // This could be enhanced to combine button presses and other inputs
+  return inputs[0];
 }
 }  // namespace NetPlay
