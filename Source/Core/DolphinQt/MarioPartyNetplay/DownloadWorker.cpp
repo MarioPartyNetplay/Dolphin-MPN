@@ -35,7 +35,7 @@ void DownloadWorker::startDownload()
 
     // Check if the final URL is the expected GitHub objects CDN
     std::string final_url = httpRequest.GetFinalUrl();
-    if (final_url.find("objects.githubusercontent.com") == std::string::npos) {
+    if (final_url.find("githubusercontent.com") == std::string::npos) {
         emit errorOccurred(QStringLiteral("Did not reach the expected GitHub objects URL. Final URL: %1").arg(QString::fromStdString(final_url)));
         return;
     }
