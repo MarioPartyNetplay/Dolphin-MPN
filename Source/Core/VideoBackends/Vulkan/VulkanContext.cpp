@@ -670,7 +670,7 @@ bool VulkanContext::SelectDeviceExtensions(bool enable_surface)
     // of Vulkan just by being enabled, so we rely on lazy evaluation to ensure it is
     // not enabled unless depth clamp control is supported.
     g_backend_info.bSupportsUnrestrictedDepthRange =
-        AddExtension(VK_EXT_DEPTH_CLAMP_CONTROL_EXTENSION_NAME, false) &&
+        AddExtension(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME, false) &&
         AddExtension(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME, false);
   }
 
