@@ -10,7 +10,6 @@ add_library(rcheevos
 	rcheevos/include/rcheevos.h
 	rcheevos/include/rc_runtime.h
 	rcheevos/include/rc_runtime_types.h
-	rcheevos/include/rc_url.h
 	rcheevos/include/rc_util.h
 	rcheevos/src/rapi/rc_api_common.c
 	rcheevos/src/rapi/rc_api_common.h
