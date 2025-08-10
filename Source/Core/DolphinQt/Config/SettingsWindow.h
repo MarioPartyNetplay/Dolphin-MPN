@@ -7,6 +7,7 @@
 
 class QStackedWidget;
 class QListWidget;
+class MainWindow;
 
 // A settings window with a QListWidget to switch between panes of a QStackedWidget.
 class StackedSettingsWindow : public QDialog
@@ -34,21 +35,22 @@ private:
 enum class SettingsWindowPaneIndex : int
 {
   General = 0,
-  Controllers = 1,
-  Interface = 2,
-  MarioPartyNetplay = 3,
-  Audio = 4,
-  Paths = 5,
-  GameCube = 6,
-  Wii = 7,
-  Advanced = 8,
+  Graphics = 1,
+  Controllers = 2,
+  Interface = 3,
+  MarioPartyNetplay = 4,
+  Audio = 5,
+  Paths = 6,
+  GameCube = 7,
+  Wii = 8,
+  Advanced = 9,
 };
 
 class SettingsWindow final : public StackedSettingsWindow
 {
   Q_OBJECT
 public:
-  explicit SettingsWindow(QWidget* parent = nullptr);
+  explicit SettingsWindow(MainWindow* parent);
 
   void SelectPane(SettingsWindowPaneIndex);
 };

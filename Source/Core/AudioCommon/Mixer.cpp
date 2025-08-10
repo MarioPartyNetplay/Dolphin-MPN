@@ -93,6 +93,8 @@ void Mixer::MixerFifo::Mix(s16* samples, std::size_t num_samples)
       std::clamp((buffer_size_samples) / (GRANULE_SIZE >> 1), static_cast<std::size_t>(4),
                  static_cast<std::size_t>(MAX_GRANULE_QUEUE_SIZE));
 
+  bool fade_audio = m_queue_fading.load(std::memory_order_relaxed);
+
   m_granule_queue_size.store(buffer_size_granules, std::memory_order_relaxed);
 
   while (num_samples-- > 0)
@@ -106,9 +108,9 @@ void Mixer::MixerFifo::Mix(s16* samples, std::size_t num_samples)
     // If either index is less than the index jump, that means we reached
     // the end of the of the buffer and need to load the next granule.
     if (front_index < index_jump)
-      Dequeue(&m_front);
+      fade_audio = Dequeue(&m_front);
     else if (back_index < index_jump)
-      Dequeue(&m_back);
+      fade_audio = Dequeue(&m_back);
 
     // The Granules are pre-windowed, so we can just add them together
     const std::size_t ft = front_index >> GRANULE_FRAC_BITS;
@@ -137,7 +139,7 @@ void Mixer::MixerFifo::Mix(s16* samples, std::size_t num_samples)
                          s5 * StereoPair{(+0.0f + 0.0f * t1 + 1.0f * t2 - 1.0f * t3) / 12.0f});
 
     // Apply Fade In / Fade Out depending on if we are looping
-    if (m_queue_looping.load(std::memory_order_relaxed))
+    if (fade_audio)
       m_fade_volume += fade_out_mul * (0.0f - m_fade_volume);
     else
       m_fade_volume += fade_in_mul * (1.0f - m_fade_volume);
@@ -226,7 +228,11 @@ void Mixer::MixerFifo::PushSamples(const s16* samples, std::size_t num_samples)
 
 void Mixer::PushSamples(const s16* samples, std::size_t num_samples)
 {
-  m_dma_mixer.PushSamples(samples, num_samples);
+  if (IsOutputSampleRateValid())
+  {
+    m_dma_mixer.PushSamples(samples, num_samples);
+  }
+
   if (m_log_dsp_audio)
   {
     const s32 sample_rate_divisor = m_dma_mixer.GetInputSampleRateDivisor();
@@ -238,7 +244,11 @@ void Mixer::PushSamples(const s16* samples, std::size_t num_samples)
 
 void Mixer::PushStreamingSamples(const s16* samples, std::size_t num_samples)
 {
-  m_streaming_mixer.PushSamples(samples, num_samples);
+  if (IsOutputSampleRateValid())
+  {
+    m_streaming_mixer.PushSamples(samples, num_samples);
+  }
+
   if (m_log_dtk_audio)
   {
     const s32 sample_rate_divisor = m_streaming_mixer.GetInputSampleRateDivisor();
@@ -251,6 +261,9 @@ void Mixer::PushStreamingSamples(const s16* samples, std::size_t num_samples)
 void Mixer::PushWiimoteSpeakerSamples(const s16* samples, std::size_t num_samples,
                                       u32 sample_rate_divisor)
 {
+  if (!IsOutputSampleRateValid())
+    return;
+
   // Max 20 bytes/speaker report, may be 4-bit ADPCM so multiply by 2
   static constexpr std::size_t MAX_SPEAKER_SAMPLES = 20 * 2;
   std::array<s16, MAX_SPEAKER_SAMPLES * 2> samples_stereo;
@@ -274,6 +287,9 @@ void Mixer::PushWiimoteSpeakerSamples(const s16* samples, std::size_t num_sample
 
 void Mixer::PushSkylanderPortalSamples(const u8* samples, std::size_t num_samples)
 {
+  if (!IsOutputSampleRateValid())
+    return;
+
   // Skylander samples are always supplied as 64 bytes, 32 x 16 bit samples
   // The portal speaker is 1 channel, so duplicate and play as stereo audio
   static constexpr std::size_t MAX_PORTAL_SPEAKER_SAMPLES = 32;
@@ -299,6 +315,9 @@ void Mixer::PushSkylanderPortalSamples(const u8* samples, std::size_t num_sample
 
 void Mixer::PushGBASamples(std::size_t device_number, const s16* samples, std::size_t num_samples)
 {
+  if (!IsOutputSampleRateValid())
+    return;
+
   m_gba_mixers[device_number].PushSamples(samples, num_samples);
 }
 
@@ -452,7 +471,7 @@ void Mixer::MixerFifo::Enqueue()
   // elements = ", ".join([f"{x:.10f}f" for x in window])
   // print(f'constexpr std::array<StereoPair, GRANULE_SIZE> GRANULE_WINDOW = {{ {elements}
   // }};')
-  constexpr std::array<StereoPair, GRANULE_SIZE> GRANULE_WINDOW = {
+  static constexpr std::array<StereoPair, GRANULE_SIZE> GRANULE_WINDOW = {
       0.0000016272f, 0.0000050749f, 0.0000113187f, 0.0000216492f, 0.0000377350f, 0.0000616906f,
       0.0000961509f, 0.0001443499f, 0.0002102045f, 0.0002984010f, 0.0004144844f, 0.0005649486f,
       0.0007573262f, 0.0010002765f, 0.0013036694f, 0.0016786636f, 0.0021377783f, 0.0026949534f,
@@ -516,10 +535,11 @@ void Mixer::MixerFifo::Enqueue()
     m_queue[head][i] = m_next_buffer[(i + start_index) & GRANULE_MASK] * GRANULE_WINDOW[i];
 
   m_queue_head.store(next_head, std::memory_order_release);
+  m_queue_fading.store(false, std::memory_order_relaxed);
   m_queue_looping.store(false, std::memory_order_relaxed);
 }
 
-void Mixer::MixerFifo::Dequeue(Granule* granule)
+bool Mixer::MixerFifo::Dequeue(Granule* granule)
 {
   const std::size_t granule_queue_size = m_granule_queue_size.load(std::memory_order_relaxed);
   const std::size_t head = m_queue_head.load(std::memory_order_acquire);
@@ -545,16 +565,22 @@ void Mixer::MixerFifo::Dequeue(Granule* granule)
       // This provides smoother audio playback than suddenly stopping.
       const std::size_t gap = std::max<std::size_t>(2, granule_queue_size >> 1) - 1;
       next_tail = (head - gap) & GRANULE_QUEUE_MASK;
+
+      bool looping = m_queue_looping.load(std::memory_order_relaxed);
+      m_queue_fading.store(looping, std::memory_order_relaxed);
       m_queue_looping.store(true, std::memory_order_relaxed);
     }
     else
     {
       std::fill(granule->begin(), granule->end(), StereoPair{0.0f, 0.0f});
+      m_queue_fading.store(false, std::memory_order_relaxed);
       m_queue_looping.store(false, std::memory_order_relaxed);
-      return;
+      return false;
     }
   }
 
   *granule = m_queue[tail];
   m_queue_tail.store(next_tail, std::memory_order_release);
+
+  return m_queue_fading.load(std::memory_order_relaxed);
 }
