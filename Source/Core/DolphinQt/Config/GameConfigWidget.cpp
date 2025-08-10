@@ -207,14 +207,15 @@ void GameConfigWidget::CreateWidgets()
   // Mario Party Netplay tab
   tab_widget->addTab(GetWrappedWidget(new MarioPartyNetplayWidget(this, m_layer.get())), tr("MPN"));
 
-  auto* gfx_tabs = new QTabWidget;
+  // Advanced tab - contains default and local config tabs
+  tab_widget->addTab(advanced_widget, tr("Advanced"));
 
-  gfx_tabs->addTab(GetWrappedWidget(new GeneralWidget(this, m_layer.get())), tr("General"));
-  gfx_tabs->addTab(GetWrappedWidget(new EnhancementsWidget(this, m_layer.get())),
-                   tr("Enhancements"));
-  gfx_tabs->addTab(GetWrappedWidget(new HacksWidget(this, m_layer.get())), tr("Hacks"));
-  gfx_tabs->addTab(GetWrappedWidget(new AdvancedWidget(this, m_layer.get())), tr("Advanced"));
-  const int editor_index = tab_widget->addTab(advanced_widget, tr("Editor"));
+  // Editor tab - create a GameConfigEdit widget for editing the game's INI file
+  auto* editor_widget = new GameConfigEdit(
+      nullptr,
+      QString::fromStdString(File::GetUserPath(D_GAMESETTINGS_IDX) + m_game_id + ".ini"),
+      false);
+  const int editor_index = tab_widget->addTab(editor_widget, tr("Editor"));
 
   connect(tab_widget, &QTabWidget::currentChanged, this, [this, editor_index](int index) {
     // Update the ini editor after editing other tabs.
