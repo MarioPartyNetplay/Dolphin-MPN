@@ -33,6 +33,7 @@
 #include "DolphinQt/Config/Graphics/GeneralWidget.h"
 #include "DolphinQt/Config/Graphics/HacksWidget.h"
 #include "DolphinQt/Config/MarioPartyNetplayWidget.h"
+#include "DolphinQt/Config/Graphics/GraphicsPane.h"
 #include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
 
@@ -116,14 +117,16 @@ void GameConfigWidget::CreateWidgets()
   m_deterministic_dual_core =
       new ConfigStringChoice(choice, Config::MAIN_GPU_DETERMINISM_MODE, layer);
 
-  m_enable_mmu->setToolTip(tr(
+  m_enable_mmu->SetDescription(tr(
       "Enables the Memory Management Unit, needed for some games. (ON = Compatible, OFF = Fast)"));
 
-  m_enable_fprf->setToolTip(tr("Enables Floating Point Result Flag calculation, needed for a few "
-                               "games. (ON = Compatible, OFF = Fast)"));
-  m_sync_gpu->setToolTip(tr("Synchronizes the GPU and CPU threads to help prevent random freezes "
-                            "in Dual core mode. (ON = Compatible, OFF = Fast)"));
-  m_emulate_disc_speed->setToolTip(
+  m_enable_fprf->SetDescription(
+      tr("Enables Floating Point Result Flag calculation, needed for a few "
+         "games. (ON = Compatible, OFF = Fast)"));
+  m_sync_gpu->SetDescription(
+      tr("Synchronizes the GPU and CPU threads to help prevent random freezes "
+         "in Dual core mode. (ON = Compatible, OFF = Fast)"));
+  m_emulate_disc_speed->SetDescription(
       tr("Enable emulated disc speed. Disabling this can cause crashes "
          "and other problems in some games. "
          "(ON = Compatible, OFF = Unlocked)"));
@@ -147,11 +150,11 @@ void GameConfigWidget::CreateWidgets()
   m_use_monoscopic_shadows =
       new ConfigBool(tr("Monoscopic Shadows"), Config::GFX_STEREO_EFB_MONO_DEPTH, layer);
 
-  m_depth_slider->setToolTip(
+  m_depth_slider->SetDescription(
       tr("This value is multiplied with the depth set in the graphics configuration."));
-  m_convergence_spin->setToolTip(
+  m_convergence_spin->SetDescription(
       tr("This value is added to the convergence value set in the graphics configuration."));
-  m_use_monoscopic_shadows->setToolTip(
+  m_use_monoscopic_shadows->SetDescription(
       tr("Use a single depth buffer for both eyes. Needed for a few games."));
 
   stereoscopy_layout->addWidget(new ConfigSliderLabel(tr("Depth Percentage:"), m_depth_slider), 0,
@@ -198,11 +201,8 @@ void GameConfigWidget::CreateWidgets()
   auto* tab_widget = new QTabWidget;
   tab_widget->addTab(general_widget, tr("General"));
 
-  // GFX settings tabs. Placed in a QWidget for consistent margins.
-  auto* gfx_tab_holder = new QWidget;
-  auto* gfx_layout = new QVBoxLayout;
-  gfx_tab_holder->setLayout(gfx_layout);
-  tab_widget->addTab(gfx_tab_holder, tr("Graphics"));
+  auto* const gfx_widget = new GraphicsPane{nullptr, m_layer.get()};
+  tab_widget->addTab(gfx_widget, tr("Graphics"));
 
   // Mario Party Netplay tab
   tab_widget->addTab(GetWrappedWidget(new MarioPartyNetplayWidget(this, m_layer.get())), tr("MPN"));
@@ -215,7 +215,6 @@ void GameConfigWidget::CreateWidgets()
   gfx_tabs->addTab(GetWrappedWidget(new HacksWidget(this, m_layer.get())), tr("Hacks"));
   gfx_tabs->addTab(GetWrappedWidget(new AdvancedWidget(this, m_layer.get())), tr("Advanced"));
   const int editor_index = tab_widget->addTab(advanced_widget, tr("Editor"));
-  gfx_layout->addWidget(gfx_tabs);
 
   connect(tab_widget, &QTabWidget::currentChanged, this, [this, editor_index](int index) {
     // Update the ini editor after editing other tabs.

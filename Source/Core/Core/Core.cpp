@@ -242,8 +242,6 @@ bool Init(Core::System& system, std::unique_ptr<BootParameters> boot, const Wind
   INFO_LOG_FMT(BOOT, "Starting core = {} mode", system.IsWii() ? "Wii" : "GameCube");
   INFO_LOG_FMT(BOOT, "CPU Thread separate = {}", system.IsDualCoreMode() ? "Yes" : "No");
 
-  Host_UpdateMainFrame();  // Disable any menus or buttons at boot
-
   // Manually reactivate the video backend in case a GameINI overrides the video backend setting.
   VideoBackendBase::PopulateBackendInfo(wsi);
 
@@ -342,7 +340,6 @@ static void CPUSetInitialExecutionState(bool force_paused = false)
     bool paused = SConfig::GetInstance().bBootToPause || force_paused;
     SetState(system, paused ? State::Paused : State::Running, true, true);
     Host_UpdateDisasmDialog();
-    Host_UpdateMainFrame();
     Host_Message(HostMessageID::WMUserCreate);
   });
 }
@@ -676,7 +673,7 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
 // Set or get the running state
 
 void SetState(Core::System& system, State state, bool report_state_change,
-              bool initial_execution_state)
+              bool override_achievement_restrictions)
 {
   // State cannot be controlled until the CPU Thread is operational
   if (s_state.load() != State::Running)
@@ -686,7 +683,7 @@ void SetState(Core::System& system, State state, bool report_state_change,
   {
   case State::Paused:
 #ifdef USE_RETRO_ACHIEVEMENTS
-    if (!initial_execution_state && !AchievementManager::GetInstance().CanPause())
+    if (!override_achievement_restrictions && !AchievementManager::GetInstance().CanPause())
       return;
 #endif  // USE_RETRO_ACHIEVEMENTS
     // NOTE: GetState() will return State::Paused immediately, even before anything has
