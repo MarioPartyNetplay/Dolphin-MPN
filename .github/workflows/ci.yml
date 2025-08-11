@@ -172,10 +172,7 @@
       run: |
         cd build
         # Extract the generated archive
-        tar -xzf DolphinMPN-archLinux.tar.gz
-        # Create package directory
-        mkdir -p dolphin-mpn-package
-        mv DolphinMPN-archLinux/* dolphin-mpn-package/
+        tar -xzf DolphinMPN-archLinux.tar.gz -C dolphin-mpn-package
         # Create .PKGINFO
         cat > dolphin-mpn-package/.PKGINFO << 'EOF'
         pkgname=dolphin-mpn
