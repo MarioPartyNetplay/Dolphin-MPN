@@ -302,7 +302,8 @@ def build(config):
                 # iconv, bzip2, and curl
                 "-DUSE_SYSTEM_ICONV=ON",
                 "-DUSE_SYSTEM_BZIP2=ON",
-                "-DUSE_SYSTEM_CURL=ON"
+                "-DUSE_SYSTEM_CURL=ON",
+                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             ],
             env=env, cwd=arch)
 
