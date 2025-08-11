@@ -165,14 +165,17 @@
         pacman -S --noconfirm base-devel cmake ninja qt6-base qt6-svg ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
    
     - name: Build
-      run: |
+      run: |`
         mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && ninja -j$(nproc) && ninja package
   
     - name: Create Arch Package
       run: |
         cd build
         # Extract the generated archive
-        tar -xzf DolphinMPN-archLinux.tar.gz -C dolphin-mpn-package
+        tar -xzf DolphinMPN-archLinux.tar.gz
+        # Create package directory
+        mkdir -p dolphin-mpn-package
+        mv DolphinMPN-archLinux/* dolphin-mpn-package/
         # Create .PKGINFO
         cat > dolphin-mpn-package/.PKGINFO << 'EOF'
         pkgname=dolphin-mpn
@@ -244,11 +247,11 @@
         arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         chmod +x /usr/local/bin/brew
         rm -f /usr/local/bin/idle3 /usr/local/bin/python3 /usr/local/bin/pip3
-        arch -x86_64 /usr/local/bin/brew install ninja cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+        arch -x86_64 /usr/local/bin/brew install ninja cmake git
 
     - name: Install Homebrew packages (arm64)
       run: |
-        /opt/homebrew/bin/brew install ninja cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+        /opt/homebrew/bin/brew install ninja cmake git
 
     - name: Build
       run: |
