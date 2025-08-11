@@ -166,7 +166,7 @@
    
     - name: Build
       run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j$(nproc) && ninja package
+        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && ninja -j$(nproc) && ninja package
   
     - name: Create Arch Package
       run: |
