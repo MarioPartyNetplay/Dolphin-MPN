@@ -7,7 +7,7 @@ project(cubeb
 
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(BUILD_RUST_LIBS "Build rust backends" OFF)
-option(BUNDLE_SPEEX "Bundle the speex library" OFF)
+option(BUNDLE_SPEEX "Bundle the speex library" ON)
 option(LAZY_LOAD_LIBS "Lazily load shared libraries" ON)
 option(USE_SANITIZERS "Use sanitizers" ON)
 
