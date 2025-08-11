@@ -11,14 +11,20 @@
       image: bilelmoussaoui/flatpak-github-actions:gnome-nightly
       options: --privileged
     steps:
-    - uses: actions/checkout@v2
+
+    - uses: actions/checkout@v5
+      with:
+        submodules: true
+
     - name: Purge .git for space reasons
       run: rm -rf /home/runner/work/Dolphin-MPN-src/Dolphin-MPN-src/.git
+    
     - name: Setup Packages
       run: |
         flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo && \
         flatpak install org.kde.Sdk//5.15 org.kde.Platform//5.15 -y && \
         dnf install libusb1-devel cmake git gcc-c++ libXext-devel libgudev qt6-qtbase-devel systemd-devel openal-soft-devel libevdev-devel libao-devel SOIL-devel libXrandr-devel pulseaudio-libs-devel bluez-libs-devel p7zip SDL2-devel make automake gcc gcc-c++ kernel-devel -y
+    
     - name: Run Flatpak Builder
       uses: flatpak/flatpak-github-actions/flatpak-builder@v6
       with:
@@ -28,16 +34,44 @@
   build_deb24_04:
     runs-on: ubuntu-24.04
     steps:
+
+    - name: Install Git
+      run: |
+        sudo apt update
+        sudo apt install -y git
+  
     - uses: actions/checkout@v5
       with:
        submodules: true
+    
+    - name: Cache APT packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-24.04-${{ hashFiles('**/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-24.04-
+    
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/cmake
+        key: ${{ runner.os }}-cmake-24.04-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-24.04-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-
+          ${{ runner.os }}-cmake-24.04-
+    
     - name: Setup Packages
       run: |
         sudo apt update --fix-missing
         sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
+    
     - name: Build
       run: |
         mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb OUT/
+    
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -47,16 +81,44 @@
   build_deb22_04:
     runs-on: ubuntu-22.04
     steps:
+
+    - name: Install Git
+      run: |
+        sudo apt update
+        sudo apt install -y git
+ 
     - uses: actions/checkout@v5
       with:
        submodules: true
+    
+    - name: Cache APT packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-22.04-${{ hashFiles('**/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-22.04-
+    
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/cmake
+        key: ${{ runner.os }}-cmake-22.04-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-22.04-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-
+          ${{ runner.os }}-cmake-22.04-
+    
     - name: Setup Packages
       run: |
         sudo apt update --fix-missing
         sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
+    
     - name: Build
       run: |
         mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb OUT/
+    
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -69,16 +131,43 @@
       image: archlinux:base-devel
       options: --privileged
     steps:
+
+    - name: Install Git
+      run: |
+        pacman -Sy --noconfirm git
+    
     - uses: actions/checkout@v5
       with:
-       submodules: true
+        submodules: true
+    
+    - name: Cache pacman packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/pacman/pkg
+        key: ${{ runner.os }}-pacman-${{ hashFiles('**/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-pacman-
+    
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/cmake
+        key: ${{ runner.os }}-cmake-arch-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-arch-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-
+          ${{ runner.os }}-cmake-arch-
+    
     - name: Install Dependencies
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm base-devel cmake ninja git qt6-base ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+        pacman -S --noconfirm base-devel cmake ninja qt6-base ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+   
     - name: Build
       run: |
         mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j$(nproc) && ninja package
+  
     - name: Create Arch Package
       run: |
         cd build
@@ -100,6 +189,7 @@
         # Create package
         tar -cJf DolphinMPN-archLinux.pkg.tar.xz -C dolphin-mpn-package .
         mkdir -p OUT && mv *.pkg.tar.xz OUT/
+  
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -112,19 +202,61 @@
     - uses: actions/checkout@v5
       with:
        submodules: true
+    
+    - name: Install Qt (universal)
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: 6.8.0
+        cache: true
+        cache-key-prefix: 'install-qt-action-macos'
+    
+    - name: Cache Homebrew packages (x86_64)
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/local/Cellar
+          /usr/local/Homebrew
+          /usr/local/var/homebrew
+        key: ${{ runner.os }}-brew-x86_64-${{ hashFiles('**/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-brew-x86_64-
+    
+    - name: Cache Homebrew packages (arm64)
+      uses: actions/cache@v4
+      with:
+        path: |
+          /opt/homebrew/Cellar
+          /opt/homebrew/var/homebrew
+        key: ${{ runner.os }}-brew-arm64-${{ hashFiles('**/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-brew-arm64-
+    
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/cmake
+        key: ${{ runner.os }}-cmake-universal-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', 'BuildMacOSUniversalBinary.py') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-universal-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', 'BuildMacOSUniversalBinary.py') }}-
+          ${{ runner.os }}-cmake-universal-
+    
     - name: Install Homebrew packages (x86_64 via Rosetta)
       run: |
         arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         chmod +x /usr/local/bin/brew
         rm -f /usr/local/bin/idle3 /usr/local/bin/python3 /usr/local/bin/pip3
-        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+        arch -x86_64 /usr/local/bin/brew install ninja cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
 
     - name: Install Homebrew packages (arm64)
       run: |
-        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+        /opt/homebrew/bin/brew install ninja cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+
     - name: Build
       run: |
         mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
+    
     - name: Prepare macOS Build Artifact
       run: |
         cd build/universal
@@ -147,12 +279,28 @@
     - uses: actions/checkout@v5
       with:
        submodules: true
+    
+    - name: Cache MSBuild artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          Binary
+          Source/**/bin
+          Source/**/obj
+          packages
+        key: ${{ runner.os }}-msbuild-${{ hashFiles('**/*.vcxproj', '**/*.sln', '**/*.props') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-msbuild-${{ hashFiles('**/*.vcxproj', '**/*.sln', '**/*.props') }}-
+          ${{ runner.os }}-msbuild-
+    
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v1.0.2
       with:
         vs-version: '16.6.2'
+    
     - name: Build
       run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal /property:Configuration=Release /property:Platform=x64
+    
     - name: Trusted Signing
       uses: azure/trusted-signing-action@v0.5.1
       with:
@@ -164,6 +312,7 @@
         certificate-profile-name: vscx-certificate-profile
         files-folder: Binary/x64/
         files-folder-filter: exe,dll
+
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
