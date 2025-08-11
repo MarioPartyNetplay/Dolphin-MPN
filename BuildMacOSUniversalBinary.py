@@ -31,6 +31,7 @@ import multiprocessing
 import os
 import shutil
 import subprocess
+import sys
 
 # The config variables listed below are the defaults, but they can be
 # overridden by command line arguments see parse_args(), or run:
@@ -49,8 +50,8 @@ DEFAULT_CONFIG = {
     # Locations to qt5 directories for arm and x64 libraries
     # The default values of these paths are taken from the default
     # paths used for homebrew
-    "arm64_qt5_path":  "/opt/homebrew/opt/qt5",
-    "x86_64_qt5_path": "/usr/local/opt/qt5",
+    "arm64_qt5_path":  "/opt/homebrew/opt/qt6",
+    "x86_64_qt5_path": "/usr/local/opt/qt6",
 
     # Identity to use for code signing. "-" indicates that the app will not
     # be cryptographically signed/notarized but will instead just use a
@@ -101,55 +102,104 @@ def parse_args(conf=DEFAULT_CONFIG):
         default=conf["generator"],
         dest="generator")
     parser.add_argument(
-        "--build_type",
-        help="CMake build type [Debug, Release, RelWithDebInfo, MinSizeRel]",
+        "--build-type",
+        help="Build type (Debug, Release, RelWithDebInfo, MinSizeRel)",
         default=conf["build_type"],
         dest="build_type")
     parser.add_argument(
-        "--dst_app",
-        help="Directory where universal binary will be stored",
-        default=conf["dst_app"])
-
-    parser.add_argument("--run_unit_tests", action="store_true",
-                        default=conf["run_unit_tests"])
-
+        "--arm64-cmake-prefix",
+        help="CMake prefix path for ARM64 builds",
+        default=conf["arm64_cmake_prefix"],
+        dest="arm64_cmake_prefix")
     parser.add_argument(
-        "--autoupdate",
-        help="Enables our autoupdate functionality",
-        action=argparse.BooleanOptionalAction,
-        default=conf["autoupdate"])
-
+        "--x86-64-cmake-prefix",
+        help="CMake prefix path for x86_64 builds",
+        default=conf["x86_64_cmake_prefix"],
+        dest="x86_64_cmake_prefix")
     parser.add_argument(
-        "--distributor",
-        help="Sets the distributor for this build",
-        default=conf["distributor"])
-
+        "--arm64-qt5-path",
+        help="Qt6 path for ARM64 builds",
+        default=conf["arm64_qt5_path"],
+        dest="arm64_qt5_path")
     parser.add_argument(
-        "--codesign",
-        help="Code signing identity to use to sign the applications",
+        "--x86-64-qt5-path",
+        help="Qt6 path for x86_64 builds",
+        default=conf["x86_64_qt5_path"],
+        dest="x86_64_qt5_path")
+    parser.add_argument(
+        "--codesign-identity",
+        help="Identity to use for code signing",
         default=conf["codesign_identity"],
         dest="codesign_identity")
+    parser.add_argument(
+        "--dst-app",
+        help="Destination directory for universal binary",
+        default=conf["dst_app"],
+        dest="dst_app")
+    parser.add_argument(
+        "--run-unit-tests",
+        help="Run unit tests after building",
+        action="store_true",
+        dest="run_unit_tests")
+    parser.add_argument(
+        "--autoupdate",
+        help="Enable autoupdate functionality",
+        action="store_true",
+        dest="autoupdate")
+    parser.add_argument(
+        "--distributor",
+        help="Distributor name for this build",
+        default=conf["distributor"],
+        dest="distributor")
 
-    for arch in ARCHITECTURES:
-        parser.add_argument(
-             f"--{arch}_cmake_prefix",
-             help="Folder for cmake to search for packages",
-             default=conf[arch+"_cmake_prefix"],
-             dest=arch+"_cmake_prefix")
+    args = parser.parse_args()
 
-        parser.add_argument(
-             f"--{arch}_qt5_path",
-             help=f"Install path for {arch} qt5 libraries",
-             default=conf[arch+"_qt5_path"])
+    # Update config with command line arguments
+    conf["build_target"] = args.build_target
+    conf["generator"] = args.generator
+    conf["build_type"] = args.build_type
+    conf["arm64_cmake_prefix"] = args.arm64_cmake_prefix
+    conf["x86_64_cmake_prefix"] = args.x86_64_cmake_prefix
+    conf["arm64_qt5_path"] = args.arm64_qt5_path
+    conf["x86_64_qt5_path"] = args.x86_64_qt5_path
+    conf["codesign_identity"] = args.codesign_identity
+    conf["dst_app"] = args.dst_app
+    conf["run_unit_tests"] = args.run_unit_tests
+    conf["autoupdate"] = args.autoupdate
+    conf["distributor"] = args.distributor
 
-    return vars(parser.parse_args())
+    return conf
 
 
 def lipo(path0, path1, dst):
-    if subprocess.call(["lipo", "-create", "-output", dst, path0, path1]) != 0:
-        print(f"WARNING: {path0} and {path1} cannot be lipo'd")
-
-        shutil.copy(path0, dst)
+    """Create a universal binary using lipo."""
+    print(f"Creating universal binary: {dst}")
+    print(f"  From: {path0} (x86_64)")
+    print(f"  From: {path1} (arm64)")
+    
+    # Check if both source files exist
+    if not os.path.exists(path0):
+        print(f"ERROR: Source file {path0} does not exist")
+        return False
+    if not os.path.exists(path1):
+        print(f"ERROR: Source file {path1} does not exist")
+        return False
+    
+    # Ensure destination directory exists
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    
+    try:
+        result = subprocess.run(["lipo", "-create", "-output", dst, path0, path1], 
+                              capture_output=True, text=True, check=True)
+        print(f"Successfully created universal binary: {dst}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: lipo failed: {e}")
+        print(f"stderr: {e.stderr}")
+        return False
+    except FileNotFoundError:
+        print("ERROR: lipo command not found. Make sure you have Xcode command line tools installed.")
+        return False
 
 
 def recursive_merge_binaries(src0, src1, dst):
@@ -166,7 +216,20 @@ def recursive_merge_binaries(src0, src1, dst):
     4) Symlinks are created in the destination tree to mirror the hierarchy in
        the source trees
     """
-
+    
+    print(f"Merging binaries from {src0} and {src1} into {dst}")
+    
+    # Check that source directories exist
+    if not os.path.exists(src0):
+        print(f"ERROR: Source directory {src0} does not exist")
+        return False
+    if not os.path.exists(src1):
+        print(f"ERROR: Source directory {src1} does not exist")
+        return False
+    
+    # Create destination directory
+    os.makedirs(dst, exist_ok=True)
+    
     # Check that all files present in the folder are of the same type and that
     # links link to the same relative location
     for newpath0 in glob.glob(src0+"/*"):
@@ -206,18 +269,31 @@ def recursive_merge_binaries(src0, src1, dst):
                 shutil.copytree(newpath0, new_dst_path)
             else:
                 shutil.copy(newpath0, new_dst_path)
-
             continue
 
         if os.path.isdir(newpath1):
-            os.mkdir(new_dst_path)
+            os.makedirs(new_dst_path, exist_ok=True)
             recursive_merge_binaries(newpath0, newpath1, new_dst_path)
             continue
 
         if filecmp.cmp(newpath0, newpath1):
             shutil.copy(newpath0, new_dst_path)
         else:
-            lipo(newpath0, newpath1, new_dst_path)
+            # Check if this is a Mach-O binary that can be lipo'd
+            try:
+                result = subprocess.run(["file", newpath0], capture_output=True, text=True)
+                if "Mach-O" in result.stdout:
+                    if not lipo(newpath0, newpath1, new_dst_path):
+                        # Fallback to copying x86_64 version if lipo fails
+                        print(f"Falling back to copying x86_64 version: {newpath0}")
+                        shutil.copy(newpath0, new_dst_path)
+                else:
+                    # Not a Mach-O binary, just copy
+                    shutil.copy(newpath0, new_dst_path)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # file command not available or failed, assume it's a binary and try lipo
+                if not lipo(newpath0, newpath1, new_dst_path):
+                    shutil.copy(newpath0, new_dst_path)
 
     # Loop over files in src1 and copy missing things over to dst
     for newpath1 in glob.glob(src1+"/*"):
@@ -245,9 +321,14 @@ def recursive_merge_binaries(src0, src1, dst):
         if os.path.islink(newpath1) and not os.path.exists(newpath0):
             relative_path = os.path.relpath(os.path.realpath(newpath1), src1)
             os.symlink(relative_path, new_dst_path)
+    
+    return True
+
 
 def python_to_cmake_bool(boolean):
+    """Convert Python boolean to CMake boolean string."""
     return "ON" if boolean else "OFF"
+
 
 def build(config):
     """
@@ -259,6 +340,8 @@ def build(config):
 
     # Configure and build single architecture builds for each architecture
     for arch in ARCHITECTURES:
+        print(f"\n=== Building {arch} architecture ===")
+        
         if not os.path.exists(arch):
             os.mkdir(arch)
 
@@ -277,6 +360,7 @@ def build(config):
             if a != arch:
                 ignore_path = config[a+"_cmake_prefix"]
 
+        print(f"Configuring {arch} build...")
         subprocess.check_call([
                 "cmake", "../../", "-G", config["generator"],
                 "-DCMAKE_BUILD_TYPE=" + config["build_type"],
@@ -307,6 +391,7 @@ def build(config):
             ],
             env=env, cwd=arch)
 
+        print(f"Building {arch}...")
         threads = multiprocessing.cpu_count()
         subprocess.check_call(["cmake", "--build", ".",
                                "--config", config["build_type"],
@@ -323,8 +408,30 @@ def build(config):
     # Source binary trees to merge together
     src_app0 = ARCHITECTURES[0]+"/Binaries/"
     src_app1 = ARCHITECTURES[1]+"/Binaries/"
+    
+    print(f"\n=== Creating universal binary ===")
+    print(f"Source x86_64: {src_app0}")
+    print(f"Source arm64: {src_app1}")
+    print(f"Destination: {dst_app}")
+    
+    # Check if source directories exist
+    if not os.path.exists(src_app0):
+        print(f"ERROR: x86_64 binaries directory {src_app0} does not exist")
+        print("Available directories:")
+        for root, dirs, files in os.walk("."):
+            print(f"  {root}: {dirs}")
+        sys.exit(1)
+    
+    if not os.path.exists(src_app1):
+        print(f"ERROR: arm64 binaries directory {src_app1} does not exist")
+        print("Available directories:")
+        for root, dirs, files in os.walk("."):
+            print(f"  {root}: {dirs}")
+        sys.exit(1)
 
-    recursive_merge_binaries(src_app0, src_app1, dst_app)
+    if not recursive_merge_binaries(src_app0, src_app1, dst_app):
+        print("ERROR: Failed to merge binaries")
+        sys.exit(1)
 
     print("Built Universal Binary successfully!")
 

@@ -89,14 +89,14 @@
         mv DolphinMPN-archLinux/* dolphin-mpn-package/
         # Create .PKGINFO
         cat > dolphin-mpn-package/.PKGINFO << 'EOF'
-pkgname=dolphin-mpn
-pkgver=5.0.0
-pkgrel=1
-arch=x86_64
-pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
-license=GPL2
-depends=glibc sdl2 ffmpeg qt6-base libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
-EOF
+        pkgname=dolphin-mpn
+        pkgver=5.0.0
+        pkgrel=1
+        arch=x86_64
+        pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
+        license=GPL2
+        depends=glibc sdl2 ffmpeg qt6-base libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+        EOF
         # Create package
         tar -cJf DolphinMPN-archLinux.pkg.tar.xz -C dolphin-mpn-package .
         mkdir -p OUT && mv *.pkg.tar.xz OUT/
