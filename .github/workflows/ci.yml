@@ -47,9 +47,8 @@
   build_deb22_04:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN && git submodule update --init --recursive
+    - uses: actions/checkout@v5
+      submodules: true
     - name: Setup Packages
       run: |
         sudo apt update --fix-missing
