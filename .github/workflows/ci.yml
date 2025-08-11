@@ -14,8 +14,8 @@
 
     - uses: actions/checkout@v5
       with:
-        submodules: true
-
+        submodules: recursive
+ 
     - name: Purge .git for space reasons
       run: rm -rf /home/runner/work/Dolphin-MPN-src/Dolphin-MPN-src/.git
     
@@ -42,7 +42,7 @@
   
     - uses: actions/checkout@v5
       with:
-       submodules: true
+       submodules: recursive
     
     - name: Cache APT packages
       uses: actions/cache@v4
@@ -89,7 +89,7 @@
  
     - uses: actions/checkout@v5
       with:
-       submodules: true
+       submodules: recursive
     
     - name: Cache APT packages
       uses: actions/cache@v4
@@ -138,7 +138,7 @@
     
     - uses: actions/checkout@v5
       with:
-        submodules: true
+        submodules: recursive
     
     - name: Cache pacman packages
       uses: actions/cache@v4
@@ -201,7 +201,7 @@
     steps:
     - uses: actions/checkout@v5
       with:
-       submodules: true
+       submodules: recursive
     
     - name: Install Qt (universal)
       uses: jurplel/install-qt-action@v4
@@ -278,7 +278,7 @@
     steps:
     - uses: actions/checkout@v5
       with:
-       submodules: true
+       submodules: recursive
     
     - name: Cache MSBuild artifacts
       uses: actions/cache@v4
