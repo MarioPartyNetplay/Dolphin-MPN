@@ -162,7 +162,7 @@
     - name: Install Dependencies
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm base-devel cmake ninja qt6-base ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+        pacman -S --noconfirm base-devel cmake ninja qt6-base qt6-svg ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
    
     - name: Build
       run: |
@@ -184,7 +184,7 @@
         arch=x86_64
         pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
         license=GPL2
-        depends=glibc sdl2 ffmpeg qt6-base libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+        depends=glibc sdl2 ffmpeg qt6-base qt6-svg libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
         EOF
         # Create package
         tar -cJf DolphinMPN-archLinux.pkg.tar.xz -C dolphin-mpn-package .
