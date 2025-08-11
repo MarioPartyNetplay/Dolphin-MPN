@@ -28,9 +28,9 @@
   build_deb24_04:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN && git submodule update --init --recursive
+    - uses: actions/checkout@v5
+      with:
+       submodules: true
     - name: Setup Packages
       run: |
         sudo apt update --fix-missing
@@ -69,14 +69,13 @@
       image: archlinux:base-devel
       options: --privileged
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
+      with:
+       submodules: true
     - name: Install Dependencies
       run: |
         pacman -Syu --noconfirm
         pacman -S --noconfirm base-devel cmake ninja git qt6-base ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
-
-    - name: Setup Submodules
-      run: git submodule update --init --recursive
     - name: Build
       run: |
         mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j$(nproc) && ninja package
@@ -110,9 +109,9 @@
   build_macos_universal:
     runs-on: macos-15
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - uses: actions/checkout@v5
+      with:
+       submodules: true
     - name: Install Homebrew packages (x86_64 via Rosetta)
       run: |
         arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -145,9 +144,9 @@
   build_windows_x86_64:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - uses: actions/checkout@v5
+      with:
+       submodules: true
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v1.0.2
       with:
