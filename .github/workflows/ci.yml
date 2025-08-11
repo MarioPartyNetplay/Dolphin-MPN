@@ -70,12 +70,13 @@
       options: --privileged
     steps:
     - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory . && git submodule update --init --recursive
     - name: Install Dependencies
       run: |
         pacman -Syu --noconfirm
         pacman -S --noconfirm base-devel cmake ninja git qt6-base ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+
+    - name: Setup Submodules
+      run: git config --global --add safe.directory . && git submodule update --init --recursive
     - name: Build
       run: |
         mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j$(nproc) && ninja package
