@@ -62,6 +62,49 @@
       with:
         name: DolphinMPN-ubuntu-22.04-linux-x86_64
         path: build/OUT/
+
+  build_archlinux:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Submodules
+      run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - name: Install Dependencies
+      run: |
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm base-devel cmake ninja git qt6-base ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+    - name: Build
+      run: |
+        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j$(nproc) && ninja package
+    - name: Create Arch Package
+      run: |
+        cd build
+        # Extract the generated archive
+        tar -xzf DolphinMPN-archLinux.tar.gz
+        # Create package directory
+        mkdir -p dolphin-mpn-package
+        mv DolphinMPN-archLinux/* dolphin-mpn-package/
+        # Create .PKGINFO
+        cat > dolphin-mpn-package/.PKGINFO << 'EOF'
+pkgname=dolphin-mpn
+pkgver=5.0.0
+pkgrel=1
+arch=x86_64
+pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
+license=GPL2
+depends=glibc sdl2 ffmpeg qt6-base libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+EOF
+        # Create package
+        tar -cJf DolphinMPN-archLinux.pkg.tar.xz -C dolphin-mpn-package .
+        mkdir -p OUT && mv *.pkg.tar.xz OUT/
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DolphinMPN-archlinux-x86_64
+        path: build/OUT/
         
   build_macos_universal:
     runs-on: macos-15
