@@ -48,7 +48,8 @@
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v5
-      submodules: true
+      with:
+       submodules: true
     - name: Setup Packages
       run: |
         sudo apt update --fix-missing
