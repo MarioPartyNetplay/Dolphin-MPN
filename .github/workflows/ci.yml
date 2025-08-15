@@ -17,7 +17,7 @@
         submodules: recursive
  
     - name: Purge .git for space reasons
-      run: rm -rf /home/runner/work/Dolphin-MPN-src/Dolphin-MPN-src/.git
+      run: rm -rf /home/runner/work/Dolphin-MPN/Dolphin-MPN/.git
     
     - name: Setup Packages
       run: |
@@ -171,11 +171,12 @@
     - name: Create Arch Package
       run: |
         cd build
-        # Extract the generated archive
-        tar -xzf DolphinMPN-archLinux.tar.gz
         # Create package directory
         mkdir -p dolphin-mpn-package
-        mv DolphinMPN-archLinux/* dolphin-mpn-package/
+
+        # Extract the generated archive
+        tar -xzf DolphinMPN-archLinux.tar.gz -C dolphin-mpn-package
+
         # Create .PKGINFO
         cat > dolphin-mpn-package/.PKGINFO << 'EOF'
         pkgname=dolphin-mpn
@@ -186,6 +187,7 @@
         license=GPL2
         depends=glibc sdl2 ffmpeg qt6-base qt6-svg libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
         EOF
+        
         # Create package
         tar -cJf DolphinMPN-archLinux.pkg.tar.xz -C dolphin-mpn-package .
         mkdir -p OUT && mv *.pkg.tar.xz OUT/
