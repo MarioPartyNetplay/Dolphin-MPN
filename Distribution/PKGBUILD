@@ -23,6 +23,7 @@ prepare() {
 build() {
   cd Dolphin-MPN
   cmake -B build \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DENABLE_QT=ON \
