@@ -214,7 +214,6 @@
     - name: Prepare macOS Build Artifact
       # yes we have to double zip to preserve perms.
       run: |
-        mv build/Binaries/Dolphin.app build/Binaries/Dolphin-MPN.app
         mkdir -p build/OUT
         mv build/Binaries/Dolphin-MPN.app build/OUT/
         cd build/OUT
