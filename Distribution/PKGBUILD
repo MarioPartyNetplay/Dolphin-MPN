@@ -12,7 +12,7 @@ makedepends=('cmake' 'git' 'ninja' 'qt6-tools')
 optdepends=('pulseaudio: for PulseAudio backend')
 provides=('dolphin-emu')
 conflicts=('dolphin-emu')
-source=("git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git#tag=v${pkgver}")
+source=("git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git#tag=${pkgver}")
 sha256sums=('SKIP')
 
 prepare() {
