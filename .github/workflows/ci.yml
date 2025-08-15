@@ -167,35 +167,14 @@
     - name: Fix Git Safe Directory
       run: |
         git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN
-   
-    - name: Build
-      run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && ninja -j$(nproc) && ninja package
-  
+
     - name: Create Arch Package
       run: |
-        cd build
-        # Create package directory
-        mkdir -p dolphin-mpn-package
+        cd Distribution
+        makepkg -f --noconfirm
+        mkdir -p ../build/OUT
+        mv *.pkg.tar.zst ../build/OUT/
 
-        # Extract the generated archive
-        tar -xzf DolphinMPN-archLinux.tar.gz -C dolphin-mpn-package
-
-        # Create .PKGINFO
-        cat > dolphin-mpn-package/.PKGINFO << 'EOF'
-        pkgname=dolphin-mpn
-        pkgver=5.0.0
-        pkgrel=1
-        arch=x86_64
-        pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
-        license=GPL2
-        depends=glibc sdl2 ffmpeg qt6-base qt6-svg libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs cubeb enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
-        EOF
-        
-        # Create package
-        tar -cJf DolphinMPN-archLinux.pkg.tar.xz -C dolphin-mpn-package .
-        mkdir -p OUT && mv *.pkg.tar.xz OUT/
-  
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:

@@ -31,6 +31,7 @@ build() {
     -DUSE_SYSTEM_ICONV=ON \
     -DUSE_SYSTEM_BZIP2=ON \
     -DUSE_SYSTEM_CURL=ON \
+    -DDISTRIBUTOR="Mario Party Netplay" \
     -G Ninja
   cmake --build build
 }
