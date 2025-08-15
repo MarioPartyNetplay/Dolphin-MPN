@@ -163,6 +163,10 @@
       run: |
         pacman -Syu --noconfirm
         pacman -S --noconfirm base-devel cmake ninja qt6-base qt6-svg ffmpeg sdl2 libx11 libxi libxrandr zlib libevdev alsa-lib bluez-libs enchant fmt hidapi libpulse lzo mbedtls miniupnpc pugixml sfml zstd
+        
+    - name: Fix Git Safe Directory
+      run: |
+        git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN
    
     - name: Build
       run: |
