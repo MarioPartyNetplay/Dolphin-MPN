@@ -110,3 +110,10 @@
 	path = Externals/cpp-ipc/cpp-ipc
 	url = https://github.com/mutouyun/cpp-ipc.git
 	shallow = true
+[submodule "Externals/libzmq/libzmq"]
+	path = Externals/libzmq/libzmq
+	url = https://github.com/zeromq/libzmq.git
+	shallow = true
+[submodule "Externals/Cross-Compatible-FileLock-Windows-and-Linux"]
+	path = Externals/Cross-Compatible-FileLock-Windows-and-Linux
+	url = https://github.com/KaganCanSit/Cross-Compatible-FileLock-Windows-and-Linux.git
