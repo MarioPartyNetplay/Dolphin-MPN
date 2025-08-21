@@ -177,10 +177,10 @@
   #      cd build
   #      # Create package directory
   #      mkdir -p dolphin-mpn-package
-#
+  #
   #      # Extract the generated archive
   #      tar -xzf DolphinMPN-archLinux.tar.gz -C dolphin-mpn-package
-#
+  #
   #      # Create .PKGINFO
   #      cat > dolphin-mpn-package/.PKGINFO << 'EOF'
   #      pkgname=dolphin-mpn
@@ -212,7 +212,6 @@
       run: |
         mkdir -p build && cd build && cmake .. -G Ninja -DCMAKE_CXX_FLAGS="-Xclang -fcolor-diagnostics" -DCMAKE_PREFIX_PATH=$(brew --prefix qt6) -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8
     - name: Prepare macOS Build Artifact
-      # yes we have to double zip to preserve perms.
       run: |
         mkdir -p build/OUT
         mv build/Binaries/Dolphin-MPN.app build/OUT/
