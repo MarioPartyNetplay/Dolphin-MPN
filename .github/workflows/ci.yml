@@ -468,6 +468,7 @@ jobs:
       - name: Build
         run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal
           /property:Configuration=Release /property:Platform=x64
+          
       - name: Trusted Signing
         uses: azure/trusted-signing-action@v0.5.1
         with:
