@@ -256,25 +256,12 @@ jobs:
 
           # Avoid it by not building Linguist, since we only need the tools that come with it
 
-          patch -u src/linguist/CMakeLists.txt <<EOF
+          # Linguist relies on a library in the Designer target, which takes 5-7 minutes to build on the CI
+          # Avoid it by not building Linguist, since we only need the tools that come with it
+          # Skip the patch and just disable Linguist via CMake flags
 
-          --- src/linguist/CMakeLists.txt
 
-          +++ src/linguist/CMakeLists.txt
-
-          @@ -14,7 +14,7 @@
-           add_subdirectory(lrelease-pro)
-           add_subdirectory(lupdate)
-           add_subdirectory(lupdate-pro)
-          -if(QT_FEATURE_process AND QT_FEATURE_pushbutton AND QT_FEATURE_toolbutton AND TARGET Qt::Widgets AND NOT no-png)
-
-          +if(QT_FEATURE_process AND QT_FEATURE_pushbutton AND QT_FEATURE_toolbutton AND TARGET Qt::Widgets AND TARGET Qt::PrintSupport AND NOT no-png)
-               add_subdirectory(linguist)
-          endif()
-
-          EOF
-
-          cmake -B build -DCMAKE_PREFIX_PATH="$INSTALLDIR" -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" -DCMAKE_BUILD_TYPE=Release -DFEATURE_assistant=OFF -DFEATURE_clang=OFF -DFEATURE_designer=OFF -DFEATURE_kmap2qmap=OFF -DFEATURE_pixeltool=OFF -DFEATURE_pkg_config=OFF -DFEATURE_qev=OFF -DFEATURE_qtattributionsscanner=OFF -DFEATURE_qtdiag=OFF -DFEATURE_qtplugininfo=OFF
+          cmake -B build -DCMAKE_PREFIX_PATH="$INSTALLDIR" -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" -DCMAKE_BUILD_TYPE=Release -DFEATURE_assistant=OFF -DFEATURE_clang=OFF -DFEATURE_designer=OFF -DFEATURE_kmap2qmap=OFF -DFEATURE_pixeltool=OFF -DFEATURE_pkg_config=OFF -DFEATURE_qev=OFF -DFEATURE_qtattributionsscanner=OFF -DFEATURE_qtdiag=OFF -DFEATURE_qtplugininfo=OFF -DFEATURE_linguist=OFF
 
           make -C build "-j$NPROCS"
 
@@ -453,6 +440,7 @@ jobs:
           name: DolphinMPN-macOS-universal
           path: DolphinMPN-macOS-universal.dmg
   build_windows_x86_64:
+    name: Windows x86_64
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
