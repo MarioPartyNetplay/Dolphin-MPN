@@ -37,6 +37,7 @@ add_library(rcheevos
 	rcheevos/src/rhash/aes.h
 	rcheevos/src/rhash/cdreader.c
 	rcheevos/src/rhash/hash.c
+	rcheevos/src/rhash/hash_disc.c
 	rcheevos/src/rhash/md5.c
 	rcheevos/src/rhash/md5.h
 	rcheevos/src/rhash/rc_hash_internal.h
