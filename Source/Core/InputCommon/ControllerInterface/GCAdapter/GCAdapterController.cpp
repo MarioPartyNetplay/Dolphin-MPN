@@ -62,10 +62,10 @@ struct AnalogInputProps
 };
 
 constexpr AnalogInputProps stick_inputs[] = {
-    {&GCPadStatus::stickX, "Main X"},
-    {&GCPadStatus::stickY, "Main Y"},
-    {&GCPadStatus::substickX, "C X"},
-    {&GCPadStatus::substickY, "C Y"},
+    {&GCPadStatus::stickX, "Control-Stick X"},
+    {&GCPadStatus::stickY, "Control-Stick Y"},
+    {&GCPadStatus::substickX, "C-Stick X"},
+    {&GCPadStatus::substickY, "C-Stick Y"},
 };
 
 constexpr AnalogInputProps trigger_inputs[] = {
