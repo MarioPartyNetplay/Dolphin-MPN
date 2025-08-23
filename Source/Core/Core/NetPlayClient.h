@@ -185,6 +185,9 @@ public:
   void OnConnectFailed(Common::TraversalConnectFailedReason reason) override;
   void OnTtlDetermined(u8 ttl) override {}
 
+  // Message processing methods - made public for Android client
+  void OnData(sf::Packet& packet);
+
   bool IsFirstInGamePad(int ingame_pad) const;
   int NumLocalPads() const;
   int NumLocalWiimotes() const;
@@ -308,7 +311,6 @@ private:
   void DisplayPlayersPing();
   u32 GetPlayersMaxPing() const;
 
-  void OnData(sf::Packet& packet);
   void OnPlayerJoin(sf::Packet& packet);
   void OnPlayerLeave(sf::Packet& packet);
   void OnChatMessage(sf::Packet& packet);

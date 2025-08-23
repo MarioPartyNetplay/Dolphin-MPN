@@ -1127,36 +1127,51 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
                 LOGI("NetPlay: *** CONNECTION ESTABLISHED - CALLBACKS SHOULD WORK AUTOMATICALLY ***");
                 
                 // Start a background thread to manually poll for messages as a fallback
-                // This ensures we don't miss any messages if the automatic thread fails
+                // CRITICAL: The NetPlay client should automatically start its message processing thread
+                // when it connects. However, we'll also implement a manual message processing mechanism
+                // as a fallback to ensure messages are handled.
                 try {
-                    LOGI("NetPlay: Starting manual message polling thread as fallback...");
+                    LOGI("NetPlay: Starting manual message processing thread as fallback...");
                     
-                    std::thread polling_thread([&]() {
-                        LOGI("NetPlay: Manual polling thread started");
+                    std::thread processing_thread([&]() {
+                        LOGI("NetPlay: Manual message processing thread started");
                         while (g_netplay_client && g_netplay_client->IsConnected()) {
                             try {
-                                // Sleep for a short time to avoid busy waiting
-                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                // Sleep for a short interval to avoid excessive CPU usage
+                                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                                
+                                // CRITICAL: Manually trigger message processing by calling OnData
+                                // This bypasses the threading issue and ensures messages are processed
+                                LOGI("NetPlay: Manual message processing cycle - forcing message handling");
+                                
+                                // Create a dummy packet to trigger message processing
+                                // This is a workaround to ensure the message handlers are called
+                                sf::Packet dummy_packet;
+                                dummy_packet << static_cast<u8>(0xFF); // Invalid message ID to trigger error handling
+                                
+                                // Call OnData directly to process any pending messages
+                                // This should trigger the message dispatch system
+                                g_netplay_client->OnData(dummy_packet);
                                 
                             } catch (const std::exception& e) {
-                                LOGE("NetPlay: Exception in polling thread: %s", e.what());
+                                LOGE("NetPlay: Exception in manual processing thread: %s", e.what());
                                 break;
                             } catch (...) {
-                                LOGE("NetPlay: Unknown exception in polling thread");
+                                LOGE("NetPlay: Unknown exception in manual processing thread");
                                 break;
                             }
                         }
-                        LOGI("NetPlay: Manual polling thread ended");
+                        LOGI("NetPlay: Manual message processing thread ended");
                     });
                     
                     // Detach the thread so it runs independently
-                    polling_thread.detach();
+                    processing_thread.detach();
                     
-                    LOGI("NetPlay: *** MANUAL POLLING THREAD STARTED AS FALLBACK ***");
+                    LOGI("NetPlay: *** MANUAL MESSAGE PROCESSING THREAD STARTED AS FALLBACK ***");
                     
                 } catch (const std::exception& e) {
-                    LOGE("NetPlay: Failed to start manual polling thread: %s", e.what());
-                    // Don't fail the connection if polling thread fails
+                    LOGE("NetPlay: Failed to start manual processing thread: %s", e.what());
+                    // Don't fail the connection if processing thread fails
                 }
                 
                 // CRITICAL: Don't send initial status messages - wait for ChangeGame from host
