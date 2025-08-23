@@ -3,37 +3,24 @@
 #include <jni.h>
 #include <string>
 
-// Data structures for NetPlay
-struct NetPlayPlayer {
-    int id;
-    std::string nickname;
-    bool isConnected;
-    
-    NetPlayPlayer(int player_id, const std::string& name, bool connected)
-        : id(player_id), nickname(name), isConnected(connected) {}
-};
-
-struct ChatMessage {
-    std::string nickname;
-    std::string username;
-    std::string message;
-    std::string timestamp;
-    
-    ChatMessage(const std::string& nick, const std::string& user, 
-                const std::string& msg, const std::string& time)
-        : nickname(nick), username(user), message(msg), timestamp(time) {}
-};
-
 // JNI helper functions
 JNIEnv* getJNIEnv();
 void callJavaCallback(const char* method_name, ...);
 
-// Multiplayer JNI lifecycle functions
+// Wrapper functions for JNI lifecycle
 void InitializeMultiplayerJNI(JavaVM* vm);
 void CleanupMultiplayerJNI();
 
 // NetPlay JNI functions
 extern "C" {
+    // Multiplayer JNI lifecycle functions
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_InitializeMultiplayerJNI(
+        JNIEnv* env, jobject thiz, jobject manager);
+    
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_CleanupMultiplayerJNI(
+        JNIEnv* env, jobject thiz);
     JNIEXPORT jboolean JNICALL
     Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
         JNIEnv* env, jobject thiz, jstring address, jint port);
@@ -93,5 +80,62 @@ extern "C" {
     
     JNIEXPORT jboolean JNICALL
     Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayCheckAndStartGame(
+        JNIEnv* env, jobject thiz);
+        
+    // Additional methods for full NetPlay replication
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_sendGameStatusConfirmation(
+        JNIEnv* env, jobject thiz, jboolean sameGame);
+        
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setNetPlayManagerReference(
+        JNIEnv* env, jobject thiz);
+        
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerName(
+        JNIEnv* env, jobject thiz, jint player_id);
+        
+    JNIEXPORT jboolean JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsHosting(
+        JNIEnv* env, jobject thiz);
+        
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameName(
+        JNIEnv* env, jobject thiz);
+        
+    JNIEXPORT jint JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPort(
+        JNIEnv* env, jobject thiz);
+        
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayBanPlayer(
+        JNIEnv* env, jobject thiz, jint player_id);
+
+    // NetPlay message processing
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayProcessMessages(
+        JNIEnv* env, jobject thiz);
+        
+    // Player name management
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setPlayerName(
+        JNIEnv* env, jobject thiz, jstring playerName);
+        
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getPlayerName(
+        JNIEnv* env, jobject thiz);
+        
+    // ROM folder management
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setRomFolder(
+        JNIEnv* env, jobject thiz, jstring folderPath);
+        
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getRomFolder(
+        JNIEnv* env, jobject thiz);
+        
+    // Android device name
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getAndroidDeviceName(
         JNIEnv* env, jobject thiz);
 }

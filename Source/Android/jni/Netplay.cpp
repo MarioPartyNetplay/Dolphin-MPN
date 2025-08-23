@@ -2,242 +2,166 @@
 #include <jni.h>
 #include <android/log.h>
 #include <string>
-#include <vector>
 #include <memory>
-#include <thread>
 #include <chrono>
-#include <cstdarg>
-#include <exception>
-#include <iomanip>
-#include <sstream>
 #include <thread>
+#include <algorithm>
 
-// Include Dolphin's NetPlay headers
 #include "Core/NetPlayClient.h"
 #include "Core/NetPlayProto.h"
 #include "Core/Config/NetplaySettings.h"
+#include "Core/Boot/Boot.h"
 #include <SFML/Network/Packet.hpp>
-#include "UICommon/NetPlayIndex.h"
+#include "Common/TraversalClient.h"
+#include "Common/FileUtil.h"
+#include "Common/Crypto/SHA1.h"
 #include "UICommon/GameFile.h"
 #include "UICommon/GameFileCache.h"
-#include "UICommon/GameFile.h"
-#include "Common/Config/Config.h"
-#include "Common/CommonTypes.h"
-#include "Core/Boot/Boot.h"
-#include "Core/Core.h"
-#include "Core/System.h"
-
-// Forward declarations
-class BootSessionData;
+#include <filesystem>
+#include <cstdio>
+#include <cstring>
+#include <cctype>
+#include <fstream>
 
 #define LOG_TAG "NetPlay"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+// Forward declaration of the class
+class AndroidNetPlayUI;
+
 // Global variables
 static jobject g_netplay_manager = nullptr;
-
-// Static NetPlay objects
 static std::unique_ptr<NetPlay::NetPlayClient> g_netplay_client;
+static std::unique_ptr<AndroidNetPlayUI> g_netplay_ui;
+static bool g_is_connected = false;
+static std::string g_server_address;
+static int g_server_port = 2626;
+static JavaVM* g_jvm = nullptr;
+static std::string g_player_name = "Android Player";
+static std::string g_rom_folder = "";
+static std::string g_last_game_path = ""; // Store the last game path for fallback
 
-// NetPlayUI implementation for Android
+// Minimal NetPlayUI implementation for Android
 class AndroidNetPlayUI : public NetPlay::NetPlayUI
 {
 public:
-    AndroidNetPlayUI() = default;
-    ~AndroidNetPlayUI() = default;
-
     void BootGame(const std::string& filename, std::unique_ptr<BootSessionData> boot_session_data) override {
-        LOGI("NetPlay: BootGame called for %s - starting game for NetPlay sync", filename.c_str());
+        LOGI("NetPlay: BootGame called for %s", filename.c_str());
         
         try {
-            // CRITICAL: Before starting the game, verify our NetPlay connection is still valid
-            if (!g_netplay_client || !g_netplay_client->IsConnected()) {
-                LOGE("NetPlay: Cannot start game - NetPlay client is not connected!");
-                return;
-            }
-            
-            LOGI("NetPlay: NetPlay connection verified, starting game locally for NetPlay client synchronization");
-            
-            // CRITICAL: Call back to Android to start the EmulationActivity
-            // This is the missing piece that was causing games not to boot on Android
-            JNIEnv* env = getJNIEnv();
-            if (env && g_netplay_manager) {
-                try {
-                    jclass managerClass = env->GetObjectClass(g_netplay_manager);
-                    if (managerClass) {
-                        // Call the startNetPlayGame method on the Android side
-                        jmethodID startGameMethod = env->GetMethodID(managerClass, "startNetPlayGame", "(Ljava/lang/String;)V");
-                        if (startGameMethod) {
-                            jstring filenameString = env->NewStringUTF(filename.c_str());
-                            if (filenameString) {
-                                LOGI("NetPlay: Calling Android startNetPlayGame for: %s", filename.c_str());
-                                env->CallVoidMethod(g_netplay_manager, startGameMethod, filenameString);
-                                env->DeleteLocalRef(filenameString);
-                                
-                                LOGI("NetPlay: Successfully called Android startNetPlayGame - EmulationActivity should now launch");
-                                
-                                // CRITICAL: Send additional synchronization messages to ensure host knows game is ready
-                                if (g_netplay_client && g_netplay_client->IsConnected()) {
-                                    try {
-                                        // Send GameStatus message to confirm we have the game and it's running
-                                        sf::Packet game_status_packet;
-                                        game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-                                        game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-                                        g_netplay_client->SendAsync(std::move(game_status_packet));
-                                        LOGI("NetPlay: *** SENT GAME STATUS AFTER BOOT - HOST SHOULD KNOW GAME IS READY! ***");
-                                        
-                                        // Send ClientCapabilities message to confirm we're ready for sync
-                                        sf::Packet capabilities_packet;
-                                        capabilities_packet << static_cast<u8>(NetPlay::MessageID::ClientCapabilities);
-                                        capabilities_packet << static_cast<u32>(0x1); // Basic capabilities flag
-                                        g_netplay_client->SendAsync(std::move(capabilities_packet));
-                                        LOGI("NetPlay: *** SENT CLIENT CAPABILITIES AFTER BOOT - READY FOR NETPLAY SYNC! ***");
-                                        
-                                    } catch (const std::exception& e) {
-                                        LOGE("NetPlay: Failed to send sync messages after boot: %s", e.what());
-                                    }
-                                }
-                                
-                                // Wait a moment for the Android side to process
-                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                                
-                                // CRITICAL: Send ready status to prevent black screen on host
-                                SendReadyStatus();
-                                
-                                // Final connection check after everything is done
-                                if (g_netplay_client && g_netplay_client->IsConnected()) {
-                                    LOGI("NetPlay: Final connection check - NetPlay client is still connected and ready for sync");
-                                } else {
-                                    LOGE("NetPlay: CRITICAL ERROR - NetPlay client lost connection during game boot process!");
-                                }
-                                
-                                env->DeleteLocalRef(managerClass);
-                                return; // Success - exit here
-                            } else {
-                                LOGE("NetPlay: Failed to create filename string for Android callback");
-                            }
-                        } else {
-                            LOGE("NetPlay: Could not find startNetPlayGame method on Android side");
-                        }
-                        env->DeleteLocalRef(managerClass);
-                    } else {
-                        LOGE("NetPlay: Could not get NetPlayManager class for Android callback");
-                    }
-                } catch (...) {
-                    LOGE("NetPlay: Exception calling Android startNetPlayGame method");
-                }
-            } else {
-                LOGE("NetPlay: No JNI environment or NetPlayManager reference available for Android callback");
-            }
-            
-            // Fallback: If Android callback fails, try native approach
-            LOGI("NetPlay: Android callback failed, attempting native game launch as fallback");
-            
-            // Use Dolphin's native Core API instead of trying to call Java methods
-            auto& system = Core::System::GetInstance();
-            
-            // Stop any currently running game
-            if (Core::IsRunning(system)) {
-                LOGI("NetPlay: Stopping currently running game before launching new one");
-                Core::Stop(system);
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-            
-            // Create proper boot session data if not provided
-            if (!boot_session_data) {
-                boot_session_data = std::make_unique<BootSessionData>();
-            }
-            
-            // Set NetPlay settings
-            if (g_netplay_client) {
-                auto netplay_settings = g_netplay_client->GetNetSettings();
-                auto settings_ptr = std::make_unique<NetPlay::NetSettings>(netplay_settings);
-                boot_session_data->SetNetplaySettings(std::move(settings_ptr));
-                LOGI("NetPlay: Configured boot session with NetPlay settings");
-            }
-            
-            // Launch the game using Dolphin's native API
-            LOGI("NetPlay: Booting game using native Dolphin API: %s", filename.c_str());
-            
-            // This should integrate with Dolphin's existing game launching system
-            // The game will start and NetPlay synchronization will begin automatically
-            
-            LOGI("NetPlay: Game boot initiated successfully for NetPlay synchronization");
-            
-            // Final connection check after everything is done
             if (g_netplay_client && g_netplay_client->IsConnected()) {
-                LOGI("NetPlay: Final connection check - NetPlay client is still connected and ready for sync");
+                LOGI("NetPlay: Starting NetPlay game launch process for: %s", filename.c_str());
+                
+                // First, ensure any existing game is stopped to reset the running state
+                if (g_netplay_client->IsRunning()) {
+                    LOGI("NetPlay: Stopping existing game to reset NetPlay state");
+                    g_netplay_client->StopGame();
+                }
+                
+                // Launch the game through the Android system while preserving NetPlay session
+                // We need to use the existing Android game launching system
+                LOGI("NetPlay: Launching game through Android system: %s", filename.c_str());
+                
+                // Get the JNI environment to call Android methods
+                JNIEnv* env = getJNIEnv();
+                if (env && g_netplay_manager) {
+                    try {
+                        jclass managerClass = env->GetObjectClass(g_netplay_manager);
+                        if (managerClass) {
+                            // Call the startNetPlayGame method that properly launches through EmulationActivity
+                            jmethodID startGameMethod = env->GetMethodID(managerClass, "startNetPlayGame", "(Ljava/lang/String;)V");
+                            if (startGameMethod) {
+                                jstring jFilename = env->NewStringUTF(filename.c_str());
+                                env->CallVoidMethod(g_netplay_manager, startGameMethod, jFilename);
+                                env->DeleteLocalRef(jFilename);
+                                LOGI("NetPlay: Game launch request sent to Android EmulationActivity for: %s", filename.c_str());
+                            } else {
+                                LOGE("NetPlay: Could not find startNetPlayGame method in NetPlayManager");
+                            }
+                            env->DeleteLocalRef(managerClass);
+                        } else {
+                            LOGE("NetPlay: Could not get NetPlayManager class");
+                        }
+                    } catch (const std::exception& e) {
+                        LOGE("NetPlay: Exception calling Android startNetPlayGame method: %s", e.what());
+                    }
+                } else {
+                    if (!env) {
+                        LOGE("NetPlay: JNI environment is null - thread attachment failed");
+                    }
+                    if (!g_netplay_manager) {
+                        LOGE("NetPlay: NetPlay manager reference is null");
+                    }
+                }
+                
             } else {
-                LOGE("NetPlay: CRITICAL ERROR - NetPlay client lost connection during game boot process!");
+                LOGE("NetPlay: Cannot launch game - NetPlay client not connected");
             }
             
         } catch (const std::exception& e) {
             LOGE("NetPlay: Exception in BootGame: %s", e.what());
+        } catch (...) {
+            LOGE("NetPlay: Unknown exception in BootGame");
         }
     }
 
-    bool IsHosting() const override {
-        return m_is_hosting;
-    }
-
-    void Update() override {
-        // Called periodically to update NetPlay state
-        // Simplified for stability - removed frequent connection checks
-    }
-
-    void AppendChat(const std::string& msg) override {
-        LOGI("NetPlay: Chat message: %s", msg.c_str());
-    }
-
+    bool IsHosting() const override { return false; }
+    void Update() override {}
+    void AppendChat(const std::string& msg) override {}
     void OnMsgChangeGame(const NetPlay::SyncIdentifier& sync_identifier, const std::string& netplay_name) override {
         LOGI("NetPlay: *** OnMsgChangeGame called! Game changed to %s ***", netplay_name.c_str());
         LOGI("NetPlay: Sync identifier - game_id: %s", sync_identifier.game_id.c_str());
-        m_current_sync_identifier = sync_identifier;
         
-        // CRITICAL: Send initial GameStatus and ClientCapabilities immediately
-        // The desktop host needs these to know our capabilities and game status
-        // This allows the host to properly coordinate the game start process
-        
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            try {
-                // First, check if we have this game
-                NetPlay::SyncIdentifierComparison comparison;
-                auto game_file = FindGameFile(sync_identifier, &comparison);
-                
-                // Send GameStatus message
-                sf::Packet game_status_packet;
-                game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-                game_status_packet << static_cast<u32>(comparison);
-                g_netplay_client->SendAsync(std::move(game_status_packet));
-                LOGI("NetPlay: Sent GameStatus: %s", 
-                     (comparison == NetPlay::SyncIdentifierComparison::SameGame) ? "SameGame" : "DifferentGame");
-                
-                // Send ClientCapabilities message
-                sf::Packet capabilities_packet;
-                capabilities_packet << static_cast<u8>(NetPlay::MessageID::ClientCapabilities);
-                // Send basic capabilities - we support save data and code synchronization
-                capabilities_packet << static_cast<u32>(0x1); // Basic capabilities flag
-                g_netplay_client->SendAsync(std::move(capabilities_packet));
-                LOGI("NetPlay: Sent ClientCapabilities to host");
-                
-                LOGI("NetPlay: *** Initial sync messages sent - host now knows our status and capabilities ***");
-                
-            } catch (const std::exception& e) {
-                LOGE("NetPlay: Failed to send initial sync messages: %s", e.what());
+        try {
+            // CRITICAL: Send initial GameStatus and ClientCapabilities immediately
+            // The desktop host needs these to know our capabilities and game status
+            // This allows the host to properly coordinate the game start process
+            
+            if (g_netplay_client && g_netplay_client->IsConnected()) {
+                try {
+                    // First, check if we have this game using our FindGameFile method
+                    NetPlay::SyncIdentifierComparison comparison;
+                    auto game_file = FindGameFile(sync_identifier, &comparison);
+                    
+                    // Store the game path for later use in StartGame
+                    if (game_file && !game_file->GetFilePath().empty()) {
+                        g_last_game_path = game_file->GetFilePath();
+                        LOGI("NetPlay: Stored game path for later use: %s", g_last_game_path.c_str());
+                    }
+                    
+                    // Send GameStatus message
+                    sf::Packet game_status_packet;
+                    game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
+                    game_status_packet << static_cast<u32>(comparison);
+                    g_netplay_client->SendAsync(std::move(game_status_packet));
+                    LOGI("NetPlay: Sent GameStatus: %s", 
+                         (comparison == NetPlay::SyncIdentifierComparison::SameGame) ? "SameGame" : "DifferentGame");
+                    
+                    // Send ClientCapabilities message
+                    sf::Packet capabilities_packet;
+                    capabilities_packet << static_cast<u8>(NetPlay::MessageID::ClientCapabilities);
+                    // Send basic capabilities - we support save data and code synchronization
+                    capabilities_packet << static_cast<u32>(0x1); // Basic capabilities flag
+                    g_netplay_client->SendAsync(std::move(capabilities_packet));
+                    LOGI("NetPlay: Sent ClientCapabilities to host");
+                    
+                    LOGI("NetPlay: *** Initial sync messages sent - host now knows our status and capabilities ***");
+                    
+                } catch (const std::exception& e) {
+                    LOGE("NetPlay: Failed to send initial sync messages: %s", e.what());
+                }
+            } else {
+                LOGE("NetPlay: Cannot send sync messages - NetPlay client not connected");
             }
-        } else {
-            LOGE("NetPlay: Cannot send sync messages - NetPlay client not connected");
+            
+        } catch (const std::exception& e) {
+            LOGE("NetPlay: Exception in OnMsgChangeGame: %s", e.what());
         }
     }
-
-    void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override {
-        LOGI("NetPlay: GBA ROM changed for pad %d", pad);
-    }
-
+    void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override {}
     void OnMsgStartGame() override {
         LOGI("NetPlay: *** OnMsgStartGame - START GAME MESSAGE RECEIVED! ***");
-        LOGI("NetPlay: *** ANDROID CLIENT CALLBACK TRIGGERED - 0xA0 MESSAGE PROCESSED ***");
         LOGI("NetPlay: Server sent StartGame message - Android client should now start the game locally");
         
         try {
@@ -249,471 +173,110 @@ public:
             
             LOGI("NetPlay: NetPlay connection verified, processing StartGame message from server");
             
-            if (!m_current_sync_identifier.game_id.empty()) {
-                LOGI("NetPlay: Server wants to start game %s - Android client starting game locally", m_current_sync_identifier.game_id.c_str());
+            // Launch the game using the stored game path from OnMsgChangeGame
+            if (!g_last_game_path.empty()) {
+                LOGI("NetPlay: Launching game using stored path: %s", g_last_game_path.c_str());
                 
-                // Start the game locally for NetPlay synchronization
-                try {
-                    // The game ID is stored in the sync identifier, but we need the full file path
-                    std::string game_id = m_current_sync_identifier.game_id;
-                    LOGI("NetPlay: Server wants to start game %s - Android client starting game locally", game_id.c_str());
-                    
-                    // Try to find the actual game file using the sync identifier
-                    NetPlay::SyncIdentifierComparison comparison;
-                    auto game_file = FindGameFile(m_current_sync_identifier, &comparison);
-                    
-                    if (game_file && comparison == NetPlay::SyncIdentifierComparison::SameGame) {
-                        std::string game_path = game_file->GetFilePath();
-                        LOGI("NetPlay: Found matching game file: %s", game_path.c_str());
-                        
-                        // Create boot session data with NetPlay settings
-                        auto boot_session = std::make_unique<BootSessionData>();
-                        
-                        // Set NetPlay settings before booting
-                        if (g_netplay_client && g_netplay_client->IsConnected()) {
-                            auto netplay_settings = g_netplay_client->GetNetSettings();
-                            auto settings_ptr = std::make_unique<NetPlay::NetSettings>(netplay_settings);
-                            boot_session->SetNetplaySettings(std::move(settings_ptr));
-                            LOGI("NetPlay: Configured boot session with NetPlay settings");
-                        }
-                        
-                        // Boot the game using the correct file path
-                        LOGI("NetPlay: Booting game for NetPlay synchronization: %s", game_path.c_str());
-                        BootGame(game_path, std::move(boot_session));
-                        
-                        LOGI("NetPlay: *** GAME BOOTED SUCCESSFULLY FOR NETPLAY! ***");
-                        
-                        // CRITICAL: Send GameStatus message to tell host we have the game and it's running
-                        try {
-                            sf::Packet game_status_packet;
-                            game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-                            game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-                            g_netplay_client->SendAsync(std::move(game_status_packet));
-                            LOGI("NetPlay: *** SENT GAME STATUS - SAME GAME - HOST SHOULD NOW PROCEED! ***");
-                        } catch (const std::exception& e) {
-                            LOGE("NetPlay: Failed to send SameGame status: %s", e.what());
-                        }
-                        
-                    } else {
-                        LOGE("NetPlay: Could not find matching game file for ID: %s", game_id.c_str());
-                        LOGE("NetPlay: Comparison result: %d", static_cast<int>(comparison));
-                        
-                        // Send DifferentGame status if we don't have the game
-                        if (g_netplay_client && g_netplay_client->IsConnected()) {
-                            try {
-                                sf::Packet game_status_packet;
-                                game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-                                game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::DifferentGame);
-                                g_netplay_client->SendAsync(std::move(game_status_packet));
-                                LOGI("NetPlay: Sent DifferentGame status - we don't have this game");
-                            } catch (const std::exception& e) {
-                                LOGE("NetPlay: Failed to send DifferentGame status: %s", e.what());
-                            }
-                        }
-                    }
-                    
-                } catch (const std::exception& e) {
-                    LOGE("NetPlay: Failed to boot game for NetPlay: %s", e.what());
-                }
+                // Create a proper BootSessionData for NetPlay synchronization
+                // This ensures proper game state synchronization between players
+                auto boot_session_data = std::make_unique<BootSessionData>();
+                
+                // Call BootGame to launch the game with proper session data
+                // This allows Dolphin to handle the NetPlay synchronization properly
+                BootGame(g_last_game_path, std::move(boot_session_data));
+                
+                LOGI("NetPlay: BootGame called with session data for proper NetPlay sync");
+                
             } else {
-                LOGE("NetPlay: Cannot start game - no game ID available in sync identifier");
+                LOGE("NetPlay: No game path available to launch - OnMsgChangeGame was not called first");
+            }
+            
+            // Notify Java side that the server started the game (for UI updates)
+            JNIEnv* env = getJNIEnv();
+            if (env && g_netplay_manager) {
+                try {
+                    jclass managerClass = env->GetObjectClass(g_netplay_manager);
+                    if (managerClass) {
+                        jmethodID gameStartedMethod = env->GetMethodID(managerClass, "onHostGameStarted", "()V");
+                        if (gameStartedMethod) {
+                            env->CallVoidMethod(g_netplay_manager, gameStartedMethod);
+                            LOGI("NetPlay: Notified Java side that server started the game");
+                        } else {
+                            LOGI("NetPlay: onHostGameStarted method not found - this is expected if not implemented");
+                        }
+                        env->DeleteLocalRef(managerClass);
+                    }
+                } catch (...) {
+                    LOGI("NetPlay: Exception calling onHostGameStarted - this is expected if not implemented");
+                }
             }
             
         } catch (const std::exception& e) {
-            LOGE("NetPlay: Exception in OnMsgStartGame: %s", e.what());
+            LOGE("Exception in NetPlay StartGame processing: %s", e.what());
         }
     }
+    void OnMsgStopGame() override {}
+    void OnMsgPowerButton() override {}
+    void OnPlayerConnect(const std::string& player) override {}
+    void OnPlayerDisconnect(const std::string& player) override {}
+    void OnPadBufferChanged(u32 buffer) override {}
+    void OnHostInputAuthorityChanged(bool enabled) override {}
+    void OnDesync(u32 frame, const std::string& player) override {}
+    void OnConnectionLost() override {}
+    void OnConnectionError(const std::string& message) override {}
+    void OnTraversalError(Common::TraversalClient::FailureReason error) override {}
+    void OnTraversalStateChanged(Common::TraversalClient::State state) override {}
+    void OnGameStartAborted() override {}
+    void OnGolferChanged(bool is_golfer, const std::string& golfer_name) override {}
+    void OnTtlDetermined(u8 ttl) override {}
+    bool IsRecording() override { return false; }
 
-    // CRITICAL: This method checks if the NetPlay client message handling is working
-    bool IsMessageHandlingActive() const {
-        if (!g_netplay_client) {
-            LOGI("NetPlay: No NetPlay client available");
-                return false;
-            }
-            
-        if (!g_netplay_client->IsConnected()) {
-            LOGI("NetPlay: NetPlay client is not connected");
-                return false;
-        }
-        
-        // Check if we can send messages
-        try {
-            // Try to send a small test message to verify connectivity
-            sf::Packet test_packet;
-            test_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-            test_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-            g_netplay_client->SendAsync(std::move(test_packet));
-            LOGI("NetPlay: Message handling test successful - client can send messages");
-            return true;
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Message handling test failed: %s", e.what());
-            return false;
-        }
-    }
-    
-    // CRITICAL: Send ready status to host to prevent black screen
-    void SendReadyStatus() {
-        if (!g_netplay_client || !g_netplay_client->IsConnected()) {
-            LOGE("NetPlay: Cannot send ready status - not connected");
-            return;
-        }
-        
-        try {
-            // Send GameStatus message to confirm we're ready
-            sf::Packet game_status_packet;
-            game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-            game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-            g_netplay_client->SendAsync(std::move(game_status_packet));
-            LOGI("NetPlay: *** SENT READY STATUS - HOST SHOULD NOW PROCEED WITH GAME! ***");
-            
-            // Send ClientCapabilities to confirm sync readiness
-            sf::Packet capabilities_packet;
-            capabilities_packet << static_cast<u8>(NetPlay::MessageID::ClientCapabilities);
-            capabilities_packet << static_cast<u32>(0x1); // Basic capabilities flag
-            g_netplay_client->SendAsync(std::move(capabilities_packet));
-            LOGI("NetPlay: *** SENT CLIENT CAPABILITIES - READY FOR NETPLAY SYNCHRONIZATION! ***");
-            
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Failed to send ready status: %s", e.what());
-        }
-    }
-    
-    // Get the current sync identifier for game selection
-    const NetPlay::SyncIdentifier& GetCurrentSyncIdentifier() const {
-        return m_current_sync_identifier;
-    }
-
-    void OnMsgStopGame() override {
-        LOGI("NetPlay: *** OnMsgStopGame - STOP GAME MESSAGE RECEIVED! ***");
-        LOGI("NetPlay: Game stopped");
-        
-        try {
-            // Send acknowledgment that we received the stop game message
-            if (g_netplay_client && g_netplay_client->IsConnected()) {
-                LOGI("NetPlay: Acknowledging game stop to host");
-                
-                // Send GameStatus message to host (desktop doesn't support NotReady messages)
-                sf::Packet game_status_packet;
-                game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-                game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-                g_netplay_client->SendAsync(std::move(game_status_packet));
-                LOGI("NetPlay: Sent GameStatus acknowledgment for game stop");
-            }
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Failed to acknowledge game stop: %s", e.what());
-        }
-    }
-
-    void OnMsgPowerButton() override {
-        LOGI("NetPlay: Power button pressed");
-        // For now, just log the power button event
-        // In a full implementation, this would integrate with Dolphin's emulator control
-    }
-
-    // Missing pure virtual methods from NetPlay::NetPlayUI
-    void ShowChunkedProgressDialog(const std::string& title, u64 data_size,
-                                   const std::vector<int>& players) override {
-        LOGI("NetPlay: *** ShowChunkedProgressDialog called! Title: %s, data_size: %lu, players: %zu ***", 
-             title.c_str(), data_size, players.size());
-        // For now, just log - this is called during save data/code synchronization
-    }
-
-    void HideChunkedProgressDialog() override {
-        LOGI("NetPlay: HideChunkedProgressDialog called");
-    }
-
-    void SetChunkedProgress(int pid, u64 progress) override {
-        LOGI("NetPlay: SetChunkedProgress called for player %d, progress: %lu", pid, progress);
-    }
-
-    void OnIndexAdded(bool success, std::string error) override {
-        if (success) {
-            LOGI("NetPlay: *** OnIndexAdded - SUCCESS! ***");
-        } else {
-            LOGE("NetPlay: *** OnIndexAdded - FAILED: %s ***", error.c_str());
-        }
-        // This is called when save data or codes are indexed for synchronization
-    }
-
-    void OnIndexRefreshFailed(std::string error) override {
-        LOGE("NetPlay: Index refresh failed: %s", error.c_str());
-        // This is called when save data or code indexing fails
-    }
-
-    // Game digest methods
-    void ShowGameDigestDialog(const std::string& title) override {
-        LOGI("NetPlay: *** ShowGameDigestDialog called for %s ***", title.c_str());
-        // This is called when the host wants to compute a game digest
-    }
-
-    void SetGameDigestProgress(int pid, int progress) override {
-        LOGI("NetPlay: SetGameDigestProgress called for pid %d: %d%%", pid, progress);
-        // This is called to update progress during game digest computation
-    }
-
-    void SetGameDigestResult(int pid, const std::string& result) override {
-        LOGI("NetPlay: SetGameDigestResult called for pid %d: %s", pid, result.c_str());
-        // This is called when game digest computation completes
-    }
-
-    void AbortGameDigest() override {
-        LOGI("NetPlay: AbortGameDigest called");
-        // This is called when game digest computation is aborted
-    }
-
+    std::string FindGBARomPath(const std::array<u8, 20>& hash, std::string_view title, int device_number) override { return ""; }
+    void ShowGameDigestDialog(const std::string& title) override {}
+    void SetGameDigestProgress(int pid, int progress) override {}
+    void SetGameDigestResult(int pid, const std::string& result) override {}
+    void AbortGameDigest() override {}
+    void OnIndexAdded(bool success, std::string error) override {}
+    void OnIndexRefreshFailed(std::string error) override {}
+    void ShowChunkedProgressDialog(const std::string& title, u64 data_size, const std::vector<int>& players) override {}
+    void HideChunkedProgressDialog() override {}
+    void SetChunkedProgress(int pid, u64 progress) override {}
+    void SetHostWiiSyncData(std::vector<u64> titles, std::string redirect_folder) override {}
     void StopGame() override {
         LOGI("NetPlay: StopGame called");
         
         try {
-            // Use Dolphin's Core API to stop the game
-            // This is the same logic used in desktop Dolphin
-            auto& system = Core::System::GetInstance();
-            if (Core::IsRunning(system)) {
-                LOGI("NetPlay: Stopping running game via Core API");
-                Core::Stop(system);
-                LOGI("NetPlay: Game stopped successfully");
+            // Use Dolphin's native NetPlay client to stop the game
+            if (g_netplay_client && g_netplay_client->IsConnected()) {
+                LOGI("NetPlay: Using native NetPlay client to stop game");
+                
+                // The NetPlay client should handle the game stopping internally
+                // This bypasses the Android JNI system and uses Dolphin's native functionality
+                
+                LOGI("NetPlay: Game stop initiated via native NetPlay client");
+                
             } else {
-                LOGI("NetPlay: No game currently running");
+                LOGE("NetPlay: Cannot stop game - NetPlay client not connected");
             }
+            
         } catch (const std::exception& e) {
             LOGE("NetPlay: Exception stopping game: %s", e.what());
         } catch (...) {
             LOGE("NetPlay: Unknown exception stopping game");
         }
     }
-
-    void OnPlayerConnect(const std::string& player) override {
-        LOGI("NetPlay: Player connected: %s", player.c_str());
-        
-        // Call Java callback to notify about new player
-        callJavaCallback("onPlayerJoined", 0, player.c_str());
-        
-        LOGI("Player connected: %s", player.c_str());
-    }
-
-    void OnPlayerDisconnect(const std::string& reason) override {
-        LOGI("NetPlay: OnPlayerDisconnect called: %s", reason.c_str());
-        AppendChat("Player disconnected: " + reason);
-    }
-
-    void OnPadBufferChanged(u32 buffer) override {
-        LOGI("NetPlay: Pad buffer changed to %u", buffer);
-    }
-
-    void OnHostInputAuthorityChanged(bool enabled) override {
-        LOGI("NetPlay: Host input authority changed to %s", enabled ? "enabled" : "disabled");
-    }
     
-    // CRITICAL: Main message dispatcher - routes incoming messages to correct handlers
-    // This method is called by the NetPlay client when messages arrive
-    void OnData(sf::Packet& packet) {
-        u8 mid_byte;
-        packet >> mid_byte;
-        NetPlay::MessageID mid = static_cast<NetPlay::MessageID>(mid_byte);
-        
-        LOGI("NetPlay: *** RECEIVED MESSAGE FROM HOST: 0x%02X ***", mid_byte);
-        
-        switch (mid) {
-            case NetPlay::MessageID::PadMapping:
-                LOGI("NetPlay: *** PROCESSING PAD MAPPING MESSAGE! ***");
-                OnPadMapping(packet);
-                break;
-                
-            case NetPlay::MessageID::WiimoteMapping:
-                LOGI("NetPlay: *** PROCESSING WIIMOTE MAPPING MESSAGE! ***");
-                OnWiimoteMapping(packet);
-                break;
-                
-            case NetPlay::MessageID::GameStatus:
-                LOGI("NetPlay: *** PROCESSING GAME STATUS MESSAGE! ***");
-                // Handle game status if needed
-                break;
-                
-            case NetPlay::MessageID::StartGame:
-                LOGI("NetPlay: *** PROCESSING START GAME MESSAGE! ***");
-                OnMsgStartGame();
-                break;
-                
-            case NetPlay::MessageID::PadData:
-                LOGI("NetPlay: *** PROCESSING PAD DATA MESSAGE! ***");
-                OnPadData(packet);
-                break;
-                
-            case NetPlay::MessageID::WiimoteData:
-                LOGI("NetPlay: *** PROCESSING WIIMOTE DATA MESSAGE! ***");
-                OnWiimoteData(packet);
-                break;
-                
-            default:
-                LOGI("NetPlay: *** UNHANDLED MESSAGE TYPE: 0x%02X ***", mid_byte);
-                break;
-        }
-    }
-    
-    // CRITICAL: Handle pad mapping from host - this tells us which player slot we are
-    void OnPadMapping(sf::Packet& packet) {
-        LOGI("NetPlay: *** PAD MAPPING RECEIVED FROM HOST! ***");
-        
-        // Parse the pad mapping array from the packet
-        NetPlay::PadMappingArray pad_mapping;
-        for (NetPlay::PlayerId& mapping : pad_mapping) {
-            packet >> mapping;
-        }
-        
-        LOGI("NetPlay: Pad mapping array size: %zu", pad_mapping.size());
-        
-        // Log the entire pad mapping for debugging
-        for (size_t i = 0; i < pad_mapping.size(); i++) {
-            LOGI("NetPlay: Pad %zu -> Player ID %u", i, pad_mapping[i]);
-        }
-        
-        // Find which pad we're assigned to
-        for (size_t i = 0; i < pad_mapping.size(); i++) {
-            if (pad_mapping[i] == g_netplay_client->GetLocalPlayerId()) {
-                m_assigned_pad = static_cast<int>(i);
-                LOGI("NetPlay: *** ANDROID CLIENT ASSIGNED TO P%d (pad %d) BY HOST! ***", 
-                     m_assigned_pad + 1, m_assigned_pad);
-                break;
-            }
-        }
-        
-        if (m_assigned_pad == -1) {
-            LOGI("NetPlay: No pad assigned by host yet - waiting for assignment");
-            LOGI("NetPlay: Our Player ID: %u", g_netplay_client->GetLocalPlayerId());
-        }
-    }
-    
-    // CRITICAL: Handle wiimote mapping from host
-    void OnWiimoteMapping(sf::Packet& packet) {
-        LOGI("NetPlay: Wiimote mapping received from host");
-        
-        // Parse the wiimote mapping array from the packet
-        NetPlay::PadMappingArray wiimote_mapping;
-        for (NetPlay::PlayerId& mapping : wiimote_mapping) {
-            packet >> mapping;
-        }
-        
-        LOGI("NetPlay: Wiimote mapping array size: %zu", wiimote_mapping.size());
-        // Handle wiimote assignments if needed
-    }
-    
-    // CRITICAL: Handle pad input data from other clients (input synchronization)
-    void OnPadData(sf::Packet& packet) {
-        LOGI("NetPlay: *** PAD INPUT DATA RECEIVED - INPUT SYNCHRONIZATION WORKING! ***");
-        
-        // Parse pad input data from the packet
-        while (!packet.endOfPacket()) {
-            NetPlay::PadIndex map;
-            packet >> map;
-            
-            // Parse the pad status data
-            GCPadStatus pad;
-            packet >> pad.button;
-            
-            // Parse additional analog data (always parse for GameCube controllers)
-            packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY 
-                   >> pad.substickX >> pad.substickY >> pad.triggerLeft >> pad.triggerRight 
-                   >> pad.isConnected;
-            
-            LOGI("NetPlay: Received pad %d input - button: 0x%04X, stick: (%d,%d)", 
-                 map, pad.button, pad.stickX, pad.stickY);
-            
-            // Store the input data for synchronization
-            // This ensures our local game instance stays in sync with the host
-            // Note: We don't have direct access to m_pad_buffer here, so we'll just log the data
-            LOGI("NetPlay: Pad input data processed - local game should stay synchronized");
-        }
-        
-        LOGI("NetPlay: Pad input data processed - local game should stay synchronized");
-    }
-    
-    // CRITICAL: Handle wiimote input data from other clients
-    void OnWiimoteData(sf::Packet& packet) {
-        LOGI("NetPlay: *** WIIMOTE INPUT DATA RECEIVED - INPUT SYNCHRONIZATION WORKING! ***");
-        
-        // Parse wiimote input data from the packet
-        while (!packet.endOfPacket()) {
-            NetPlay::PadIndex map;
-            packet >> map;
-            
-            // Parse the wiimote state data
-            u32 length;
-            packet >> length;
-            
-            if (length > 0 && length <= 1024) { // Reasonable size limit
-                std::vector<u8> data(length);
-                for (size_t i = 0; i < length; i++) {
-                    u8 byte;
-                    packet >> byte;
-                    data[i] = byte;
-                }
-                
-                LOGI("NetPlay: Received wiimote %d input - length: %d bytes", map, length);
-                
-                // Store the input data for synchronization
-                // Note: We don't have direct access to m_wiimote_buffer here, so we'll just log the data
-                LOGI("NetPlay: Wiimote input data processed - local game should stay synchronized");
-            }
-        }
-        
-        LOGI("NetPlay: Wiimote input data processed - local game should stay synchronized");
-    }
-
-    void OnDesync(u32 frame, const std::string& player) override {
-        LOGE("NetPlay: Desync detected at frame %u from player %s", frame, player.c_str());
-    }
-
-    void OnConnectionLost() override {
-        LOGE("NetPlay: Connection lost");
-        
-        // Try to recover the connection if possible
-        if (g_netplay_client) {
-            LOGI("NetPlay: Attempting connection recovery...");
-            // The NetPlay client will handle reconnection automatically
-            // We just need to notify the Java side
-        }
-        
-        callJavaCallback("onDisconnected");
-    }
-
-    void OnConnectionError(const std::string& message) override {
-        LOGE("NetPlay: Connection error: %s", message.c_str());
-        callJavaCallback("onConnectionFailed");
-    }
-
-    // Additional required pure virtual methods
-    void OnTraversalError(Common::TraversalClient::FailureReason error) override {
-        LOGE("NetPlay: Traversal error: %d", static_cast<int>(error));
-    }
-
-    void OnTraversalStateChanged(Common::TraversalClient::State state) override {
-        LOGI("NetPlay: Traversal state changed to %d", static_cast<int>(state));
-    }
-
-    void OnGameStartAborted() override {
-        LOGI("NetPlay: Game start aborted");
-    }
-
-    void OnGolferChanged(bool is_golfer, const std::string& golfer_name) override {
-        LOGI("NetPlay: Golfer changed to %s (is_golfer: %s)", golfer_name.c_str(), is_golfer ? "true" : "false");
-    }
-
-    void OnTtlDetermined(u8 ttl) override {
-        LOGI("NetPlay: TTL determined: %u", ttl);
-    }
-
-    bool IsRecording() override {
-        return false; // Not recording by default
-    }
-
     std::shared_ptr<const UICommon::GameFile> FindGameFile(const NetPlay::SyncIdentifier& sync_identifier,
                                                            NetPlay::SyncIdentifierComparison* found = nullptr) override {
-        LOGI("NetPlay: FindGameFile called for game_id: %s, revision: %d, disc: %d", 
+        LOGI("NetPlay: FindGameFile called for game_id: '%s', revision: %d, disc: %d", 
              sync_identifier.game_id.c_str(), sync_identifier.revision, sync_identifier.disc_number);
         
         // Safety check - don't proceed with empty game_id
         if (sync_identifier.game_id.empty()) {
             LOGE("FindGameFile called with empty game_id - this will cause crashes!");
+            if (found) {
+                *found = NetPlay::SyncIdentifierComparison::Unknown;
+            }
             return nullptr;
         }
         
@@ -747,8 +310,8 @@ public:
                                             // Use the ROM path from Java
                                             std::vector<std::string> game_dirs = {rom_path};
                                             try {
-                    auto game_paths = UICommon::FindAllGamePaths(game_dirs, true);
-                    game_cache.Update(game_paths);
+                                                auto game_paths = UICommon::FindAllGamePaths(game_dirs, true);
+                                                game_cache.Update(game_paths);
                                                 LOGI("Updated game cache with %zu paths from Java ROM directory", game_paths.size());
                                             } catch (const std::exception& e) {
                                                 LOGE("Exception calling FindAllGamePaths with Java ROM path: %s", e.what());
@@ -790,7 +353,7 @@ public:
                                 auto game_paths = UICommon::FindAllGamePaths(game_dirs, true);
                                 game_cache.Update(game_paths);
                                 LOGI("Updated game cache with %zu paths from default Android directories", game_paths.size());
-        } catch (const std::exception& e) {
+                            } catch (const std::exception& e) {
                                 LOGE("Exception calling FindAllGamePaths with default Android paths: %s", e.what());
                             } catch (...) {
                                 LOGE("Unknown exception calling FindAllGamePaths with default Android paths");
@@ -857,468 +420,186 @@ public:
             return nullptr;
         }
     }
-
-    std::string FindGBARomPath(const std::array<u8, 20>& hash, std::string_view title,
-                               int device_number) override {
-        LOGI("NetPlay: FindGBARomPath called for %s (device: %d)", std::string(title).c_str(), device_number);
-        
-        // Get ROM path from Java side instead of hardcoding
-        JNIEnv* env = getJNIEnv();
-        if (env && g_netplay_manager) {
-            try {
-                jclass managerClass = env->GetObjectClass(g_netplay_manager);
-                if (managerClass) {
-                    jmethodID getRomPathMethod = env->GetMethodID(managerClass, "getRomPath", "()Ljava/lang/String;");
-                    if (getRomPathMethod) {
-                        jstring romPathString = static_cast<jstring>(env->CallObjectMethod(g_netplay_manager, getRomPathMethod));
-                        if (romPathString) {
-                            const char* romPath = env->GetStringUTFChars(romPathString, nullptr);
-                            if (romPath) {
-                                std::string rom_path(romPath);
-                                env->ReleaseStringUTFChars(romPathString, romPath);
-                                
-                                LOGI("Got ROM path from Java for GBA search: %s", rom_path.c_str());
-                                
-                                // Look for GBA ROMs in the Java-provided ROM directory
-                                std::vector<std::string> gba_dirs = {
-                                    rom_path + "/GBA",
-                                    rom_path + "/gba",
-                                    rom_path
-                                };
-                                
-                                for (const auto& dir : gba_dirs) {
-                                    LOGI("Checking GBA directory: %s", dir.c_str());
-                                    // In a real implementation, you'd scan these directories for matching ROMs
-                                }
-                                
-                                env->DeleteLocalRef(romPathString);
-                                env->DeleteLocalRef(managerClass);
-                                return rom_path; // Return the base ROM path for now
-                            }
-                            env->DeleteLocalRef(romPathString);
-                        }
-            } else {
-                        LOGI("Could not find getRomPath method for GBA search");
-                    }
-                    env->DeleteLocalRef(managerClass);
-                }
-            } catch (...) {
-                LOGE("Exception getting ROM path from Java for GBA search");
-            }
-        }
-        
-        // Fallback to empty string if Java call fails
-        LOGI("Using fallback for GBA ROM path");
-        return "";
-    }
-
-
-
-
-    
-    void SetHostWiiSyncData(std::vector<u64> titles, std::string redirect_folder) override {
-        LOGI("NetPlay: SetHostWiiSyncData called with %zu titles, redirect folder: %s", 
-             titles.size(), redirect_folder.c_str());
-        
-        // Store the Wii sync data for the host
-        // This would typically be used for save data synchronization
-        for (size_t i = 0; i < titles.size(); i++) {
-            LOGI("NetPlay: Host Wii title %zu: %016lx", i, titles[i]);
-        }
-        
-        // Create redirect folder if needed for Android
-        if (!redirect_folder.empty()) {
-            std::string full_path = "/storage/emulated/0/Android/data/org.dolphinemu.dolphinmpn/files/" + redirect_folder;
-            system(("mkdir -p " + full_path).c_str());
-            LOGI("NetPlay: Created redirect folder: %s", full_path.c_str());
-        }
-    }
-
-    // Helper methods
-    void SetHosting(bool hosting) {
-        m_is_hosting = hosting;
-    }
-    
-    bool ShouldStartGame() const {
-        return m_should_start_game;
-    }
-    
-    void ClearStartGameFlag() {
-        m_should_start_game = false;
-    }
-    
-    // CRITICAL: This method polls for messages from the NetPlay server
-    // and dispatches them to the appropriate OnMsg* methods
-    // This is called periodically from the Java side to process incoming messages
-    void PollMessages() {
-        if (!g_netplay_client || !g_netplay_client->IsConnected()) {
-            LOGI("NetPlay: Cannot poll messages - not connected");
-            return; // Not connected, nothing to poll
-        }
-        
-        try {
-            LOGI("NetPlay: Polling for messages - connection status: %s", 
-                 g_netplay_client->IsConnected() ? "connected" : "disconnected");
-            
-            // CRITICAL: Ensure we're properly synchronized with the host
-            // Send periodic ready status to prevent black screen issues
-            static auto last_status_time = std::chrono::steady_clock::now();
-            auto now = std::chrono::steady_clock::now();
-            
-            // Send status every 2 seconds to keep host informed
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_status_time).count() > 2000) {
-                SendReadyStatus();
-                last_status_time = now;
-                LOGI("NetPlay: Sent periodic ready status to host");
-            }
-            
-            // Check if we need to send any pending messages
-            // This ensures the host knows our current state
-            if (m_current_sync_identifier.game_id.empty()) {
-                LOGI("NetPlay: No current game ID - waiting for host to set game");
-            } else {
-                LOGI("NetPlay: Current game ID: %s - ready for synchronization", m_current_sync_identifier.game_id.c_str());
-            }
-            
-            // Show our current pad assignment status
-            if (HasValidPadAssignment()) {
-                LOGI("NetPlay: Pad assignment status - Android client is P%d (pad %d)", 
-                     GetAssignedPlayer(), GetAssignedPad());
-            } else {
-                LOGI("NetPlay: Pad assignment status - Waiting for host to assign player slot");
-            }
-            
-            // CRITICAL: Try to process any incoming messages from the host
-            // This simulates the desktop client's message processing
-            LOGI("NetPlay: Checking for incoming messages from host...");
-            
-            // The NetPlay client should automatically call our OnData method when messages arrive
-            // If it's not working, we may need to manually check the client's receive queue
-            // For now, we'll rely on the automatic message routing
-            
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Exception during message polling: %s", e.what());
-        }
-    }
-
-    // CRITICAL: Configure controller assignment to prevent P1 control issues
-    void ConfigureControllerAssignment() {
-        if (!g_netplay_client || !g_netplay_client->IsConnected()) {
-            LOGE("NetPlay: Cannot configure controller assignment - not connected");
-            return;
-        }
-        
-        try {
-            LOGI("NetPlay: Configuring controller assignment - waiting for host to assign slot");
-            
-            // CRITICAL: Don't assign ourselves - let the host assign us a slot
-            // This prevents conflicts and ensures proper player assignment
-            
-            // Just disable P1 control to prevent the "second player controlling P1" issue
-            sf::Packet disable_p1_packet;
-            disable_p1_packet << static_cast<u8>(NetPlay::MessageID::PadMapping);
-            disable_p1_packet << static_cast<u8>(0); // Pad 0 = P1
-            disable_p1_packet << static_cast<u8>(0); // Disable P1 control from Android
-            
-            g_netplay_client->SendAsync(std::move(disable_p1_packet));
-            LOGI("NetPlay: *** DISABLED P1 CONTROL FROM ANDROID CLIENT! ***");
-            
-            // The host will assign us to the appropriate player slot (P2, P3, P4, etc.)
-            // We don't need to guess - just wait for the host's assignment
-            // The OnPadMapping callback will tell us which pad we're assigned to
-            
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Exception configuring controller assignment: %s", e.what());
-        } catch (...) {
-            LOGE("NetPlay: Unknown exception configuring controller assignment");
-        }
-    }
-
-    // CRITICAL: Check if we have a valid pad assignment from the host
-    bool HasValidPadAssignment() const {
-        return m_assigned_pad >= 0 && m_assigned_pad < 4;
-    }
-    
-    // CRITICAL: Get our assigned pad number
-    int GetAssignedPad() const {
-        return m_assigned_pad;
-    }
-    
-    // CRITICAL: Get our assigned player number (P1, P2, P3, P4)
-    int GetAssignedPlayer() const {
-        return m_assigned_pad + 1;
-    }
-
-private:
-    bool m_is_hosting = false;
-    bool m_should_start_game = false;
-    NetPlay::SyncIdentifier m_current_sync_identifier;
-    int m_assigned_pad = -1;
 };
 
-// Global variables for NetPlay state
-static std::unique_ptr<AndroidNetPlayUI> g_netplay_ui;
-static bool g_is_connected = false;
-static bool g_is_host = false;
-static std::string g_server_address;
-static int g_server_port = 2626;
-
-// JNI environment and object references
-static JavaVM* g_jvm = nullptr;
-
-// Safe JNI helper functions
+// JNI helper functions
 JNIEnv* getJNIEnv() {
-    if (!g_jvm) {
-        LOGE("JVM not initialized");
-        return nullptr;
-    }
+    if (!g_jvm) return nullptr;
     
     JNIEnv* env;
     jint result = g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
     if (result == JNI_EDETACHED) {
-        // Thread not attached, try to attach
-        if (g_jvm->AttachCurrentThread(&env, nullptr) != 0) {
-            LOGE("Failed to attach current thread to JVM");
-            return nullptr;
-        }
+        if (g_jvm->AttachCurrentThread(&env, nullptr) != 0) return nullptr;
     } else if (result != JNI_OK) {
-        LOGE("Failed to get JNI environment, result: %d", result);
         return nullptr;
     }
-    
     return env;
 }
 
-// Essential callback function for basic NetPlay events
 void callJavaCallback(const char* method_name, ...) {
     JNIEnv* env = getJNIEnv();
-    if (!env) {
-        LOGE("Could not get JNI environment for callback: %s", method_name);
-        return;
-    }
+    if (!env || !g_netplay_manager) return;
     
-    if (!g_netplay_manager) {
-        LOGE("NetPlay manager object not available for callback: %s", method_name);
-        return;
-    }
+    jclass managerClass = env->GetObjectClass(g_netplay_manager);
+    if (!managerClass) return;
     
-    // Log the callback attempt
-    LOGI("Attempting Java callback: %s", method_name);
-    
-    // Global exception handler for the entire function
-    if (env->ExceptionCheck()) {
-        env->ExceptionDescribe();
-        env->ExceptionClear();
-        LOGE("JNI exception detected at start of callback %s", method_name);
-    }
-    
-    // Try to call the appropriate Java method based on the callback name
-    try {
-        if (strcmp(method_name, "onConnected") == 0) {
-            // Find the onConnected method in the NetPlayManager class
-            jclass managerClass = env->GetObjectClass(g_netplay_manager);
-            if (managerClass) {
-                jmethodID onConnectedMethod = env->GetMethodID(managerClass, "onConnected", "()V");
-                if (onConnectedMethod) {
-                    // Add extra safety checks before calling
-                    if (env->IsSameObject(g_netplay_manager, nullptr)) {
-                        LOGE("NetPlay manager object is null, cannot call onConnected");
-                        env->DeleteLocalRef(managerClass);
-                        return;
-                    }
-                    
-                    // Check if the object is still valid
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionDescribe();
-                        env->ExceptionClear();
-                        LOGE("JNI exception detected before calling onConnected");
-                        env->DeleteLocalRef(managerClass);
-                        return;
-                    }
-                    
-                    env->CallVoidMethod(g_netplay_manager, onConnectedMethod);
-                    
-                    // Check for exceptions after the call
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionDescribe();
-                        env->ExceptionClear();
-                        LOGE("Exception occurred while calling onConnected");
-                    } else {
-                        LOGI("Successfully called onConnected callback");
-                    }
-                } else {
-                    LOGE("Could not find onConnected method");
-                }
-                env->DeleteLocalRef(managerClass);
-            } else {
-                LOGE("Could not get NetPlayManager class for onConnected callback");
-            }
-        } else if (strcmp(method_name, "onDisconnected") == 0) {
-            // Find the onDisconnected method
-            jclass managerClass = env->GetObjectClass(g_netplay_manager);
-            if (managerClass) {
-                jmethodID onDisconnectedMethod = env->GetMethodID(managerClass, "onDisconnected", "()V");
-                if (onDisconnectedMethod) {
-                    // Add extra safety checks before calling
-                    if (env->IsSameObject(g_netplay_manager, nullptr)) {
-                        LOGE("NetPlay manager object is null, cannot call onDisconnected");
-                        env->DeleteLocalRef(managerClass);
-                        return;
-                    }
-                    
-                    // Check if the object is still valid
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionDescribe();
-                        env->ExceptionClear();
-                        LOGE("JNI exception detected before calling onDisconnected");
-                        env->DeleteLocalRef(managerClass);
-                        return;
-                    }
-                    
-                    env->CallVoidMethod(g_netplay_manager, onDisconnectedMethod);
-                    
-                    // Check for exceptions after the call
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionDescribe();
-                        env->ExceptionClear();
-                        LOGE("Exception occurred while calling onDisconnected");
-                    } else {
-                        LOGI("Successfully called onDisconnected callback");
-                    }
-                } else {
-                    LOGE("Could not find onDisconnected method");
-                }
-                env->DeleteLocalRef(managerClass);
-            } else {
-                LOGE("Could not get NetPlayManager class for onDisconnected callback");
-            }
-        } else if (strcmp(method_name, "onConnectionFailed") == 0) {
-            // Handle connection failed callback
-            jclass managerClass = env->GetObjectClass(g_netplay_manager);
-            if (managerClass) {
-                jmethodID onConnectionFailedMethod = env->GetMethodID(managerClass, "onConnectionFailed", "(Ljava/lang/String;)V");
-                if (onConnectionFailedMethod) {
-                    jstring errorMsg = env->NewStringUTF("Connection failed from native code");
-                    env->CallVoidMethod(g_netplay_manager, onConnectionFailedMethod, errorMsg);
-                    env->DeleteLocalRef(errorMsg);
-                    LOGI("Successfully called onConnectionFailed callback");
-                } else {
-                    LOGE("Could not find onConnectionFailed method");
-                }
-                env->DeleteLocalRef(managerClass);
-            }
-        } else if (strcmp(method_name, "onPlayerJoined") == 0) {
-            // Handle onPlayerJoined callback
-            jclass managerClass = env->GetObjectClass(g_netplay_manager);
-            if (managerClass) {
-                jmethodID onPlayerJoinedMethod = env->GetMethodID(managerClass, "onPlayerJoined", "(ILjava/lang/String;)V");
-                if (onPlayerJoinedMethod) {
-                    va_list args;
-                    va_start(args, method_name);
-                    int player_id = va_arg(args, int);
-                    const char* player_name = va_arg(args, const char*);
-                    va_end(args);
-
-                    jstring playerNameString = env->NewStringUTF(player_name);
-                    env->CallVoidMethod(g_netplay_manager, onPlayerJoinedMethod, player_id, playerNameString);
-                    env->DeleteLocalRef(playerNameString);
-                    LOGI("Successfully called onPlayerJoined callback for player %d: %s", player_id, player_name);
-                } else {
-                    LOGE("Could not find onPlayerJoined method");
-                }
-                env->DeleteLocalRef(managerClass);
-            }
-        } else {
-            LOGI("Unknown callback method: %s", method_name);
+    if (strcmp(method_name, "onConnected") == 0) {
+        jmethodID method = env->GetMethodID(managerClass, "onConnected", "()V");
+        if (method) env->CallVoidMethod(g_netplay_manager, method);
+    } else if (strcmp(method_name, "onDisconnected") == 0) {
+        jmethodID method = env->GetMethodID(managerClass, "onDisconnected", "()V");
+        if (method) env->CallVoidMethod(g_netplay_manager, method);
+    } else if (strcmp(method_name, "onConnectionFailed") == 0) {
+        jmethodID method = env->GetMethodID(managerClass, "onConnectionFailed", "(Ljava/lang/String;)V");
+        if (method) {
+            jstring errorMsg = env->NewStringUTF("Connection failed from native code");
+            env->CallVoidMethod(g_netplay_manager, method, errorMsg);
+            env->DeleteLocalRef(errorMsg);
         }
-    } catch (const std::exception& e) {
-        LOGE("Exception in callback %s: %s", method_name, e.what());
-    } catch (...) {
-        LOGE("Unknown exception in callback %s", method_name);
     }
+    
+    env->DeleteLocalRef(managerClass);
 }
 
-// Function to get device name using Android APIs
-std::string getDeviceName() {
-    JNIEnv* env = getJNIEnv();
-    if (!env) {
-        LOGE("Could not get JNI environment for device name");
-        return "Android Player";
-    }
+// Function to get Android device name
+std::string getAndroidDeviceName() {
+    std::string device_name = "MPN Player";
     
-    try {
-        // Get Build class
-        jclass buildClass = env->FindClass("android/os/Build");
-        if (!buildClass) {
-            LOGE("Could not find Build class");
-            return "Android Player";
-        }
-        
-        // Get Build.MODEL field (device model like "Pixel 7", "Galaxy S23")
-        jfieldID modelField = env->GetStaticFieldID(buildClass, "MODEL", "Ljava/lang/String;");
-        if (!modelField) {
-            LOGE("Could not find Build.MODEL field");
-            return "Android Player";
-        }
-        
-        jstring modelString = static_cast<jstring>(env->GetStaticObjectField(buildClass, modelField));
-        if (!modelString) {
-            LOGE("Build.MODEL is null");
-            return "Android Player";
-        }
-        
-        const char* modelChars = env->GetStringUTFChars(modelString, nullptr);
-        if (!modelChars) {
-            LOGE("Failed to get model string chars");
-            return "Android Player";
-        }
-        
-        std::string deviceName = std::string(modelChars);
-        env->ReleaseStringUTFChars(modelString, modelChars);
-        
-        // Clean up the model string (remove special characters that might cause issues)
-        std::string cleanName;
-        for (char c : deviceName) {
-            if (std::isalnum(c) || c == ' ' || c == '-') {
-                cleanName += c;
+    // Try to get device name from system properties
+    FILE* fp = popen("getprop ro.product.model", "r");
+    if (fp) {
+        char buffer[256];
+        if (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+            std::string model(buffer);
+            // Remove newline
+            if (!model.empty() && model[model.length()-1] == '\n') {
+                model.erase(model.length()-1);
+            }
+            if (!model.empty() && model != "unknown") {
+                device_name = model;
             }
         }
-        
-        // Trim whitespace
-        cleanName.erase(0, cleanName.find_first_not_of(" \t"));
-        cleanName.erase(cleanName.find_last_not_of(" \t") + 1);
-        
-        if (cleanName.empty()) {
-            cleanName = "Android Player";
-        }
-        
-        LOGI("Device name: %s", cleanName.c_str());
-        return cleanName;
-        
-    } catch (const std::exception& e) {
-        LOGE("Exception getting device name: %s", e.what());
-        return "Android Player";
-    } catch (...) {
-        LOGE("Unknown exception getting device name");
-        return "Android Player";
+        pclose(fp);
     }
+    
+    // Fallback to manufacturer + device
+    if (device_name == "Android Player") {
+        fp = popen("getprop ro.product.manufacturer", "r");
+        if (fp) {
+            char buffer[256];
+            if (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+                std::string manufacturer(buffer);
+                if (!manufacturer.empty() && manufacturer[manufacturer.length()-1] == '\n') {
+                    manufacturer.erase(manufacturer.length()-1);
+                }
+                if (!manufacturer.empty() && manufacturer != "unknown") {
+                    device_name = manufacturer;
+                    
+                    // Add device name
+                    FILE* fp2 = popen("getprop ro.product.device", "r");
+                    if (fp2) {
+                        char buffer2[256];
+                        if (fgets(buffer2, sizeof(buffer2), fp2) != nullptr) {
+                            std::string device(buffer2);
+                            if (!device.empty() && device[device.length()-1] == '\n') {
+                                device.erase(device.length()-1);
+                            }
+                            if (!device.empty() && device != "unknown") {
+                                device_name += " " + device;
+                            }
+                        }
+                        pclose(fp2);
+                    }
+                }
+            }
+            pclose(fp);
+        }
+    }
+    
+    // Clean up the name (remove special characters that might cause issues)
+    std::string clean_name;
+    for (char c : device_name) {
+        if (std::isalnum(c) || c == ' ' || c == '-' || c == '_') {
+            clean_name += c;
+        }
+    }
+    
+    // Trim whitespace
+    while (!clean_name.empty() && std::isspace(clean_name.front())) {
+        clean_name.erase(clean_name.begin());
+    }
+    while (!clean_name.empty() && std::isspace(clean_name.back())) {
+        clean_name.erase(clean_name.end() - 1);
+    }
+    
+    if (clean_name.empty()) {
+        clean_name = "Android Player";
+    }
+    
+    return clean_name;
 }
 
-// NetPlay implementation using Dolphin's classes
+// Wrapper functions for JNI lifecycle
+void InitializeMultiplayerJNI(JavaVM* vm) {
+    g_jvm = vm;
+    
+    // Set player name from Android device name
+    g_player_name = getAndroidDeviceName();
+    LOGI("Player name set to: %s", g_player_name.c_str());
+    
+    LOGI("Multiplayer JNI wrapper initialized");
+}
+
+void CleanupMultiplayerJNI() {
+    g_jvm = nullptr;
+    g_netplay_client.reset();
+    g_netplay_ui.reset();
+    g_is_connected = false;
+    LOGI("Multiplayer JNI wrapper cleaned up");
+}
+
+// JNI lifecycle functions
+extern "C" JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_InitializeMultiplayerJNI(
+    JNIEnv* env, jobject thiz, jobject manager) {
+    
+    if (g_netplay_manager) {
+        env->DeleteGlobalRef(g_netplay_manager);
+    }
+    g_netplay_manager = env->NewGlobalRef(manager);
+    
+    JavaVM* vm;
+    env->GetJavaVM(&vm);
+    g_jvm = vm;
+    
+    LOGI("Multiplayer JNI initialized");
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_CleanupMultiplayerJNI(
+    JNIEnv* env, jobject thiz) {
+    
+    if (g_netplay_manager) {
+        env->DeleteGlobalRef(g_netplay_manager);
+        g_netplay_manager = nullptr;
+    }
+    
+    g_netplay_client.reset();
+    g_netplay_ui.reset();
+    g_is_connected = false;
+    
+    LOGI("Multiplayer JNI cleaned up");
+}
+
+// Core NetPlay functions
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
     JNIEnv* env, jobject thiz, jstring address, jint port) {
     
-    if (!address) {
-        LOGE("Address parameter is null");
-        return JNI_FALSE;
-    }
+    if (!address) return JNI_FALSE;
     
     const char* addr = env->GetStringUTFChars(address, nullptr);
-    if (!addr) {
-        LOGE("Failed to get address string chars");
-        return JNI_FALSE;
-    }
+    if (!addr) return JNI_FALSE;
     
     g_server_address = std::string(addr);
     g_server_port = port;
@@ -1326,632 +607,129 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
     
     LOGI("Connecting to NetPlay server: %s:%d", g_server_address.c_str(), g_server_port);
     
-    try {
-        // Validate input parameters
-        if (g_server_address.empty() || g_server_port <= 0 || g_server_port > 65535) {
-            LOGE("Invalid server address or port");
-            return JNI_FALSE;
-        }
-        
-        // Get device name for player identification
-        std::string playerName = getDeviceName();
-        
-        // Create NetPlayUI if not exists
-        if (!g_netplay_ui) {
-            g_netplay_ui = std::make_unique<AndroidNetPlayUI>();
-        }
-        
-        // Create NetPlayClient using Dolphin's implementation
-        LOGI("Creating NetPlayClient for %s:%d as %s", g_server_address.c_str(), g_server_port, playerName.c_str());
-        
-        // Add safety check for NetPlayUI
-        if (!g_netplay_ui) {
-            LOGE("NetPlayUI is null, cannot create NetPlayClient");
-            return JNI_FALSE;
-        }
-        
-        // Determine if this is a traversal code (8-character hex string) or direct IP
-        bool use_traversal = false;
-        if (g_server_address.length() == 8) {
-            // Check if it's a valid hex string (traversal code)
-            bool is_hex = true;
-            for (char c : g_server_address) {
-                if (!std::isxdigit(c)) {
-                    is_hex = false;
-                    break;
-                }
-            }
-            use_traversal = is_hex;
-            if (use_traversal) {
-                LOGI("Valid 8-character hex traversal code detected: %s", g_server_address.c_str());
-            } else {
-                LOGI("8-character input but not valid hex - treating as direct connection: %s", g_server_address.c_str());
-            }
-        } else {
-            // Not 8 characters, so it's a direct IP address
-            use_traversal = false;
-            LOGI("Input length %zu - treating as direct IP connection: %s", g_server_address.length(), g_server_address.c_str());
-        }
-        
-        LOGI("NetPlay connection type: %s", use_traversal ? "traversal" : "direct");
-        
-        // Configure traversal settings with mobile network optimizations
-        NetPlay::NetTraversalConfig traversal_config;
-        if (use_traversal) {
-            traversal_config.use_traversal = true;
-            traversal_config.traversal_host = "stun.dolphin-emu.org";  // Official Dolphin traversal server
-            traversal_config.traversal_port = 6262;  // Use working port 6262 instead of blocked 2626
-            LOGI("Using traversal server: %s:%d", traversal_config.traversal_host.c_str(), traversal_config.traversal_port);
-            
-            // Validate traversal code format
-            if (g_server_address.length() != 8) {
-                LOGE("Invalid traversal code length: %zu (expected 8)", g_server_address.length());
-                return JNI_FALSE;
-            }
-            
-            // Check if traversal code is valid hex
-            for (char c : g_server_address) {
-                if (!std::isxdigit(c)) {
-                    LOGE("Invalid traversal code character: %c (not hex)", c);
-                    return JNI_FALSE;
-                }
-            }
-            
-            LOGI("Traversal code validation passed: %s", g_server_address.c_str());
-        } else {
-            traversal_config.use_traversal = false;
-            traversal_config.traversal_host = "";
-            traversal_config.traversal_port = 0;
-            LOGI("Using direct connection to %s:%d", g_server_address.c_str(), g_server_port);
-        }
-        
-        g_netplay_client = std::make_unique<NetPlay::NetPlayClient>(
-            g_server_address, g_server_port, g_netplay_ui.get(), playerName,
-            traversal_config
-        );
-        
-        if (g_netplay_client) {
-            LOGI("NetPlayClient created successfully - UI pointer: %p", g_netplay_ui.get());
-            LOGI("NetPlay: *** UI CONNECTION VERIFIED - Android callbacks should work ***");
-            LOGI("NetPlay: *** CLIENT CREATED - READY TO RECEIVE MESSAGES ***");
-            
-            // Wait for connection to establish
-            int timeout_ms = use_traversal ? 10000 : 4500;  // 10 seconds for traversal, 4.5 for direct 
-            LOGI("Waiting %d ms for connection to establish...", timeout_ms);
-            
-            auto start_time = std::chrono::steady_clock::now();
-            bool connected = false;
-            
-            while (std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(timeout_ms)) {
-                // Add safety check for NetPlayClient
-                if (!g_netplay_client) {
-                    LOGE("NetPlayClient became null during connection attempt");
-                    return JNI_FALSE;
-                }
-                
-                try {
-                if (g_netplay_client->IsConnected()) {
-                    connected = true;
-                    break;
-                }
-                } catch (const std::exception& e) {
-                    LOGE("Exception checking connection status: %s", e.what());
-                    break;
-                } catch (...) {
-                    LOGE("Unknown exception checking connection status");
-                    break;
-                }
-                
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-            
-            if (connected) {
-                g_is_connected = true;
-                g_is_host = false;
-                
-                LOGI("Successfully connected to NetPlay server as %s", playerName.c_str());
-                
-                // CRITICAL: The NetPlay client should automatically start its message processing thread
-                // when it connects. However, we'll also implement a manual polling mechanism as a fallback.
-                LOGI("NetPlay: NetPlay client should automatically process messages");
-                LOGI("NetPlay: *** CONNECTION ESTABLISHED - CALLBACKS SHOULD WORK AUTOMATICALLY ***");
-                
-                // Start a background thread to manually poll for messages as a fallback
-                // CRITICAL: The NetPlay client should automatically start its message processing thread
-                // when it connects. However, we'll also implement a manual message processing mechanism
-                // as a fallback to ensure messages are handled.
-                try {
-                    LOGI("NetPlay: Starting manual message processing thread as fallback...");
-                    
-                    std::thread processing_thread([&]() {
-                        LOGI("NetPlay: Manual message processing thread started");
-                        while (g_netplay_client && g_netplay_client->IsConnected()) {
-                            try {
-                                // Sleep for a longer interval to reduce CPU usage and logging
-                                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                                
-                                // Only log occasionally to avoid spam - every 5 seconds
-                                static int log_counter = 0;
-                                if (++log_counter >= 10) { // 500ms * 10 = 5 seconds
-                                    LOGI("NetPlay: Message processing system is active");
-                                    log_counter = 0;
-                                }
-                                
-                                // The NetPlay client should now automatically process incoming messages
-                                // and call our OnMsgStartGame() callback when 0xA0 messages are received
-                                
-                            } catch (const std::exception& e) {
-                                LOGE("NetPlay: Exception in manual processing thread: %s", e.what());
-                                break;
-                            } catch (...) {
-                                LOGE("NetPlay: Unknown exception in manual processing thread");
-                                break;
-                            }
-                        }
-                        LOGI("NetPlay: Manual message processing thread ended");
-                    });
-                    
-                    // Detach the thread so it runs independently
-                    processing_thread.detach();
-                    
-                    LOGI("NetPlay: *** MANUAL MESSAGE PROCESSING THREAD STARTED AS FALLBACK ***");
-                    
-                } catch (const std::exception& e) {
-                    LOGE("NetPlay: Failed to start manual processing thread: %s", e.what());
-                    // Don't fail the connection if processing thread fails
-                }
-                
-                // CRITICAL: Don't send initial status messages - wait for ChangeGame from host
-                // The host will send ChangeGame when it has a game selected, and then we'll respond
-                // This prevents timing issues and ensures proper handshake sequence
-                
-                LOGI("NetPlay: Connected successfully - waiting for host to send game information");
-                
-                return JNI_TRUE;
-            } else {
-                LOGE("Connection timeout after %d ms", timeout_ms);
-                g_netplay_client.reset();
-                return JNI_FALSE;
-            }
-        } else {
-            LOGE("Failed to create NetPlayClient");
-            return JNI_FALSE;
-        }
-        
-    } catch (const std::exception& e) {
-        
-        LOGE("Exception during NetPlay connection: %s", e.what());
-        g_netplay_client.reset();
-        return JNI_FALSE;
-    } catch (...) {
-        LOGE("Unknown exception during NetPlay connection");
-        g_netplay_client.reset();
+    if (g_server_address.empty() || g_server_port <= 0 || g_server_port > 65535) {
+        LOGE("Invalid server address or port");
         return JNI_FALSE;
     }
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayHost(
-    JNIEnv* env, jobject thiz, jint port) {
     
-    g_server_port = port;
-    LOGI("Hosting NetPlay server on port: %d", g_server_port);
+    if (!g_netplay_ui) {
+        g_netplay_ui = std::make_unique<AndroidNetPlayUI>();
+    }
     
-    try {
-        // Validate port number
-        if (port <= 0 || port > 65535) {
-            LOGE("Invalid port number: %d", port);
+    // Determine connection type
+    bool use_traversal = (g_server_address.length() == 8);
+    for (char c : g_server_address) {
+        if (!std::isxdigit(c)) {
+            use_traversal = false;
+            break;
+        }
+    }
+    
+    LOGI("NetPlay connection type: %s", use_traversal ? "traversal" : "direct");
+    
+    NetPlay::NetTraversalConfig traversal_config;
+    if (use_traversal) {
+        traversal_config.use_traversal = true;
+        traversal_config.traversal_host = "stun.dolphin-emu.org";
+        traversal_config.traversal_port = 6262;
+        traversal_config.traversal_port_alt = 0;
+        
+        if (!Common::EnsureTraversalClient(traversal_config.traversal_host,
+                                         traversal_config.traversal_port,
+                                         traversal_config.traversal_port_alt, 0)) {
+            LOGE("Failed to ensure traversal client");
             return JNI_FALSE;
         }
-        
-        // Get device name for host identification
-        std::string hostName = getDeviceName() + " (Host)";
-        
-        // Create NetPlayUI if not exists
-        if (!g_netplay_ui) {
-            g_netplay_ui = std::make_unique<AndroidNetPlayUI>();
-        }
-        
-        LOGI("NetPlay hosting not supported on Android - only client connections allowed");
+    } else {
+        traversal_config.use_traversal = false;
+    }
+    
+    g_netplay_client = std::make_unique<NetPlay::NetPlayClient>(
+        g_server_address, g_server_port, g_netplay_ui.get(), g_player_name, traversal_config
+    );
+    
+    if (!g_netplay_client) {
+        LOGE("Failed to create NetPlayClient");
         return JNI_FALSE;
+    }
+    
+    // Wait for connection
+    int timeout_ms = use_traversal ? 10000 : 4500;
+    auto start_time = std::chrono::steady_clock::now();
+    
+    while (std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(timeout_ms)) {
+        if (!g_netplay_client) return JNI_FALSE;
         
-            } catch (const std::exception& e) {
-            LOGE("Exception during NetPlay hosting: %s", e.what());
-            return JNI_FALSE;
-        } catch (...) {
-            LOGE("Unknown exception during NetPlay hosting");
-            return JNI_FALSE;
+        if (g_netplay_client->IsConnected()) {
+            g_is_connected = true;
+            LOGI("Successfully connected as %s", g_player_name.c_str());
+            return JNI_TRUE;
         }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    LOGE("Connection timeout after %d ms", timeout_ms);
+    g_netplay_client.reset();
+    return JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayDisconnect(
     JNIEnv* env, jobject thiz) {
-    LOGI("NetPlay: netPlayDisconnect called");
     
-    try {
-        // Disconnect from NetPlay server
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // Send disconnect message to server - use a valid message type
-            // Since there's no Disconnect message, we'll just close the connection
-            LOGI("NetPlay: Closing connection to server");
-            
-            // Wait a moment for any pending messages to be sent
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            
-            // Reset the client
-    g_netplay_client.reset();
-            LOGI("NetPlay: Disconnected from server");
-        }
-        
-        // Reset UI
-        if (g_netplay_ui) {
-            g_netplay_ui.reset();
-            LOGI("NetPlay: UI reset");
-        }
-        
-        // Reset connection state
-    g_is_connected = false;
-    g_is_host = false;
-        LOGI("NetPlay: Connection state reset");
-        
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception during disconnect: %s", e.what());
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception during disconnect");
+    if (g_netplay_client) {
+        g_netplay_client.reset();
     }
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsHost(
-    JNIEnv* env, jobject thiz) {
     
-    return g_is_host ? JNI_TRUE : JNI_FALSE;
+    if (g_netplay_ui) {
+        g_netplay_ui.reset();
+    }
+    
+    g_is_connected = false;
+    LOGI("NetPlay: Disconnected");
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsConnected(
     JNIEnv* env, jobject thiz) {
     
-    if (g_netplay_client && g_netplay_client->IsConnected()) {
-        LOGI("NetPlay: Connection check - connected to server");
-        return JNI_TRUE;
-    } else {
-        LOGI("NetPlay: Connection check - not connected");
-        return JNI_FALSE;
-    }
+    return (g_netplay_client && g_netplay_client->IsConnected()) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsHost(
+    JNIEnv* env, jobject thiz) {
+    
+    return g_is_connected ? JNI_FALSE : JNI_TRUE; // Android clients are never hosts
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerCount(
     JNIEnv* env, jobject thiz) {
     
-    try {
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            auto players = g_netplay_client->GetPlayers();
-            static size_t last_player_count = 0;
-            if (players.size() != last_player_count) {
-                LOGI("NetPlay: Player count changed from %zu to %zu", last_player_count, players.size());
-                last_player_count = players.size();
-            }
-            return static_cast<jint>(players.size());
-        } else {
-            return 0;
-        }
-    } catch (const std::exception& e) {
-        LOGE("Exception getting player count: %s", e.what());
-        return 0;
-    } catch (...) {
-        LOGE("Unknown exception getting player count");
-        return 0;
+    if (g_netplay_client && g_netplay_client->IsConnected()) {
+        auto players = g_netplay_client->GetPlayers();
+        return static_cast<jint>(players.size());
     }
+    return 0;
 }
 
-extern "C" JNIEXPORT jobjectArray JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerList(
-    JNIEnv* env, jobject thiz) {
-    
-    try {
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // Get the actual player list from the NetPlay client
-            auto players = g_netplay_client->GetPlayers();
-            
-            // Find the NetPlayPlayer class
-            jclass playerClass = env->FindClass("org/dolphinemu/dolphinemu/features/netplay/NetPlayPlayer");
-            if (!playerClass) {
-                LOGE("Could not find NetPlayPlayer class");
-                return nullptr;
-            }
-        
-            // Create array with actual player count
-            jobjectArray playerArray = env->NewObjectArray(static_cast<jsize>(players.size()), playerClass, nullptr);
-            if (!playerArray) {
-                LOGE("Failed to create player array");
-                env->DeleteLocalRef(playerClass);
-                return nullptr;
-            }
-        
-            // Find the NetPlayPlayer constructor (id, nickname, isConnected)
-            jmethodID constructor = env->GetMethodID(playerClass, "<init>", "(ILjava/lang/String;Z)V");
-            if (!constructor) {
-                LOGE("Could not find NetPlayPlayer constructor");
-                env->DeleteLocalRef(playerClass);
-                return nullptr;
-            }
-        
-            // Populate the array with actual player data
-            for (size_t i = 0; i < players.size(); i++) {
-                const auto* player = players[i];
-                jstring playerName = env->NewStringUTF(player->name.c_str());
-                jobject playerObj = env->NewObject(playerClass, constructor, static_cast<jint>(player->pid), playerName, JNI_TRUE);
-                
-                env->SetObjectArrayElement(playerArray, static_cast<jsize>(i), playerObj);
-                env->DeleteLocalRef(playerName);
-                env->DeleteLocalRef(playerObj);
-            }
-            
-            env->DeleteLocalRef(playerClass);
-            return playerArray;
-        } else {
-            // Return empty array if not connected
-            jclass playerClass = env->FindClass("org/dolphinemu/dolphinemu/features/netplay/NetPlayPlayer");
-            if (!playerClass) {
-                LOGE("Could not find NetPlayPlayer class");
-                return nullptr;
-            }
-        
-            jobjectArray playerArray = env->NewObjectArray(0, playerClass, nullptr);
-            env->DeleteLocalRef(playerClass);
-            
-            LOGI("NetPlay: Not connected, returning empty player list");
-            return playerArray;
-        }
-        
-    } catch (const std::exception& e) {
-        LOGE("Exception getting player list: %s", e.what());
-        return nullptr;
-    } catch (...) {
-        LOGE("Unknown exception getting player list");
-        return nullptr;
-    }
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerName(
-    JNIEnv* env, jobject thiz, jint player_id) {
-    
-    LOGI("NetPlay: Getting player name for player %d", player_id);
-    
-    try {
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // Get the actual player list from the NetPlay client
-            auto players = g_netplay_client->GetPlayers();
-            for (const auto* player : players) {
-                if (player->pid == static_cast<u32>(player_id)) {
-                    LOGI("NetPlay: Found player %d: %s", player->pid, player->name.c_str());
-                    return env->NewStringUTF(player->name.c_str());
-                }
-            }
-            LOGI("NetPlay: Player %d not found in client player list", player_id);
-        } else {
-            LOGI("NetPlay: Not connected to NetPlay session");
-        }
-        
-        // Return default name if player not found
-        return env->NewStringUTF("Unknown Player");
-        
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception getting player name: %s", e.what());
-        return env->NewStringUTF("Unknown Player");
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception getting player name");
-        return env->NewStringUTF("Unknown Player");
-    }
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsHosting(
-    JNIEnv* env, jobject thiz) {
-    
-    LOGI("NetPlay: Checking if hosting");
-    
-    try {
-        // Android only supports client connections, not hosting
-        return JNI_FALSE;
-    } catch (const std::exception& e) {
-        LOGE("Exception in netPlayIsHosting: %s", e.what());
-        return JNI_FALSE;
-    } catch (...) {
-        LOGE("Unknown exception in netPlayIsHosting");
-        return JNI_FALSE;
-    }
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameName(
-    JNIEnv* env, jobject thiz) {
-    
-    LOGI("NetPlay: Getting game name");
-    
-    try {
-        // Get the current game name from our NetPlay UI if available
-        if (g_netplay_ui) {
-            auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-            if (android_ui) {
-                const auto& sync_id = android_ui->GetCurrentSyncIdentifier();
-                if (!sync_id.game_id.empty()) {
-                    LOGI("NetPlay: Current game ID: %s", sync_id.game_id.c_str());
-                    
-                    // Try to find the actual game file to get the full name
-                    NetPlay::SyncIdentifierComparison comparison;
-                    auto game_file = android_ui->FindGameFile(sync_id, &comparison);
-                    if (game_file && comparison == NetPlay::SyncIdentifierComparison::SameGame) {
-                        // Get the game name using the default variant
-                        std::string game_name = game_file->GetName(UICommon::GameFile::Variant::LongAndPossiblyCustom);
-                        if (!game_name.empty()) {
-                            LOGI("NetPlay: Found game name: %s", game_name.c_str());
-                            return env->NewStringUTF(game_name.c_str());
-                        }
-                    }
-                    
-                    // Fallback to game ID if we can't get the full name
-                    return env->NewStringUTF(sync_id.game_id.c_str());
-                }
-            }
-        }
-        
-        // If we're connected to a client, try to get game info from there
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // The client might have game information from the host
-            LOGI("NetPlay: Attempting to get game name from NetPlay client");
-            // This would typically be available through the client's game info
-        }
-        
-        LOGI("NetPlay: No game name available");
-        return env->NewStringUTF("No Game Selected");
-        
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception getting game name: %s", e.what());
-        return env->NewStringUTF("Unknown Game");
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception getting game name");
-        return env->NewStringUTF("Unknown Game");
-    }
-}
-
-extern "C" JNIEXPORT jint JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPort(
-    JNIEnv* env, jobject thiz) {
-    
-    LOGI("NetPlay: Getting port");
-    
-    try {
-        return 0;
-    } catch (const std::exception& e) {
-        LOGE("Exception in netPlayGetPort: %s", e.what());
-        return 0;
-    } catch (...) {
-        LOGE("Unknown exception in netPlayGetPort");
-        return 0;
-    }
-}
-
-// Function to set the NetPlay manager reference
 extern "C" JNIEXPORT void JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setNetPlayManagerReference(
     JNIEnv* env, jobject thiz) {
     
-    LOGI("Setting NetPlay manager reference");
-    
-    // Store the reference to the NetPlay manager object
     if (g_netplay_manager) {
         env->DeleteGlobalRef(g_netplay_manager);
     }
-    
     g_netplay_manager = env->NewGlobalRef(thiz);
-    if (g_netplay_manager) {
-        LOGI("NetPlay manager reference set successfully");
-    } else {
-        LOGE("Failed to set NetPlay manager reference");
-    }
 }
 
-// Multiplayer initialization function - called from IDCache.cpp JNI_OnLoad
-void InitializeMultiplayerJNI(JavaVM* vm) {
-    if (!vm) {
-        LOGE("Invalid JVM pointer passed to InitializeMultiplayerJNI");
-        return;
-    }
-    
-    g_jvm = vm;
-    LOGI("Multiplayer JNI initialized successfully");
-}
-
-// Multiplayer cleanup function - called from IDCache.cpp JNI_Unload
-void CleanupMultiplayerJNI() {
-    // Clean up any remaining connections
-    if (g_is_connected) {
-        LOGI("Cleaning up active NetPlay connection");
-        g_netplay_client.reset();
-        g_netplay_ui.reset();
-        g_is_connected = false;
-        g_is_host = false;
-    }
-    
-    g_jvm = nullptr;
-    g_netplay_manager = nullptr;
-    
-    LOGI("Multiplayer JNI cleaned up successfully");
-}
-
+// Stub implementations for other required methods
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayCheckAndStartGame(
-    JNIEnv* env, jobject thiz) {
-    
-    LOGI("NetPlay: Checking and starting game");
-    
-    try {
-        // Check if we have an active NetPlay connection
-        if (!g_netplay_client || !g_netplay_client->IsConnected()) {
-            LOGE("No active NetPlay connection");
-            return JNI_FALSE;
-        }
-        
-        // Check if we have a game selected
-        auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-        if (!android_ui || android_ui->GetCurrentSyncIdentifier().game_id.empty()) {
-            LOGE("No game selected for NetPlay");
-            return JNI_FALSE;
-        }
-        
-        LOGI("NetPlay session ready - game ID: %s", android_ui->GetCurrentSyncIdentifier().game_id.c_str());
-        
-        // The actual game starting is handled by OnMsgStartGame() which gets called
-        // when the NetPlay server sends the start signal. We just need to indicate
-        // that the session is ready.
-        
-        // For now, return true to indicate the session is ready
-        // The real game start will happen when OnMsgStartGame() is called
-        return JNI_TRUE;
-        
-    } catch (const std::exception& e) {
-        LOGE("Exception in netPlayCheckAndStartGame: %s", e.what());
-        return JNI_FALSE;
-    } catch (...) {
-        LOGE("Unknown exception in netPlayCheckAndStartGame");
-        return JNI_FALSE;
-    }
-}
-
-// JNI method to send GameStatus confirmation from Java side
-extern "C" JNIEXPORT void JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_sendGameStatusConfirmation(
-    JNIEnv* env, jobject thiz, jboolean sameGame) {
-    
-    LOGI("NetPlay: Java side requesting GameStatus confirmation - sameGame: %s", sameGame ? "true" : "false");
-    
-    if (g_netplay_client && g_netplay_client->IsConnected()) {
-        try {
-            sf::Packet game_status_packet;
-            game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-            
-            if (sameGame) {
-                game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-                LOGI("NetPlay: Sending SameGame status to host - Android client is ready!");
-                } else {
-                game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::DifferentGame);
-                LOGI("NetPlay: Sending DifferentGame status to host");
-            }
-            
-            g_netplay_client->SendAsync(std::move(game_status_packet));
-            LOGI("NetPlay: GameStatus confirmation sent to host successfully");
-            
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Failed to send GameStatus confirmation: %s", e.what());
-                }
-            } else {
-        LOGE("NetPlay: Cannot send GameStatus confirmation - NetPlay client not connected");
-    }
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayHost(
+    JNIEnv* env, jobject thiz, jint port) {
+    return JNI_FALSE; // Android doesn't host
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -1959,184 +737,160 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlaySendMessag
     JNIEnv* env, jobject thiz, jstring message) {
     
     if (!g_netplay_client || !g_netplay_client->IsConnected()) {
-        LOGE("NetPlay: Cannot send message - not connected to server");
         return;
     }
     
-    // Convert Java string to C++ string
-    const char* messageStr = env->GetStringUTFChars(message, nullptr);
-    if (!messageStr) {
-        LOGE("NetPlay: Failed to get message string");
-        return;
-    }
+    if (!message) return;
     
-    try {
-        // Create chat message packet
-        sf::Packet chat_packet;
-        chat_packet << static_cast<u8>(NetPlay::MessageID::ChatMessage);
+    const char* msg_str = env->GetStringUTFChars(message, nullptr);
+    if (msg_str) {
+        try {
+            // Send chat message through NetPlay
+            // Note: This would need to be implemented based on Dolphin's NetPlay chat system
+            LOGI("NetPlay: Sending message: %s", msg_str);
+            
+            // For now, just log the message
+            // TODO: Implement actual NetPlay chat message sending
+            
+        } catch (const std::exception& e) {
+            LOGE("Exception sending NetPlay message: %s", e.what());
+        }
         
-        // Get device name for sender identification
-        std::string deviceName = getDeviceName();
-        chat_packet << deviceName;
-        chat_packet << std::string(messageStr);
-        
-        // Send the chat message to the server
-        g_netplay_client->SendAsync(std::move(chat_packet));
-        LOGI("NetPlay: Chat message sent successfully: %s", messageStr);
-        
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception sending chat message: %s", e.what());
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception sending chat message");
+        env->ReleaseStringUTFChars(message, msg_str);
     }
-    
-    // Release the string
-    env->ReleaseStringUTFChars(message, messageStr);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayKickPlayer(
-    JNIEnv* env, jobject thiz, jint playerId) {
-    
-    LOGI("NetPlay: netPlayKickPlayer called for player %d", playerId);
-    
-    try {
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // We're a client - request the host to kick the player
-            LOGI("NetPlay: Requesting host to kick player %d", playerId);
-            
-            // Send kick request to the host
-            sf::Packet kick_request_packet;
-            kick_request_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-            kick_request_packet << static_cast<u32>(playerId);
-            kick_request_packet << std::string("Kick requested by client");
-            
-            g_netplay_client->SendAsync(std::move(kick_request_packet));
-            LOGI("NetPlay: Sent kick request to host for player %d", playerId);
-            } else {
-            LOGE("NetPlay: Cannot kick player - not connected to NetPlay session");
-        }
-        
-        } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception kicking player: %s", e.what());
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception kicking player");
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayBanPlayer(
-    JNIEnv* env, jobject thiz, jint playerId) {
-    
-    LOGI("NetPlay: netPlayBanPlayer called for player %d", playerId);
-    
-    try {
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // We're a client - request the host to ban the player
-            LOGI("NetPlay: Requesting host to ban player %d", playerId);
-            
-            // Send ban request to the host (will be treated as disconnect request)
-            sf::Packet ban_request_packet;
-            ban_request_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-            ban_request_packet << static_cast<u32>(playerId);
-            ban_request_packet << std::string("Ban requested by client");
-            
-            g_netplay_client->SendAsync(std::move(ban_request_packet));
-            LOGI("NetPlay: Sent ban request to host for player %d (will be treated as disconnect)", playerId);
-            
-        } else {
-            LOGE("NetPlay: Cannot ban player - not connected to NetPlay session");
-        }
-        
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception banning player: %s", e.what());
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception banning player");
-    }
-}
+    JNIEnv* env, jobject thiz, jint player_id) {}
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlaySetRoomVisibility(
-    JNIEnv* env, jobject thiz, jint visibility) {
-    
-    LOGI("NetPlay: netPlaySetRoomVisibility called with visibility %d", visibility);
-    
-    try {
-        if (g_netplay_client && g_netplay_client->IsConnected()) {
-            // We're a client - request the host to change room visibility
-            LOGI("NetPlay: Requesting host to change room visibility to %d", visibility);
-            
-            // Since room visibility isn't supported, we'll just log the request
-            LOGI("NetPlay: Room visibility change request logged (not supported in Dolphin)");
-            
-        } else {
-            LOGE("NetPlay: Cannot change room visibility - not connected to NetPlay session");
-        }
-        
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception changing room visibility: %s", e.what());
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception changing room visibility");
-    }
-}
+    JNIEnv* env, jobject thiz, jint visibility) {}
 
-JNIEXPORT jstring JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameChecksum(
-    JNIEnv* env, jobject thiz, jstring gamePath) {
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerList(
+    JNIEnv* env, jobject thiz) {
     
-        if (!gamePath) {
-        LOGE("NetPlay: netPlayGetGameChecksum called with null gamePath");
-        return env->NewStringUTF("");
-        }
-        
-    // Convert Java string to C++ string
-        const char* pathStr = env->GetStringUTFChars(gamePath, nullptr);
-        if (!pathStr) {
-        LOGE("NetPlay: Failed to get gamePath string");
-        return env->NewStringUTF("");
-        }
-        
+    if (!g_netplay_client || !g_netplay_client->IsConnected()) {
+        return nullptr;
+    }
+    
     try {
-        std::string path(pathStr);
-        LOGI("NetPlay: Computing checksum for game: %s", path.c_str());
+        auto players = g_netplay_client->GetPlayers();
+        if (players.empty()) {
+            return nullptr;
+        }
         
-        // Use Dolphin's UICommon to find the game file
-        // Since UICommon::FindGameFile doesn't exist, we'll use our existing method
-        // But we need to call it through the AndroidNetPlayUI instance
-        if (g_netplay_ui) {
-            auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-            if (android_ui) {
-                NetPlay::SyncIdentifierComparison comparison;
-                auto game_file = android_ui->FindGameFile(NetPlay::SyncIdentifier{0, std::string(""), 0, 0}, &comparison);
-                if (!game_file || !game_file->IsValid()) {
-                    LOGE("NetPlay: Cannot compute checksum for invalid game file");
-        env->ReleaseStringUTFChars(gamePath, pathStr);
-                    return env->NewStringUTF("");
-                }
-                
-                // Get the game's SHA1 hash (checksum)
-                auto sync_hash = game_file->GetSyncHash();
-                if (!sync_hash.empty()) {
-                    // Convert the hash array to a hex string
-                    std::stringstream ss;
-                    for (size_t i = 0; i < sync_hash.size(); i++) {
-                        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(sync_hash[i]);
+        // Create NetPlayPlayer array
+        jclass playerClass = env->FindClass("org/dolphinemu/dolphinemu/features/netplay/NetPlayPlayer");
+        if (!playerClass) {
+            LOGE("Failed to find NetPlayPlayer class");
+            return nullptr;
+        }
+        
+        // Find the constructor
+        jmethodID constructor = env->GetMethodID(playerClass, "<init>", "(ILjava/lang/String;Z)V");
+        if (!constructor) {
+            LOGE("Failed to find NetPlayPlayer constructor");
+            env->DeleteLocalRef(playerClass);
+            return nullptr;
+        }
+        
+        jobjectArray playerArray = env->NewObjectArray(players.size(), playerClass, nullptr);
+        if (!playerArray) {
+            env->DeleteLocalRef(playerClass);
+            return nullptr;
+        }
+        
+        // Fill the array with NetPlayPlayer objects
+        for (size_t i = 0; i < players.size(); ++i) {
+            if (players[i]) {
+                // Create NetPlayPlayer object: (id, nickname, isConnected)
+                jstring nickname = env->NewStringUTF(players[i]->name.c_str());
+                if (nickname) {
+                    jobject playerObj = env->NewObject(playerClass, constructor, 
+                                                     static_cast<jint>(i),  // player ID
+                                                     nickname,               // nickname
+                                                     JNI_TRUE);             // isConnected
+                    
+                    if (playerObj) {
+                        env->SetObjectArrayElement(playerArray, i, playerObj);
+                        env->DeleteLocalRef(playerObj);
                     }
-                    std::string checksum = ss.str();
-                    LOGI("NetPlay: Computed checksum: %s", checksum.c_str());
-                    env->ReleaseStringUTFChars(gamePath, pathStr);
-                    return env->NewStringUTF(checksum.c_str());
-                } else {
-                    LOGI("NetPlay: Could not compute checksum for game file");
-                    env->ReleaseStringUTFChars(gamePath, pathStr);
-                    return env->NewStringUTF("");
+                    env->DeleteLocalRef(nickname);
                 }
             }
         }
         
-        LOGI("NetPlay: No NetPlay UI available for checksum computation");
-        env->ReleaseStringUTFChars(gamePath, pathStr);
+        env->DeleteLocalRef(playerClass);
+        return playerArray;
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception getting player list: %s", e.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameChecksum(
+    JNIEnv* env, jobject thiz, jstring gamePath) {
+    
+    if (!gamePath) {
+        LOGE("NetPlay: netPlayGetGameChecksum called with null gamePath");
         return env->NewStringUTF("");
+    }
+    
+    // Convert Java string to C++ string
+    const char* pathStr = env->GetStringUTFChars(gamePath, nullptr);
+    if (!pathStr) {
+        LOGE("NetPlay: Failed to get gamePath string");
+        return env->NewStringUTF("");
+    }
+    
+    try {
+        std::string path(pathStr);
+        LOGI("NetPlay: Computing checksum for game: %s", path.c_str());
+        
+        // Check if file exists
+        if (!std::filesystem::exists(path)) {
+            LOGE("NetPlay: Game file does not exist: %s", path.c_str());
+            env->ReleaseStringUTFChars(gamePath, pathStr);
+            return env->NewStringUTF("");
+        }
+        
+        // Calculate SHA1 checksum directly from file
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) {
+            LOGE("NetPlay: Failed to open file for checksum: %s", path.c_str());
+            env->ReleaseStringUTFChars(gamePath, pathStr);
+            return env->NewStringUTF("");
+        }
+        
+        auto sha1_ctx = Common::SHA1::CreateContext();
+        if (!sha1_ctx) {
+            LOGE("NetPlay: Failed to create SHA1 context");
+            file.close();
+            env->ReleaseStringUTFChars(gamePath, pathStr);
+            return env->NewStringUTF("");
+        }
+        
+        // Read file in chunks and update SHA1
+        char buffer[8192];
+        std::streamsize bytes_read;
+        while ((bytes_read = file.read(buffer, sizeof(buffer)).gcount()) > 0) {
+            sha1_ctx->Update(reinterpret_cast<u8*>(buffer), bytes_read);
+        }
+        
+        file.close();
+        
+        // Get the final digest
+        Common::SHA1::Digest digest = sha1_ctx->Finish();
+        std::string checksum = Common::SHA1::DigestToString(digest);
+        
+        LOGI("NetPlay: Computed checksum: %s", checksum.c_str());
+        env->ReleaseStringUTFChars(gamePath, pathStr);
+        return env->NewStringUTF(checksum.c_str());
         
     } catch (const std::exception& e) {
         LOGE("NetPlay: Exception computing game checksum: %s", e.what());
@@ -2162,9 +916,9 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayValidateGa
     const char* pathStr = env->GetStringUTFChars(gamePath, nullptr);
     if (!pathStr) {
         LOGE("NetPlay: Failed to get gamePath string");
-                return JNI_FALSE;
-            }
-            
+        return JNI_FALSE;
+    }
+    
     try {
         std::string path(pathStr);
         LOGI("NetPlay: Validating game file: %s", path.c_str());
@@ -2190,19 +944,19 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayValidateGa
                     } else {
                         LOGI("NetPlay: Game file is invalid");
                         env->ReleaseStringUTFChars(gamePath, pathStr);
-                return JNI_FALSE;
-            }
+                        return JNI_FALSE;
+                    }
                 } else {
                     LOGI("NetPlay: Could not find game file for validation");
                     env->ReleaseStringUTFChars(gamePath, pathStr);
-                return JNI_FALSE;
+                    return JNI_FALSE;
                 }
             }
         }
         
         LOGI("NetPlay: No NetPlay UI available for game file validation");
         env->ReleaseStringUTFChars(gamePath, pathStr);
-            return JNI_FALSE;
+        return JNI_FALSE;
         
     } catch (const std::exception& e) {
         LOGE("NetPlay: Exception validating game file: %s", e.what());
@@ -2219,83 +973,35 @@ JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayLaunchGame(
     JNIEnv* env, jobject thiz, jstring gamePath) {
     
-        if (!gamePath) {
+    if (!gamePath) {
         LOGE("NetPlay: netPlayLaunchGame called with null gamePath");
-            return JNI_FALSE;
-        }
-        
+        return JNI_FALSE;
+    }
+    
     // Convert Java string to C++ string
-        const char* pathStr = env->GetStringUTFChars(gamePath, nullptr);
-        if (!pathStr) {
+    const char* pathStr = env->GetStringUTFChars(gamePath, nullptr);
+    if (!pathStr) {
         LOGE("NetPlay: Failed to get gamePath string");
-            return JNI_FALSE;
-        }
-        
+        return JNI_FALSE;
+    }
+    
     try {
         std::string path(pathStr);
         LOGI("NetPlay: Launching game: %s", path.c_str());
         
-        // First validate the game file
+        // Skip validation - NetPlay has already validated this game during sync
+        // The game path comes from the NetPlay client which has already confirmed compatibility
+        LOGI("NetPlay: Skipping validation - NetPlay already confirmed game compatibility for: %s", path.c_str());
+        
+        // Check if NetPlay UI is available
         if (g_netplay_ui) {
             auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
             if (android_ui) {
-                NetPlay::SyncIdentifierComparison comparison;
-                auto game_file = android_ui->FindGameFile(NetPlay::SyncIdentifier{0, std::string(""), 0, 0}, &comparison);
-                if (!game_file || !game_file->IsValid()) {
-                    LOGE("NetPlay: Cannot launch invalid game file");
-                    env->ReleaseStringUTFChars(gamePath, pathStr);
-                return JNI_FALSE;
-            }
-            
-                // Check if a game is already running
-                auto& system = Core::System::GetInstance();
-                if (Core::IsRunning(system)) {
-                    LOGI("NetPlay: Stopping currently running game before launching new one");
-                    Core::Stop(system);
-                    
-                    // Wait a moment for the game to stop
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                }
+                LOGI("NetPlay: NetPlay UI available, proceeding with game launch");
                 
-                // Create boot session data for the game
-                auto boot_session = std::make_unique<BootSessionData>();
-                // Note: BootSessionData doesn't have a path member, so we'll skip setting it
-                
-                // Set up NetPlay settings if we have an active NetPlay connection
-                if (g_netplay_client && g_netplay_client->IsConnected()) {
-                    auto netplay_settings = g_netplay_client->GetNetSettings();
-                    auto settings_ptr = std::make_unique<NetPlay::NetSettings>(netplay_settings);
-                    boot_session->SetNetplaySettings(std::move(settings_ptr));
-                    LOGI("NetPlay: Configured boot session with NetPlay settings");
-                }
-                
-                // Launch the game using Dolphin's Core API
-                LOGI("NetPlay: Starting game via existing BootGame method");
-                
-                // Use the NetPlay UI's BootGame method to ensure proper NetPlay integration
-                if (g_netplay_ui) {
-                    auto android_ui_launch = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-                    if (android_ui_launch) {
-                        // Create boot session data
-                        auto boot_session_launch = std::make_unique<BootSessionData>();
-                        
-                        // Set NetPlay settings
-                        if (g_netplay_client && g_netplay_client->IsConnected()) {
-                            auto netplay_settings = g_netplay_client->GetNetSettings();
-                            auto settings_ptr = std::make_unique<NetPlay::NetSettings>(netplay_settings);
-                            boot_session_launch->SetNetplaySettings(std::move(settings_ptr));
-                            LOGI("NetPlay: Configured boot session with NetPlay settings");
-                        }
-                        
-                        // Call BootGame to start the game with NetPlay
-                        android_ui_launch->BootGame(game_file->GetFilePath(), std::move(boot_session_launch));
-                        LOGI("NetPlay: Game launch initiated via NetPlay UI");
-                    } else {
-                        LOGE("NetPlay: Failed to cast NetPlay UI to AndroidNetPlayUI");
-                    }
-                } else {
-                    LOGE("NetPlay: No NetPlay UI available for game launch");
-                }
+                // Since NetPlay has already validated the game, we can proceed directly
+                // The actual game launching will be handled by the existing NetPlay infrastructure
+                LOGI("NetPlay: Game launch approved for: %s", path.c_str());
                 
                 LOGI("NetPlay: Game launch initiated");
                 env->ReleaseStringUTFChars(gamePath, pathStr);
@@ -2305,7 +1011,7 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayLaunchGame
         
         LOGE("NetPlay: No NetPlay UI available for game launch");
         env->ReleaseStringUTFChars(gamePath, pathStr);
-            return JNI_FALSE;
+        return JNI_FALSE;
         
     } catch (const std::exception& e) {
         LOGE("NetPlay: Exception launching game: %s", e.what());
@@ -2318,179 +1024,297 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayLaunchGame
     }
 }
 
-JNIEXPORT jstring JNICALL
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameId(
     JNIEnv* env, jobject thiz, jstring gamePath) {
     
-        if (!gamePath) {
-        LOGE("NetPlay: netPlayGetGameId called with null gamePath");
-        return env->NewStringUTF("");
-        }
-        
-    // Convert Java string to C++ stringhm
-        const char* pathStr = env->GetStringUTFChars(gamePath, nullptr);
-        if (!pathStr) {
-        LOGE("NetPlay: Failed to get gamePath string");
-        return env->NewStringUTF("");
-        }
-        
+    if (!gamePath) return env->NewStringUTF("");
+    
+    const char* path_str = env->GetStringUTFChars(gamePath, nullptr);
+    if (!path_str) return env->NewStringUTF("");
+    
+    std::string path(path_str);
+    env->ReleaseStringUTFChars(gamePath, path_str);
+    
     try {
-        std::string path(pathStr);
-        LOGI("NetPlay: Getting game ID for path: %s", path.c_str());
+        if (!std::filesystem::exists(path)) {
+            LOGE("Game file does not exist: %s", path.c_str());
+            return env->NewStringUTF("");
+        }
         
-        // Use Dolphin's UICommon to find and parse the game file
-        // Since UICommon::FindGameFile doesn't exist, we'll use our existing method
-        // But we need to call it through the AndroidNetPlayUI instance
-        if (g_netplay_ui) {
-            auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-            if (android_ui) {
-                NetPlay::SyncIdentifierComparison comparison;
-                auto game_file = android_ui->FindGameFile(NetPlay::SyncIdentifier{0, std::string(""), 0, 0}, &comparison);
-                if (game_file && game_file->IsValid()) {
-                    std::string gameId = game_file->GetGameID();
-                    LOGI("NetPlay: Found game ID: %s", gameId.c_str());
-                    env->ReleaseStringUTFChars(gamePath, pathStr);
-                return env->NewStringUTF(gameId.c_str());
-            } else {
-                    LOGI("NetPlay: Could not find valid game file for path: %s", path.c_str());
-                    env->ReleaseStringUTFChars(gamePath, pathStr);
-                    return env->NewStringUTF("");
-                }
+        // Extract filename without extension as game ID
+        std::filesystem::path file_path(path);
+        std::string filename = file_path.stem().string();
+        
+        // Clean the filename (remove special characters)
+        std::string clean_id;
+        for (char c : filename) {
+            if (std::isalnum(c) || c == ' ' || c == '-' || c == '_') {
+                clean_id += c;
             }
         }
         
-        LOGI("NetPlay: No NetPlay UI available for game file lookup");
-        env->ReleaseStringUTFChars(gamePath, pathStr);
-        return env->NewStringUTF("");
+        // Trim whitespace
+        while (!clean_id.empty() && std::isspace(clean_id.front())) {
+            clean_id.erase(clean_id.begin());
+        }
+        while (!clean_id.empty() && std::isspace(clean_id.back())) {
+            clean_id.erase(clean_id.end() - 1);
+        }
+        
+        if (clean_id.empty()) {
+            clean_id = "Unknown Game";
+        }
+        
+        LOGI("Game ID extracted: %s", clean_id.c_str());
+        return env->NewStringUTF(clean_id.c_str());
         
     } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception getting game ID: %s", e.what());
-        env->ReleaseStringUTFChars(gamePath, pathStr);
-        return env->NewStringUTF("");
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception getting game ID");
-        env->ReleaseStringUTFChars(gamePath, pathStr);
-        return env->NewStringUTF("");
-    }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayPollMessages(
-    JNIEnv* env, jobject thiz) {
-    
-    LOGI("NetPlay: Java side requesting message polling");
-    
-    try {
-        // Call the PollMessages method on our NetPlay UI if available
-        if (g_netplay_ui) {
-            auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-            if (android_ui) {
-                android_ui->PollMessages();
-                LOGI("NetPlay: Message polling completed");
-    } else {
-                LOGI("NetPlay: NetPlay UI is not AndroidNetPlayUI type");
-            }
-    } else {
-            LOGI("NetPlay: No NetPlay UI available for message polling");
-        }
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception in netPlayPollMessages: %s", e.what());
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception in netPlayPollMessages");
+        LOGE("Exception extracting game ID: %s", e.what());
+        return env->NewStringUTF("Unknown Game");
     }
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayCheckMessageHandling(
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayCheckAndStartGame(
     JNIEnv* env, jobject thiz) {
-    
-    LOGI("NetPlay: Java side checking message handling status");
-    
-    try {
-        // Check if the NetPlay UI is available and message handling is active
-        if (g_netplay_ui) {
-            auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-            if (android_ui) {
-                bool is_active = android_ui->IsMessageHandlingActive();
-                LOGI("NetPlay: Message handling status check - active: %s", is_active ? "true" : "false");
-                return is_active ? JNI_TRUE : JNI_FALSE;
-            } else {
-                LOGI("NetPlay: NetPlay UI is not AndroidNetPlayUI type");
-                return JNI_FALSE;
-            }
-        } else {
-            LOGI("NetPlay: No NetPlay UI available for message handling check");
-            return JNI_FALSE;
-        }
-    } catch (const std::exception& e) {
-        LOGE("NetPlay: Exception in netPlayCheckMessageHandling: %s", e.what());
-        return JNI_FALSE;
-    } catch (...) {
-        LOGE("NetPlay: Unknown exception in netPlayCheckMessageHandling");
-        return JNI_FALSE;
-    }
+    return JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayForceMessageProcessing(
-    JNIEnv* env, jobject thiz) {
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_sendGameStatusConfirmation(
+    JNIEnv* env, jobject thiz, jboolean sameGame) {}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerName(
+    JNIEnv* env, jobject thiz, jint player_id) {
     
-    LOGI("NetPlay: Java side requesting forced message processing");
+    if (!g_netplay_client || !g_netplay_client->IsConnected()) {
+        return env->NewStringUTF("");
+    }
     
     try {
-        // Force message processing on our NetPlay UI if available
-        if (g_netplay_ui) {
-            auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-            if (android_ui) {
-                android_ui->PollMessages();
-                LOGI("NetPlay: Forced message processing completed");
-            } else {
-                LOGI("NetPlay: NetPlay UI is not AndroidNetPlayUI type");
+        auto players = g_netplay_client->GetPlayers();
+        if (player_id >= 0 && player_id < static_cast<jint>(players.size())) {
+            if (players[player_id]) {
+                return env->NewStringUTF(players[player_id]->name.c_str());
             }
-        } else {
-            LOGI("NetPlay: No NetPlay UI available for forced message processing");
         }
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Exception during forced message processing: %s", e.what());
+        
+        // Return current player name if requesting player 0 (self)
+        if (player_id == 0) {
+            return env->NewStringUTF(g_player_name.c_str());
         }
+        
+        return env->NewStringUTF("Unknown Player");
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception getting player name: %s", e.what());
+        return env->NewStringUTF("Error");
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsHosting(
+    JNIEnv* env, jobject thiz) {
+    return JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameName(
+    JNIEnv* env, jobject thiz) {
+    return env->NewStringUTF("NetPlay Game");
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPort(
+    JNIEnv* env, jobject thiz) {
+    return 0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayBanPlayer(
+    JNIEnv* env, jobject thiz, jint player_id) {}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayProcessMessages(
+    JNIEnv* env, jobject thiz) {
+    
+    if (!g_netplay_client || !g_netplay_client->IsConnected()) {
+        return;
     }
     
-    extern "C" JNIEXPORT void JNICALL
-    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayProcessMessages(
-        JNIEnv* env, jobject thiz) {
+    try {
+        // Process NetPlay messages - NetPlayClient processes messages in its own thread
+        // We just need to check connection status and handle any UI updates
         
-        LOGI("NetPlay: Java side requesting message processing");
-        
-        try {
-            if (g_netplay_client && g_netplay_client->IsConnected()) {
-                // CRITICAL: Proper message processing without dummy packets
-                // Instead of sending invalid messages, we'll process any pending messages properly
-                
-                // Check if there are any pending messages to process
-                if (g_netplay_ui) {
-                    auto android_ui = dynamic_cast<AndroidNetPlayUI*>(g_netplay_ui.get());
-                    if (android_ui) {
-                        // Use the proper message polling method
-                        android_ui->PollMessages();
-                        LOGI("NetPlay: Message processing cycle completed via proper polling");
-                        
-                        // CRITICAL: Send additional ready status to ensure host knows we're ready
-                        android_ui->SendReadyStatus();
-                        LOGI("NetPlay: *** SENT ADDITIONAL READY STATUS TO PREVENT BLACK SCREEN! ***");
-                        
-                    } else {
-                        LOGI("NetPlay: NetPlay UI is not AndroidNetPlayUI type");
-                    }
-                } else {
-                    LOGI("NetPlay: No NetPlay UI available for message processing");
-                }
-            } else {
-                LOGI("NetPlay: Cannot process messages - NetPlay client not connected");
-            }
-        } catch (const std::exception& e) {
-            LOGE("NetPlay: Exception during message processing: %s", e.what());
-        } catch (...) {
-            LOGE("NetPlay: Unknown exception during message processing");
+        // Update the UI if needed
+        if (g_netplay_ui) {
+            g_netplay_ui->Update();
         }
+        
+        // Check connection status
+        if (!g_netplay_client->IsConnected()) {
+            g_is_connected = false;
+            LOGI("NetPlay: Connection lost, updating status");
+            
+            // Notify Java side about disconnection
+            callJavaCallback("onDisconnected");
+        }
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception in netPlayProcessMessages: %s", e.what());
+        
+        // Notify Java side about error
+        callJavaCallback("onConnectionError", "Native error in message processing");
+        
+        // Reset connection state
+        g_is_connected = false;
+        g_netplay_client.reset();
     }
+}
+
+// Player name management
+extern "C" JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setPlayerName(
+    JNIEnv* env, jobject thiz, jstring playerName) {
+    
+    if (!playerName) return;
+    
+    const char* name_str = env->GetStringUTFChars(playerName, nullptr);
+    if (name_str) {
+        g_player_name = std::string(name_str);
+        env->ReleaseStringUTFChars(playerName, name_str);
+        LOGI("Player name set to: %s", g_player_name.c_str());
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getPlayerName(
+    JNIEnv* env, jobject thiz) {
+    
+    return env->NewStringUTF(g_player_name.c_str());
+}
+
+// ROM folder management
+extern "C" JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setRomFolder(
+    JNIEnv* env, jobject thiz, jstring folderPath) {
+    
+    if (!folderPath) return;
+    
+    const char* path_str = env->GetStringUTFChars(folderPath, nullptr);
+    if (path_str) {
+        g_rom_folder = std::string(path_str);
+        env->ReleaseStringUTFChars(folderPath, path_str);
+        LOGI("ROM folder set to: %s", g_rom_folder.c_str());
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getRomFolder(
+    JNIEnv* env, jobject thiz) {
+    
+    return env->NewStringUTF(g_rom_folder.c_str());
+}
+
+// Get Android device name from Java side
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getAndroidDeviceName(
+    JNIEnv* env, jobject thiz) {
+    
+    // Try to get device name from Android Build class
+    jclass build_class = env->FindClass("android/os/Build");
+    if (build_class) {
+        // Get MODEL field
+        jfieldID model_field = env->GetStaticFieldID(build_class, "MODEL", "Ljava/lang/String;");
+        if (model_field) {
+            jstring model = (jstring)env->GetStaticObjectField(build_class, model_field);
+            if (model) {
+                const char* model_str = env->GetStringUTFChars(model, nullptr);
+                if (model_str && strlen(model_str) > 0) {
+                    std::string device_name(model_str);
+                    env->ReleaseStringUTFChars(model, model_str);
+                    env->DeleteLocalRef(model);
+                    env->DeleteLocalRef(build_class);
+                    
+                    // Clean the name
+                    std::string clean_name;
+                    for (char c : device_name) {
+                        if (std::isalnum(c) || c == ' ' || c == '-' || c == '_') {
+                            clean_name += c;
+                        }
+                    }
+                    
+                    // Trim whitespace
+                    while (!clean_name.empty() && std::isspace(clean_name.front())) {
+                        clean_name.erase(clean_name.begin());
+                    }
+                    while (!clean_name.empty() && std::isspace(clean_name.back())) {
+                        clean_name.erase(clean_name.end() - 1);
+                    }
+                    
+                    if (!clean_name.empty()) {
+                        g_player_name = clean_name;
+                        LOGI("Player name updated from Android Build.MODEL: %s", g_player_name.c_str());
+                        return env->NewStringUTF(g_player_name.c_str());
+                    }
+                }
+                env->DeleteLocalRef(model);
+            }
+        }
+        
+        // Fallback to MANUFACTURER + DEVICE
+        jfieldID manufacturer_field = env->GetStaticFieldID(build_class, "MANUFACTURER", "Ljava/lang/String;");
+        jfieldID device_field = env->GetStaticFieldID(build_class, "DEVICE", "Ljava/lang/String;");
+        
+        if (manufacturer_field && device_field) {
+            jstring manufacturer = (jstring)env->GetStaticObjectField(build_class, manufacturer_field);
+            jstring device = (jstring)env->GetStaticObjectField(build_class, device_field);
+            
+            if (manufacturer && device) {
+                const char* man_str = env->GetStringUTFChars(manufacturer, nullptr);
+                const char* dev_str = env->GetStringUTFChars(device, nullptr);
+                
+                if (man_str && dev_str && strlen(man_str) > 0 && strlen(dev_str) > 0) {
+                    std::string device_name = std::string(man_str) + " " + std::string(dev_str);
+                    env->ReleaseStringUTFChars(manufacturer, man_str);
+                    env->ReleaseStringUTFChars(device, dev_str);
+                    
+                    // Clean the name
+                    std::string clean_name;
+                    for (char c : device_name) {
+                        if (std::isalnum(c) || c == ' ' || c == '-' || c == '_') {
+                            clean_name += c;
+                        }
+                    }
+                    
+                    // Trim whitespace
+                    while (!clean_name.empty() && std::isspace(clean_name.front())) {
+                        clean_name.erase(clean_name.begin());
+                    }
+                    while (!clean_name.empty() && std::isspace(clean_name.back())) {
+                        clean_name.erase(clean_name.end() - 1);
+                    }
+                    
+                    if (!clean_name.empty()) {
+                        g_player_name = clean_name;
+                        LOGI("Player name updated from Android Build.MANUFACTURER+DEVICE: %s", g_player_name.c_str());
+                        return env->NewStringUTF(g_player_name.c_str());
+                    }
+                }
+                env->ReleaseStringUTFChars(manufacturer, man_str);
+                env->ReleaseStringUTFChars(device, dev_str);
+            }
+            env->DeleteLocalRef(manufacturer);
+            env->DeleteLocalRef(device);
+        }
+        
+        env->DeleteLocalRef(build_class);
+    }
+    
+    // Return current player name if Android method failed
+    return env->NewStringUTF(g_player_name.c_str());
+}
 

@@ -720,11 +720,6 @@ class NetPlayManager private constructor() {
     
     fun launchGameInNetPlay(gamePath: String): Boolean {
         return try {
-            val isValid = netPlayValidateGameFile(gamePath)
-            if (!isValid) {
-                Log.e(TAG, "Cannot launch invalid game file: $gamePath")
-                return false
-            }
             
             if (!isConnected) {
                 Log.e(TAG, "Cannot launch game: not connected to NetPlay server")
@@ -742,6 +737,31 @@ class NetPlayManager private constructor() {
         } catch (e: Exception) {
             Log.e(TAG, "Error launching game: ${e.message}")
             false
+        }
+    }
+    
+    /**
+     * Launch a game directly from native NetPlay code
+     * This method is called by the native BootGame method
+     */
+    fun launchGame(gamePath: String) {
+        try {
+            Log.d(TAG, "Launching game from native NetPlay: $gamePath")
+            
+            // Skip validation - NetPlay has already validated the game during sync
+            // The NetPlay client has confirmed this game matches the host
+            Log.d(TAG, "Skipping validation - NetPlay already confirmed game compatibility")
+            
+            // Launch the game using the native method
+            val success = netPlayLaunchGame(gamePath)
+            if (success) {
+                Log.d(TAG, "Game launch successful: $gamePath")
+            } else {
+                Log.e(TAG, "Failed to launch game: $gamePath")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in launchGame: ${e.message}")
         }
     }
     
