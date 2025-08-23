@@ -4,7 +4,7 @@ on:
   pull_request: null
 jobs:
   build_flatpak:
-    name: Linux Flatpak x86_64
+    name: Flatpak Linux x86_64
     runs-on: ubuntu-latest
     container:
       image: bilelmoussaoui/flatpak-github-actions:gnome-nightly
@@ -27,7 +27,7 @@ jobs:
           manifest-path: Distribution/flatpak.yml
           bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
   build_deb24_04:
-    name: Linux Debian 24.04 x86_64
+    name: Ubuntu Linux 24.04 x86_64
     runs-on: ubuntu-24.04
     steps:
       - name: Install Git
@@ -73,7 +73,7 @@ jobs:
           name: DolphinMPN-ubuntu-24.04-linux-x86_64
           path: build/OUT/
   build_deb22_04:
-    name: Linux Debian 22.04 x86_64
+    name: Ubuntu Linux 22.04 x86_64
     runs-on: ubuntu-22.04
     steps:
       - name: Install Git
