@@ -309,6 +309,9 @@ int main(int argc, char* argv[])
       updater->start();
     }
 
+    // Also call our custom automatic update checker for immediate prompting
+    win.CheckForUpdatesAuto();
+    
     retval = app.exec();
   }
 
