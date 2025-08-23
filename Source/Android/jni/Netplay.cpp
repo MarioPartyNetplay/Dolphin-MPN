@@ -41,6 +41,66 @@ static JavaVM* g_jvm = nullptr;
 static std::string g_player_name = "Android Player";
 static std::string g_rom_folder = "";
 static std::string g_last_game_path = ""; // Store the last game path for fallback
+static bool g_start_game_processing = false; // Prevent duplicate StartGame messages
+
+// Helper functions to extract game information from file paths
+static std::string ExtractGameIdFromPath(const std::string& path) {
+    try {
+        // Extract filename from path
+        size_t last_slash = path.find_last_of("/\\");
+        std::string filename = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+        
+        // Remove file extension
+        size_t last_dot = filename.find_last_of('.');
+        if (last_dot != std::string::npos) {
+            filename = filename.substr(0, last_dot);
+        }
+        
+        // GameCube/Wii games typically have 6-character IDs
+        // Look for a pattern like "GP6E01" or similar
+        if (filename.length() >= 6) {
+            // Check if it looks like a game ID (alphanumeric, 6 chars)
+            std::string potential_id = filename.substr(0, 6);
+            bool is_valid_id = true;
+            for (char c : potential_id) {
+                if (!std::isalnum(c)) {
+                    is_valid_id = false;
+                    break;
+                }
+            }
+            if (is_valid_id) {
+                return potential_id;
+            }
+        }
+        
+        // Fallback: use first 6 characters of filename
+        return filename.substr(0, std::min(6UL, filename.length()));
+        
+    } catch (const std::exception& e) {
+        LOGE("NetPlay: Exception extracting game ID from path: %s", e.what());
+        return "";
+    }
+}
+
+static std::string ExtractGameNameFromPath(const std::string& path) {
+    try {
+        // Extract filename from path
+        size_t last_slash = path.find_last_of("/\\");
+        std::string filename = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+        
+        // Remove file extension
+        size_t last_dot = filename.find_last_of('.');
+        if (last_dot != std::string::npos) {
+            filename = filename.substr(0, last_dot);
+        }
+        
+        return filename;
+        
+    } catch (const std::exception& e) {
+        LOGE("NetPlay: Exception extracting game name from path: %s", e.what());
+        return "Unknown Game";
+    }
+}
 
 // Minimal NetPlayUI implementation for Android
 class AndroidNetPlayUI : public NetPlay::NetPlayUI
@@ -50,8 +110,18 @@ public:
         LOGI("NetPlay: BootGame called for %s", filename.c_str());
         
         try {
+            // CRITICAL: Check if we're already processing a StartGame message to prevent infinite loops
+            if (g_start_game_processing) {
+                LOGI("NetPlay: Already processing StartGame message - skipping duplicate BootGame call");
+                return;
+            }
+            
             if (g_netplay_client && g_netplay_client->IsConnected()) {
                 LOGI("NetPlay: Starting NetPlay game launch process for: %s", filename.c_str());
+                
+                // Set flag to prevent duplicate StartGame messages
+                g_start_game_processing = true;
+                LOGI("NetPlay: Set start_game_processing flag to prevent duplicate messages");
                 
                 // First, ensure any existing game is stopped to reset the running state
                 if (g_netplay_client->IsRunning()) {
@@ -173,6 +243,10 @@ public:
             
             LOGI("NetPlay: NetPlay connection verified, processing StartGame message from server");
             
+            // The GameStatus message is already sent in OnMsgChangeGame
+            // No need to send it again here - just proceed with game launch
+            LOGI("NetPlay: GameStatus already sent, proceeding with game launch");
+            
             // Launch the game using the stored game path from OnMsgChangeGame
             if (!g_last_game_path.empty()) {
                 LOGI("NetPlay: Launching game using stored path: %s", g_last_game_path.c_str());
@@ -190,6 +264,10 @@ public:
             } else {
                 LOGE("NetPlay: No game path available to launch - OnMsgChangeGame was not called first");
             }
+            
+            // Reset the flag to allow future StartGame messages
+            g_start_game_processing = false;
+            LOGI("NetPlay: Reset start_game_processing flag - StartGame processing complete");
             
             // Notify Java side that the server started the game (for UI updates)
             JNIEnv* env = getJNIEnv();
@@ -213,6 +291,7 @@ public:
             
         } catch (const std::exception& e) {
             LOGE("Exception in NetPlay StartGame processing: %s", e.what());
+            g_start_game_processing = false;
         }
     }
     void OnMsgStopGame() override {}
@@ -222,8 +301,12 @@ public:
     void OnPadBufferChanged(u32 buffer) override {}
     void OnHostInputAuthorityChanged(bool enabled) override {}
     void OnDesync(u32 frame, const std::string& player) override {}
-    void OnConnectionLost() override {}
-    void OnConnectionError(const std::string& message) override {}
+    void OnConnectionLost() override {
+        g_start_game_processing = false;
+    }
+    void OnConnectionError(const std::string& message) override {
+        g_start_game_processing = false;
+    }
     void OnTraversalError(Common::TraversalClient::FailureReason error) override {}
     void OnTraversalStateChanged(Common::TraversalClient::State state) override {}
     void OnGameStartAborted() override {}
@@ -555,6 +638,7 @@ void CleanupMultiplayerJNI() {
     g_netplay_client.reset();
     g_netplay_ui.reset();
     g_is_connected = false;
+    g_start_game_processing = false;
     LOGI("Multiplayer JNI wrapper cleaned up");
 }
 
@@ -587,6 +671,7 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_CleanupMultiplaye
     g_netplay_client.reset();
     g_netplay_ui.reset();
     g_is_connected = false;
+    g_start_game_processing = false;
     
     LOGI("Multiplayer JNI cleaned up");
 }
@@ -671,6 +756,7 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
     
     LOGE("Connection timeout after %d ms", timeout_ms);
     g_netplay_client.reset();
+    g_start_game_processing = false;  // Reset flag on connection failure
     return JNI_FALSE;
 }
 
@@ -687,6 +773,7 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayDisconnect
     }
     
     g_is_connected = false;
+    g_start_game_processing = false;  // Reset flag on disconnect
     LOGI("NetPlay: Disconnected");
 }
 
