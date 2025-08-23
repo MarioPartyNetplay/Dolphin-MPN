@@ -349,17 +349,6 @@ jobs:
                 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
                 "${COMMON_ARGS[@]}" \
                 -B build-arm .
-      - name: Dolphin-Build Number
-        run: >
-          export LASTCOMMIT=$(git log --pretty=format:%H -1)
-
-          export DOLPHINVER="v3.1.2-mainline-beta.3"
-
-          echo "DOLPHIN Build $DOLPHINVER"
-
-          echo "DOLPHINVER=$DOLPHINVER" >> $GITHUB_ENV
-
-          gsed -i "s|\${DOLPHIN_WC_DESCRIBE}|$DOLPHINVER|g" Source/Core/Common/scmrev.h.in
       - name: Build Dolphin (x86_64)
         working-directory: build
         run: ninja
