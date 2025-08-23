@@ -1,30 +1,101 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:background="?android:attr/colorBackground"
+    android:padding="24dp">
 
-    <TextView
-        android:id="@+id/text_status"
+    <!-- Header Section -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Loading MPN games..."
-        android:textSize="16sp"
-        android:layout_marginBottom="16dp" />
+        android:orientation="horizontal"
+        android:layout_marginBottom="24dp"
+        android:gravity="center_vertical">
 
-    <Button
-        android:id="@+id/button_refresh"
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@android:drawable/ic_menu_share"
+            android:tint="?android:attr/colorPrimary"
+            android:layout_marginEnd="16dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Netplay Browser"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/button_refresh"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Refresh"
+            android:textAllCaps="false"
+            app:icon="@android:drawable/ic_menu_rotate"
+            app:iconGravity="textStart"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
+    </LinearLayout>
+
+    <!-- Status Card -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="20dp"
+        app:cardElevation="2dp"
+        app:cardCornerRadius="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorSecondary"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/text_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Loading MPN games..."
+                android:textSize="16sp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:lineSpacingExtra="4dp" />
+
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Sessions List Header -->
+    <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Refresh"
-        android:layout_gravity="end"
+        android:text="Available Sessions"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="?android:attr/textColorPrimary"
         android:layout_marginBottom="16dp" />
 
+    <!-- Sessions RecyclerView -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_mpn_games"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="200dp" />
+        android:minHeight="200dp"
+        android:clipToPadding="false"
+        android:paddingBottom="8dp" />
 
 </LinearLayout>

@@ -10,35 +10,15 @@
     android:focusable="true"
     android:gravity="center_vertical">
 
-    <!-- Status Icons -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_marginEnd="16dp">
+    <!-- Game Icon -->
+    <ImageView
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@android:drawable/ic_menu_share"
+        android:tint="?android:attr/colorPrimary"
+        android:layout_marginEnd="16dp" />
 
-        <!-- Password Icon -->
-        <ImageView
-            android:id="@+id/icon_password"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:src="@android:drawable/ic_lock_lock"
-            android:visibility="gone"
-            android:layout_marginBottom="4dp"
-            android:tint="?android:attr/colorError" />
-
-        <!-- In-Game Icon -->
-        <ImageView
-            android:id="@+id/icon_ingame"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:src="@android:drawable/ic_media_play"
-            android:visibility="gone"
-            android:tint="?android:attr/colorPrimary" />
-
-    </LinearLayout>
-
-    <!-- Session Info -->
+    <!-- Server Info -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
@@ -46,27 +26,36 @@
         android:orientation="vertical">
 
         <TextView
-            android:id="@+id/text_session_name"
+            android:id="@+id/text_server_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Session Name (2/4)"
+            android:text="Server Name"
             android:textStyle="bold"
-            android:textSize="18sp"
+            android:textSize="16sp"
             android:textColor="?android:attr/textColorPrimary"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/text_game_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Game Name (GAME01)"
+            android:textSize="14sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginBottom="4dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="6dp">
+            android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/text_game_id"
+                android:id="@+id/text_player_count"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="GAME01"
-                android:textSize="14sp"
+                android:text="2/4 players"
+                android:textSize="12sp"
                 android:textColor="?android:attr/textColorSecondary"
                 android:background="@drawable/rounded_background"
                 android:paddingHorizontal="8dp"
@@ -74,11 +63,11 @@
                 android:layout_marginEnd="8dp" />
 
             <TextView
-                android:id="@+id/text_region"
+                android:id="@+id/text_server_address"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="US"
-                android:textSize="14sp"
+                android:text="192.168.1.100:2626"
+                android:textSize="12sp"
                 android:textColor="?android:attr/textColorSecondary"
                 android:background="@drawable/rounded_background"
                 android:paddingHorizontal="8dp"
@@ -86,14 +75,14 @@
 
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/text_player_count"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="2/4 players"
-            android:textSize="14sp"
-            android:textColor="?android:attr/textColorSecondary" />
-
     </LinearLayout>
+
+    <!-- Join Arrow -->
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@android:drawable/ic_media_play"
+        android:tint="?android:attr/colorPrimary"
+        android:layout_marginStart="8dp" />
 
 </LinearLayout>

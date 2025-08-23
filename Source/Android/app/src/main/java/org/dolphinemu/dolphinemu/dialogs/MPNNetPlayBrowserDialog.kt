@@ -80,7 +80,7 @@ class MPNNetPlayBrowserDialog : DialogFragment(), LobbyCallback, ConnectionCallb
     }
 
     private fun discoverServers() {
-        statusText.text = "Discovering MPN servers..."
+        statusText.text = "Discovering NetPlay servers..."
         netPlayManager.discoverServers()
     }
 
@@ -115,7 +115,7 @@ class MPNNetPlayBrowserDialog : DialogFragment(), LobbyCallback, ConnectionCallb
             if (servers.isEmpty()) {
                 statusText.text = "No available Netplay servers found. All sessions may be in-game or try refreshing."
             } else {
-                statusText.text = "Found ${servers.size} available Netplay server(s) (in-game sessions hidden)"
+                statusText.text = "Found ${servers.size} available Netplay server(s)"
             }
             adapter.updateServers(servers)
         }
@@ -168,19 +168,33 @@ class MPNNetPlayAdapter(
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_1, parent, false)
+            .inflate(R.layout.item_mpn_server, parent, false)
         return ViewHolder(view)
     }
     
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val server = servers[position]
-        holder.textView.text = "${server.name}\n${server.gameName} (${server.gameId})\nPlayers: ${server.playerCount}/${server.maxPlayers} - ${server.address}:${server.port}"
+        holder.serverNameText.text = server.name
+        holder.gameInfoText.text = "${server.gameName} (${server.gameId})"
+        holder.playerCountText.text = "${server.playerCount}/${server.maxPlayers} players"
+        
+        // Hide port if it's 2626 (traversal) or if the address looks like a host code
+        val addressText = if (server.address.length <= 8) {
+            server.address // Just show the address/host code without port
+        } else {
+            "${server.address}:${server.port}" // Show full address:port for direct connections
+        }
+        holder.serverAddressText.text = addressText
+        
         holder.itemView.setOnClickListener { onServerClick(server) }
     }
     
     override fun getItemCount(): Int = servers.size
     
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val textView: TextView = itemView.findViewById(android.R.id.text1)
+        val serverNameText: TextView = itemView.findViewById(R.id.text_server_name)
+        val gameInfoText: TextView = itemView.findViewById(R.id.text_game_info)
+        val playerCountText: TextView = itemView.findViewById(R.id.text_player_count)
+        val serverAddressText: TextView = itemView.findViewById(R.id.text_server_address)
     }
 }

@@ -68,6 +68,8 @@ const std::string& GetNetplayDolphinVer()
   static const std::string netplay_dolphin_ver = LABEL " Win";
 #elif __APPLE__
   static const std::string netplay_dolphin_ver = LABEL " Mac";
+#elif ANDROID
+  static const std::string netplay_dolphin_ver = LABEL " Android";
 #else
   static const std::string netplay_dolphin_ver = LABEL " Lin";
 #endif

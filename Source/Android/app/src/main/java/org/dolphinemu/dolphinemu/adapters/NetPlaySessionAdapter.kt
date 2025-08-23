@@ -40,7 +40,6 @@ class NetPlaySessionAdapter(
         private val sessionNameText: TextView = itemView.findViewById(R.id.text_session_name)
         private val gameIdText: TextView = itemView.findViewById(R.id.text_game_id)
         private val regionText: TextView = itemView.findViewById(R.id.text_region)
-        private val methodText: TextView = itemView.findViewById(R.id.text_method)
         private val playerCountText: TextView = itemView.findViewById(R.id.text_player_count)
         private val passwordIcon: ImageView = itemView.findViewById(R.id.icon_password)
         private val inGameIcon: ImageView = itemView.findViewById(R.id.icon_ingame)
@@ -49,7 +48,6 @@ class NetPlaySessionAdapter(
             sessionNameText.text = session.getDisplayName()
             gameIdText.text = session.gameId
             regionText.text = session.getRegionDisplayName()
-            methodText.text = session.getMethodDisplayName()
             playerCountText.text = "${session.playerCount}/4"
             
             // Show password icon if session has password

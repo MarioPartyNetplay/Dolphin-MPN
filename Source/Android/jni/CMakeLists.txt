@@ -42,6 +42,13 @@ add_library(main SHARED
 # Enable C++ exceptions and RTTI for Android
 target_compile_options(main PRIVATE -fexceptions -frtti)
 
+# Add NetPlay-specific compile definitions
+target_compile_definitions(main PRIVATE 
+  -DHAVE_NETPLAY=1
+  -DUSE_UPNP=1
+  -DANDROID=1
+)
+
 target_link_libraries(main
 PRIVATE
   androidcommon
@@ -51,10 +58,14 @@ PRIVATE
   uicommon
 )
 
+# Add additional NetPlay dependencies
 target_link_libraries(main
 PRIVATE
   android
   log
+  enet::enet
+  MbedTLS::mbedtls
+  sfml-network
   "-Wl,--no-warn-mismatch"
   "-Wl,--whole-archive"
   "-Wl,--no-whole-archive"
@@ -64,6 +75,9 @@ target_include_directories(main
 PRIVATE
     ${CMAKE_SOURCE_DIR}/Externals/libadrenotools/include
     ${CMAKE_SOURCE_DIR}/Externals/VulkanMemoryAllocator/include
+    ${CMAKE_SOURCE_DIR}/Source/Core/Core
+    ${CMAKE_SOURCE_DIR}/Source/Core/Common
+    ${CMAKE_SOURCE_DIR}/Source/Core/UICommon
 )
 
 file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/Source/Android/app/src/main/assets/)

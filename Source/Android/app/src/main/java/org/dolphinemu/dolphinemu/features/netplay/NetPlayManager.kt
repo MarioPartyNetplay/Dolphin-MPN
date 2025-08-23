@@ -72,7 +72,15 @@ class NetPlayManager private constructor() {
     external fun netPlayIsConnected(): Boolean
     
     init {
-        System.loadLibrary("main")
+        try {
+            System.loadLibrary("main")
+            Log.d(TAG, "Native library loaded successfully")
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Failed to load native library: ${e.message}")
+            // Don't crash, just log the error
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error loading native library: ${e.message}")
+        }
     }
     
     // Public API methods
@@ -80,13 +88,21 @@ class NetPlayManager private constructor() {
         this.connectionCallback = callback
         Log.d(TAG, "Connecting to server: $address:$port")
         
-        if (netPlayConnect(address, port)) {
-            isConnected = true
-            isHost = false
-            connectionCallback?.onConnected()
-            startPlayerUpdateLoop()
-        } else {
-            connectionCallback?.onConnectionFailed("Failed to connect to server")
+        try {
+            if (netPlayConnect(address, port)) {
+                isConnected = true
+                isHost = false
+                connectionCallback?.onConnected()
+                startPlayerUpdateLoop()
+            } else {
+                connectionCallback?.onConnectionFailed("Failed to connect to server")
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Native method not available: ${e.message}")
+            connectionCallback?.onConnectionFailed("NetPlay functionality not available")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error connecting to server: ${e.message}")
+            connectionCallback?.onConnectionFailed("Connection error: ${e.message}")
         }
     }
     
@@ -104,13 +120,21 @@ class NetPlayManager private constructor() {
             prefs.edit().putString("host_code", newHostCode).apply()
         }
         
-        if (netPlayHost(port)) {
-            isConnected = true
-            isHost = true
-            connectionCallback?.onConnected()
-            startPlayerUpdateLoop()
-        } else {
-            connectionCallback?.onConnectionFailed("Failed to host server")
+        try {
+            if (netPlayHost(port)) {
+                isConnected = true
+                isHost = true
+                connectionCallback?.onConnected()
+                startPlayerUpdateLoop()
+            } else {
+                connectionCallback?.onConnectionFailed("Failed to host server")
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Native method not available: ${e.message}")
+            connectionCallback?.onConnectionFailed("NetPlay functionality not available")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error hosting server: ${e.message}")
+            connectionCallback?.onConnectionFailed("Hosting error: ${e.message}")
         }
     }
     
@@ -381,36 +405,27 @@ class NetPlayManager private constructor() {
     }
 
     /**
-     * Get a friendly game name from the game ID
-     */
-    private fun getGameNameFromId(gameId: String): String {
-        // Common game ID to name mappings
-        val gameNames = mapOf(
-            "RMCE01" to "Mario Kart: Double Dash!!",
-            "GALE01" to "Super Smash Bros. Melee",
-            "GALE02" to "Super Smash Bros. Brawl",
-            "RMCP01" to "Mario Kart Wii",
-            "RZDP01" to "Mario Party 8",
-            "RZDP02" to "Mario Party 9"
-        )
-        
-        return gameNames[gameId] ?: "Unknown Game ($gameId)"
-    }
-
-    /**
      * Connect to a specific server from the lobby
      */
     fun connectToLobbyServer(server: LobbyServer, callback: ConnectionCallback) {
         this.connectionCallback = callback
         Log.d(TAG, "Connecting to lobby server: ${server.name} at ${server.address}:${server.port}")
         
-        if (netPlayConnect(server.address, server.port)) {
-            isConnected = true
-            isHost = false
-            connectionCallback?.onConnected()
-            startPlayerUpdateLoop()
-        } else {
-            connectionCallback?.onConnectionFailed("Failed to connect to ${server.name}")
+        try {
+            if (netPlayConnect(server.address, server.port)) {
+                isConnected = true
+                isHost = false
+                connectionCallback?.onConnected()
+                startPlayerUpdateLoop()
+            } else {
+                connectionCallback?.onConnectionFailed("Failed to connect to ${server.name}")
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Native method not available: ${e.message}")
+            connectionCallback?.onConnectionFailed("NetPlay functionality not available")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error connecting to lobby server: ${e.message}")
+            connectionCallback?.onConnectionFailed("Connection error: ${e.message}")
         }
     }
     
@@ -480,6 +495,61 @@ class NetPlayManager private constructor() {
         isConnected = false
         isHost = false
         connectionCallback?.onConnectionLost()
+    }
+
+    /**
+     * Get a friendly game name from the game ID
+     */
+    private fun getGameNameFromId(gameId: String): String {
+        // Try to get the real game title from the user's game library first
+        try {
+            val gameFile = org.dolphinemu.dolphinemu.services.GameFileCacheManager.getGameFileByGameId(gameId)
+            if (gameFile != null) {
+                return gameFile.getTitle()
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Could not get game title from cache for $gameId: ${e.message}")
+        }
+        
+        // Fallback to common game ID mappings for MPN games
+        val gameNames = mapOf(
+            // Mario Kart series
+            "RMCE01" to "Mario Kart: Double Dash!!",
+            "RMCP01" to "Mario Kart Wii",
+            "RMCE08" to "Mario Kart 8 Deluxe",
+            
+            // Super Smash Bros series
+            "GALE01" to "Super Smash Bros. Melee",
+            "GALE02" to "Super Smash Bros. Brawl",
+            "GALE08" to "Super Smash Bros. Ultimate",
+            
+            // Mario Party series
+            "RZDP01" to "Mario Party 8",
+            "RZDP02" to "Mario Party 9",
+            "RZDP03" to "Mario Party 10",
+            "RZDP04" to "Mario Party Superstars",
+            
+            // Other popular MPN games
+            "RMCE02" to "Mario Golf: Toadstool Tour",
+            "RMCE03" to "Mario Tennis: Power Tour",
+            "RMCE04" to "Mario Baseball",
+            "RMCE05" to "Mario Strikers",
+            "RMCE06" to "Mario Hoops 3-on-3",
+            "RMCE07" to "Mario Tennis Open",
+            
+            // Wii Sports and related
+            "RSPE01" to "Wii Sports",
+            "RSPE02" to "Wii Sports Resort",
+            "RSPE03" to "Wii Play",
+            "RSPE04" to "Wii Play Motion",
+            
+            // Other Wii games
+            "RZDE01" to "Wii Party",
+            "RZDE02" to "Wii Party U",
+            "RZDE03" to "Wii Party Deluxe"
+        )
+        
+        return gameNames[gameId] ?: "Game ($gameId)"
     }
 }
 
