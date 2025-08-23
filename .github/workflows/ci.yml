@@ -522,3 +522,65 @@ jobs:
       with:
         name: DolphinMPN-archlinux-x86_64
         path: Distribution/OUT/
+  
+  build_android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-
+            ${{ runner.os }}-gradle-
+      
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android
+            ~/.local/share/android
+          key: ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-
+            ${{ runner.os }}-android-
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v0
+        with:
+          sdk-platform: '34'
+          sdk-build-tools: '34.0.0'
+          ndk-version: '25.2.9519653'
+      
+      - name: Build APK
+        run: |
+          cd Source/Android
+          ./gradlew assembleRelease
+          
+          # Rename the APK to DolphinMPN-android.apk
+          find . -name "*.apk" -path "*/release/*" | head -1 | xargs -I {} cp {} DolphinMPN-android.apk
+          
+          # Create OUT directory and move APK
+          mkdir -p OUT
+          mv DolphinMPN-android.apk OUT/
+      
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DolphinMPN-android
+          path: Source/Android/OUT/
