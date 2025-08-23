@@ -3,6 +3,7 @@
 *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
 */
 
+#ifdef USE_DISCORD_PRESENCE
 #include "Discord.h"
 #include <Core/State.h>
 #include "Core/Config/NetplaySettings.h"
@@ -115,3 +116,4 @@ bool mpn_update_discord()
 
   return true;
 }
+#endif
