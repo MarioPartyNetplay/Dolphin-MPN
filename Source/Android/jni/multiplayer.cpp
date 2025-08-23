@@ -138,11 +138,40 @@ public:
         LOGI("NetPlay: Sync identifier - game_id: %s", sync_identifier.game_id.c_str());
         m_current_sync_identifier = sync_identifier;
         
-        // CRITICAL: Don't send GameStatus immediately - wait for StartGame message
-        // The desktop host expects us to confirm readiness AFTER it sends StartGame, not before
-        // This prevents the host from getting confused about our state
+        // CRITICAL: Send initial GameStatus and ClientCapabilities immediately
+        // The desktop host needs these to know our capabilities and game status
+        // This allows the host to properly coordinate the game start process
         
-        LOGI("NetPlay: *** Game change processed - waiting for StartGame command from host ***");
+        if (g_netplay_client && g_netplay_client->IsConnected()) {
+            try {
+                // First, check if we have this game
+                NetPlay::SyncIdentifierComparison comparison;
+                auto game_file = FindGameFile(sync_identifier, &comparison);
+                
+                // Send GameStatus message
+                sf::Packet game_status_packet;
+                game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
+                game_status_packet << static_cast<u32>(comparison);
+                g_netplay_client->SendAsync(std::move(game_status_packet));
+                LOGI("NetPlay: Sent GameStatus: %s", 
+                     (comparison == NetPlay::SyncIdentifierComparison::SameGame) ? "SameGame" : "DifferentGame");
+                
+                // Send ClientCapabilities message
+                sf::Packet capabilities_packet;
+                capabilities_packet << static_cast<u8>(NetPlay::MessageID::ClientCapabilities);
+                // Send basic capabilities - we support save data and code synchronization
+                capabilities_packet << static_cast<u32>(0x1); // Basic capabilities flag
+                g_netplay_client->SendAsync(std::move(capabilities_packet));
+                LOGI("NetPlay: Sent ClientCapabilities to host");
+                
+                LOGI("NetPlay: *** Initial sync messages sent - host now knows our status and capabilities ***");
+                
+            } catch (const std::exception& e) {
+                LOGE("NetPlay: Failed to send initial sync messages: %s", e.what());
+            }
+        } else {
+            LOGE("NetPlay: Cannot send sync messages - NetPlay client not connected");
+        }
     }
 
     void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override {
@@ -204,19 +233,9 @@ public:
                     BootGame(game_file->GetFilePath(), std::move(boot_session));
                     LOGI("NetPlay: Game boot initiated for NetPlay sync");
 
-                    // CRITICAL: Now send GameStatus confirmation to host that we're ready
-                    // This tells the desktop host that the Android client has successfully started the game
-                    if (g_netplay_client && g_netplay_client->IsConnected()) {
-                        try {
-                            sf::Packet game_status_packet;
-                            game_status_packet << static_cast<u8>(NetPlay::MessageID::GameStatus);
-                            game_status_packet << static_cast<u32>(NetPlay::SyncIdentifierComparison::SameGame);
-                            g_netplay_client->SendAsync(std::move(game_status_packet));
-                            LOGI("NetPlay: Sent SameGame status confirmation to host - Android client is ready!");
-                        } catch (const std::exception& e) {
-                            LOGE("NetPlay: Failed to send GameStatus confirmation: %s", e.what());
-                        }
-                    }
+                    // CRITICAL: GameStatus was already sent in OnMsgChangeGame
+                    // Now we just need to notify the Java side that the game is starting
+                    LOGI("NetPlay: Game boot initiated - host already knows our status from OnMsgChangeGame");
 
                     // Notify Java side that the server started the game
                     JNIEnv* env = getJNIEnv();
