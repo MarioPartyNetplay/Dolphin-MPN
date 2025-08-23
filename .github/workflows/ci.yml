@@ -442,6 +442,10 @@ jobs:
       image: archlinux:base-devel
       options: --privileged
     steps:
+
+    - name: Checkout Repository
+      uses: actions/checkout@v5
+
     - name: Install Git
       run: |
         pacman -Sy --noconfirm git
@@ -458,13 +462,13 @@ jobs:
       run: |
         sudo -u builder bash -c "
           cd /github/workspace/Distribution
-          curl -L -o PKGBUILD https://raw.githubusercontent.com/MarioPartyNetplay/Dolphin-MPN/${{ github.ref_name }}/Distribution/PKGBUILD
           makepkg -si
           
           # Move the built package to Distribution/OUT
           mkdir -p OUT
           mv *.pkg.tar.zst OUT/ || mv *.pkg.tar.gz OUT/ || mv *.pkg.tar.xz OUT/ || echo 'No package found to move'
         "
+      
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
