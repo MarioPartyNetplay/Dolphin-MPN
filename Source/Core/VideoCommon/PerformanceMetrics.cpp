@@ -308,7 +308,9 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
 
   if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board && CurrentState.Boards)
   {
-    float window_height = (30.f) * backbuffer_scale;
+    // Apply HUD scale to the turn counter
+    const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
+    float window_height = (30.f) * backbuffer_scale * hud_scale;
 
     // Position in the top-left corner of the screen, below the FPS stats.
     ImGui::SetNextWindowPos(ImVec2(100.0f, window_y), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
@@ -318,9 +320,14 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     if (ImGui::Begin("MPStats", nullptr, imgui_flags))
     {
       if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board && CurrentState.Boards)
+      {
+        // Scale the text size using ImGui's font scaling
+        ImGui::SetWindowFontScale(hud_scale);
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d",
                            mpn_read_value(CurrentState.Addresses->CurrentTurn, 1),
                            mpn_read_value(CurrentState.Addresses->TotalTurns, 1));
+        ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
+      }
       ImGui::End();
     }
   }
