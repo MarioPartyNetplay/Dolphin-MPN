@@ -450,7 +450,7 @@ jobs:
       run: |
         mkdir -p Distribution/
         cd Distribution
-        curl -L -o PKGBUILD https://raw.githubusercontent.com/MarioPartyNetplay/Dolphin-MPN/master/Distribution/PKGBUILD
+        curl -L -o PKGBUILD https://raw.githubusercontent.com/MarioPartyNetplay/Dolphin-MPN/${{ github.ref_name }}/Distribution/PKGBUILD
         makepkg -si
         
         # Move the built package to Distribution/OUT
