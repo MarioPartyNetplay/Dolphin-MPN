@@ -462,7 +462,30 @@ jobs:
       run: |
         # Update package database and install dependencies as root
         pacman -Syu --noconfirm
-        pacman -S --noconfirm --needed --overwrite="*" cmake ninja qt6-tools
+        pacman -S --noconfirm --needed --overwrite="*" cmake ninja qt6-tools git
+        
+        # Install runtime dependencies
+        pacman -S --noconfirm --needed --overwrite="*" \
+          alsa-lib \
+          bluez-libs \
+          enchant \
+          ffmpeg \
+          fmt \
+          hidapi \
+          libevdev \
+          libpulse \
+          libx11 \
+          libxi \
+          libxrandr \
+          lzo \
+          mbedtls \
+          miniupnpc \
+          pugixml \
+          qt6-base \
+          sdl2 \
+          sfml \
+          zlib \
+          zstd
 
     - name: Build
       run: |
