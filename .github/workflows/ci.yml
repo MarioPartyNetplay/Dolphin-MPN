@@ -139,6 +139,30 @@ jobs:
         with:
           path: ~/deps
           key: macOS deps ${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            macOS deps
+      - name: Cache Homebrew
+        uses: actions/cache@v4
+        with:
+          path: |
+            /opt/homebrew/Cellar
+            /usr/local/Cellar
+            /opt/homebrew/Caskroom
+            /usr/local/Caskroom
+            ~/.cache/Homebrew
+          key: ${{ runner.os }}-homebrew-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}
+          restore-keys: |
+            ${{ runner.os }}-homebrew-
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-
+            ${{ runner.os }}-ccache-
       - name: Build Dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
@@ -283,15 +307,20 @@ jobs:
             build
             build-arm
             ~/.cache/cmake
-          key: ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt',
-            '**/cmake/**') }}-${{ github.sha }}
-          restore-keys: >
-            ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt',
-            '**/cmake/**') }}-
-
+            ~/.cache/ninja
+          key: ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-
+            ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-
             ${{ runner.os }}-cmake-macos-
       - name: Generate CMake Files
         run: |
+          # Configure ccache for faster builds
+          export CCACHE_DIR=~/.ccache
+          export CCACHE_MAXSIZE=10G
+          export CCACHE_COMPRESS=1
+          export CCACHE_COMPRESSLEVEL=6
+          
           COMMON_ARGS=(
             -DCMAKE_PREFIX_PATH="$HOME/deps;$HOME/moltenvk"
             -DCMAKE_BUILD_TYPE=Release
