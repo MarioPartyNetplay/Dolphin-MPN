@@ -142,15 +142,17 @@ jobs:
           key: macOS deps ${{ hashFiles('.github/workflows/ci.yml') }}
       - name: Build Dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: >
+        run: |
           #!/bin/bash
           set -e
+          
           export MACOSX_DEPLOYMENT_TARGET=11.00
           INSTALLDIR="$HOME/deps"
           NPROCS="$(getconf _NPROCESSORS_ONLN)"
           SDL=SDL2-2.30.9
           QT=6.2.10
           QT_SUFFIX=-opensource
+          
           mkdir deps-build
           cd deps-build
 
@@ -159,14 +161,13 @@ jobs:
           export CFLAGS="-I$INSTALLDIR/include -Os $CFLAGS"
           export CXXFLAGS="-I$INSTALLDIR/include -Os $CXXFLAGS"
 
+          echo "Downloading dependencies..."
           curl -L \
-          	-O "https://libsdl.org/release/$SDL.tar.gz" \
-          	-O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qtbase-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
-          	-O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qtsvg-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
-          	-O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qttools-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
-          	-O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qttranslations-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
-
-
+            -O "https://libsdl.org/release/$SDL.tar.gz" \
+            -O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qtbase-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
+            -O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qtsvg-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
+            -O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qttools-everywhere$QT_SUFFIX-src-$QT.tar.xz" \
+            -O "https://download.qt.io/archive/qt/${QT%.*}/$QT/submodules/qttranslations-everywhere$QT_SUFFIX-src-$QT.tar.xz"
           echo "Installing SDL..."
           tar xf "$SDL.tar.gz"
           cd "$SDL"
@@ -236,10 +237,10 @@ jobs:
 
 
           echo "Cleaning up..."
-
           cd ..
-
-          rm -r deps-build
+          rm -rf deps-build
+          
+          echo "Dependencies built successfully in $INSTALLDIR"
       - name: Cache MoltenVK
         id: cache-moltenvk
         uses: actions/cache@v4
