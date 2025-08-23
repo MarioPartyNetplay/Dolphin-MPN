@@ -32,8 +32,8 @@ add_library(main SHARED
   Input/NumericSetting.cpp
   Input/NumericSetting.h
   MainAndroid.cpp
-  multiplayer.cpp
-  multiplayer.h
+  Netplay.cpp
+  Netplay.h
   RiivolutionPatches.cpp
   SkylanderConfig.cpp
   WiiUtils.cpp

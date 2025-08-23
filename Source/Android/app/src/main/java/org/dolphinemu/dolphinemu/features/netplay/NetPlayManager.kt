@@ -86,6 +86,9 @@ class NetPlayManager private constructor() {
     // NetPlay game status confirmation
     external fun sendGameStatusConfirmation(sameGame: Boolean)
     
+    // NetPlay message processing
+    external fun netPlayProcessMessages()
+    
     // ROM path getter for native code
     fun getRomPath(): String {
         // Return the default ROM path that Android Dolphin uses
@@ -509,6 +512,41 @@ class NetPlayManager private constructor() {
                 }
             }
         }.start()
+        
+        // CRITICAL: Start the NetPlay message processing loop
+        // This ensures incoming NetPlay messages are processed and callbacks are triggered
+        startMessageProcessingLoop()
+    }
+    
+    private fun startMessageProcessingLoop() {
+        Thread {
+            Log.d(TAG, "Starting NetPlay message processing loop")
+            while (isConnected) {
+                try {
+                    // Poll for NetPlay messages every 500ms to match C++ side
+                    // This reduces CPU usage while still ensuring timely message processing
+                    processNetPlayMessages()
+                    Thread.sleep(500) // Process messages 2 times per second
+                } catch (e: InterruptedException) {
+                    Log.d(TAG, "Message processing loop interrupted")
+                    break
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in message processing loop: ${e.message}")
+                    // Don't break the loop on errors, just log and continue
+                }
+            }
+            Log.d(TAG, "NetPlay message processing loop stopped")
+        }.start()
+    }
+    
+    private fun processNetPlayMessages() {
+        try {
+            // Call native method to process any pending NetPlay messages
+            // This will trigger the appropriate callbacks (onMsgStartGame, etc.)
+            netPlayProcessMessages()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing NetPlay messages: ${e.message}")
+        }
     }
     
     private fun stopPlayerUpdateLoop() {

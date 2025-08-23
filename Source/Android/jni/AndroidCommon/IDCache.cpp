@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "jni/AndroidCommon/IDCache.h"
-#include "jni/multiplayer.h"
+#include "jni/Netplay.h"
 
 #include <jni.h>
 
