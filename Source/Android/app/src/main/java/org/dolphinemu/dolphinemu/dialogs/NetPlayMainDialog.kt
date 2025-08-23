@@ -219,6 +219,11 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
             val hostCode = netPlayManager.getHostCode(context)
             hostCodeLabel.text = "Code: $hostCode"
         }
+        
+        // Check if we need to start a game (for mobile clients)
+        if (isConnected && !isHost) {
+            netPlayManager.checkAndStartGame()
+        }
     }
     
     private fun updateRoomOptions() {

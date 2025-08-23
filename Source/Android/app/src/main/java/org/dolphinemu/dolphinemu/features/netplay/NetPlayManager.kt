@@ -8,6 +8,7 @@ import org.dolphinemu.dolphinemu.DolphinApplication
 import org.dolphinemu.dolphinemu.activities.EmulationActivity
 import java.text.SimpleDateFormat
 import java.util.*
+import java.io.File
 
 /**
  * Manages NetPlay functionality for Dolphin MPN Android
@@ -81,6 +82,48 @@ class NetPlayManager private constructor() {
     external fun netPlayLaunchGame(gamePath: String): Boolean
     external fun netPlayGetGameId(gamePath: String): String?
     external fun netPlayCheckAndStartGame(): Boolean
+    
+    // NetPlay game status confirmation
+    external fun sendGameStatusConfirmation(sameGame: Boolean)
+    
+    // ROM path getter for native code
+    fun getRomPath(): String {
+        // Return the default ROM path that Android Dolphin uses
+        // This should match the path where the user's games are stored
+        return try {
+            // Try to get the ROM path from Android storage
+            val context = DolphinApplication.getAppContext()
+            val externalDir = context.getExternalFilesDir(null)
+            val romsDir = File(externalDir, "ROMs")
+            
+            if (romsDir.exists() && romsDir.isDirectory) {
+                romsDir.absolutePath
+            } else {
+                // Fallback to common Android ROM directories
+                "/storage/emulated/0/ROMs"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting ROM path: ${e.message}")
+            "/storage/emulated/0/ROMs"
+        }
+    }
+    
+    // Callback methods called from native code
+    fun onHostGameStarted() {
+        Log.d(TAG, "Host started the game - Android client should sync")
+        
+        // Send confirmation to host that we're ready to sync
+        // This tells the desktop host that the Android client has the game and is ready
+        try {
+            sendGameStatusConfirmation(true) // true = SameGame
+            Log.d(TAG, "Sent SameGame status confirmation to host")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send game status confirmation: ${e.message}")
+        }
+        
+        // TODO: Implement additional game synchronization logic
+        // This could trigger UI updates, show sync status, etc.
+    }
     
     init {
         try {
