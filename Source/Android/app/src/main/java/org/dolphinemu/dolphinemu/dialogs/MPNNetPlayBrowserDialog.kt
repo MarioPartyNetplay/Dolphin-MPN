@@ -57,9 +57,9 @@ class MPNNetPlayBrowserDialog : DialogFragment(), LobbyCallback, ConnectionCallb
             refreshButton = rootView.findViewById(R.id.button_refresh)
             statusText = rootView.findViewById(R.id.text_status)
             
-                    refreshButton.setOnClickListener {
-            discoverServers()
-        }
+            refreshButton.setOnClickListener {
+                discoverServers()
+            }
         }
     }
     
@@ -78,8 +78,6 @@ class MPNNetPlayBrowserDialog : DialogFragment(), LobbyCallback, ConnectionCallb
         netPlayManager.setLobbyCallback(this)
         netPlayManager.setConnectionCallback(this)
     }
-
-
 
     private fun discoverServers() {
         statusText.text = "Discovering MPN servers..."
@@ -152,8 +150,6 @@ class MPNNetPlayBrowserDialog : DialogFragment(), LobbyCallback, ConnectionCallb
             Toast.makeText(context, "Connection lost", Toast.LENGTH_SHORT).show()
         }
     }
-    
-
 }
 
 /**
