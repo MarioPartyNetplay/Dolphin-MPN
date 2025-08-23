@@ -467,8 +467,7 @@ jobs:
           # Update package database and install dependencies
           pacman -Sy --noconfirm
           pacman -S --noconfirm --needed cmake ninja qt6-tools
-          # Run makepkg without installing dependencies (-s instead of -si)
-          makepkg -s
+          makepkg -s --noconfirm
           
           # Move the built package to Distribution/OUT
           mkdir -p OUT
