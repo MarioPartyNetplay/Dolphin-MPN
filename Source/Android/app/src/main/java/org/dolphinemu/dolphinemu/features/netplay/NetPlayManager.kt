@@ -70,11 +70,16 @@ class NetPlayManager private constructor() {
     external fun netPlayGetPlayerList(): Array<NetPlayPlayer>
     external fun netPlayIsHost(): Boolean
     external fun netPlayIsConnected(): Boolean
+    external fun setNetPlayManagerReference()
     
     init {
         try {
             System.loadLibrary("main")
             Log.d(TAG, "Native library loaded successfully")
+            
+            // Set the NetPlay manager reference for JNI callbacks
+            setNetPlayManagerReference()
+            
         } catch (e: UnsatisfiedLinkError) {
             Log.e(TAG, "Failed to load native library: ${e.message}")
             // Don't crash, just log the error
@@ -462,6 +467,24 @@ class NetPlayManager private constructor() {
     }
     
     // Native callback methods (called from C++)
+    @Suppress("unused")
+    fun onConnected() {
+        Log.d(TAG, "Native onConnected callback received")
+        connectionCallback?.onConnected()
+    }
+    
+    @Suppress("unused")
+    fun onConnectionFailed(error: String) {
+        Log.d(TAG, "Native onConnectionFailed callback received: $error")
+        connectionCallback?.onConnectionFailed(error)
+    }
+    
+    @Suppress("unused")
+    fun onDisconnected() {
+        Log.d(TAG, "Native onDisconnected callback received")
+        connectionCallback?.onDisconnected()
+    }
+    
     @Suppress("unused")
     private fun onMessageReceived(nickname: String, message: String) {
         val chatMessage = ChatMessage(

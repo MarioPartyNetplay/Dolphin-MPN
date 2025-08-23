@@ -35,7 +35,7 @@
             android:id="@+id/button_refresh"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Refresh"
+            android:text=""
             android:textAllCaps="false"
             app:icon="@android:drawable/ic_menu_rotate"
             app:iconGravity="textStart"
