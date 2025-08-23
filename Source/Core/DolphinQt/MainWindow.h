@@ -93,6 +93,8 @@ public:
   bool eventFilter(QObject* object, QEvent* event) override;
   QMenu* createPopupMenu() override;
 
+  void CheckForUpdatesAuto();
+
 signals:
   void ReadOnlyModeChanged(bool read_only);
   void RecordingStatusChanged(bool recording);
@@ -192,8 +194,6 @@ private:
   void OnHardcoreChanged();
 #endif  // USE_RETRO_ACHIEVEMENTS
 
-  void CheckForUpdatesAuto();
-  
   void NetPlayInit();
   bool NetPlayJoin();
   bool NetPlayHost(const UICommon::GameFile& game);
