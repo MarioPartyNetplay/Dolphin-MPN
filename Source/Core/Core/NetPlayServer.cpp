@@ -1590,6 +1590,56 @@ bool NetPlayServer::StartGame()
   SConfig::GetInstance().m_strSRAM = File::GetUserPath(F_GCSRAM_IDX);
   InitSRAM(&m_settings.sram, SConfig::GetInstance().m_strSRAM);
 
+  // CRITICAL FIX: Ensure all clients have proper NetPlay configuration before starting game
+  // This prevents black screens and improper P1 binding issues
+  
+  // Send PadMapping configuration to all clients
+  sf::Packet pad_mapping_packet;
+  pad_mapping_packet << MessageID::PadMapping;
+  for (PlayerId mapping : m_pad_map)
+  {
+    pad_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(pad_mapping_packet));
+  
+  // Send WiimoteMapping configuration to all clients
+  sf::Packet wiimote_mapping_packet;
+  wiimote_mapping_packet << MessageID::WiimoteMapping;
+  for (PlayerId mapping : m_wiimote_map)
+  {
+    wiimote_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(wiimote_mapping_packet));
+  
+  // Send GBA configuration to all clients
+  sf::Packet gba_config_packet;
+  gba_config_packet << MessageID::GBAConfig;
+  for (const auto& config : m_gba_config)
+  {
+    gba_config_packet << config.enabled << config.has_rom << config.title;
+    for (auto& data : config.hash)
+      gba_config_packet << data;
+  }
+  SendAsyncToClients(std::move(gba_config_packet));
+  
+  // Send HostInputAuthority setting to all clients
+  sf::Packet host_input_packet;
+  host_input_packet << MessageID::HostInputAuthority;
+  host_input_packet << m_host_input_authority;
+  SendAsyncToClients(std::move(host_input_packet));
+  
+  // Send PadBuffer size to all clients (if not using host input authority)
+  if (!m_host_input_authority)
+  {
+    sf::Packet pad_buffer_packet;
+    pad_buffer_packet << MessageID::PadBuffer;
+    pad_buffer_packet << m_target_buffer_size;
+    SendAsyncToClients(std::move(pad_buffer_packet));
+  }
+  
+  // Wait a moment for all configuration to be processed
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  
   // tell clients to start game
   sf::Packet spac;
   spac << MessageID::StartGame;
