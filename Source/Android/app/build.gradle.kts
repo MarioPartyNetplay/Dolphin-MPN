@@ -104,7 +104,8 @@ android {
                 arguments(
                     "-DANDROID_STL=c++_static",
                     "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
-                    "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+                    "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
                     // , "-DENABLE_GENERIC=ON"
                 )
                 abiFilters("arm64-v8a", "x86_64") //, "armeabi-v7a", "x86"

@@ -18,6 +18,7 @@ class NetPlayManager private constructor() {
         private const val KEY_SERVER_ADDRESS = "server_address"
         private const val KEY_SERVER_PORT = "server_port"
         private const val KEY_ROOM_VISIBILITY = "room_visibility"
+        private const val MAX_CHAT_MESSAGES = 100
         
         @Volatile
         private var INSTANCE: NetPlayManager? = null
@@ -96,7 +97,10 @@ class NetPlayManager private constructor() {
         val context = getContext()
         if (context != null) {
             clearHostCode(context)
-            generateHostCode()
+            val newHostCode = generateHostCode()
+            // Store the new host code
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putString("host_code", newHostCode).apply()
         }
         
         if (netPlayHost(port)) {
@@ -126,12 +130,15 @@ class NetPlayManager private constructor() {
     fun sendMessage(message: String) {
         if (isConnected && message.isNotBlank()) {
             netPlaySendMessage(message)
-            addChatMessage(ChatMessage(
-                nickname = getUsername(getContext()),
-                username = "",
-                message = message,
-                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            ))
+            val context = getContext()
+            if (context != null) {
+                addChatMessage(ChatMessage(
+                    nickname = getUsername(context),
+                    username = "",
+                    message = message,
+                    timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                ))
+            }
         }
     }
     
@@ -229,7 +236,7 @@ class NetPlayManager private constructor() {
      */
     fun getHostCode(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        var hostCode = prefs.getString("host_code", "")
+        var hostCode = prefs.getString("host_code", "") ?: ""
         
         if (hostCode.isBlank()) {
             hostCode = generateHostCode()
@@ -274,15 +281,15 @@ class NetPlayManager private constructor() {
     fun isHost(): Boolean = isHost
     
     // Callback setters
-    fun setConnectionCallback(callback: ConnectionCallback) {
+    fun setConnectionCallback(callback: ConnectionCallback?) {
         this.connectionCallback = callback
     }
     
-    fun setChatCallback(callback: ChatCallback) {
+    fun setChatCallback(callback: ChatCallback?) {
         this.chatCallback = callback
     }
     
-    fun setPlayerCallback(callback: PlayerCallback) {
+    fun setPlayerCallback(callback: PlayerCallback?) {
         this.playerCallback = callback
     }
     
@@ -352,16 +359,6 @@ class NetPlayManager private constructor() {
         isConnected = false
         isHost = false
         connectionCallback?.onConnectionLost()
-    }
-    
-    companion object {
-        private const val MAX_CHAT_MESSAGES = 100
-        
-        // This is a temporary solution - in a real implementation, you'd get the context properly
-        private fun getContext(): Context {
-            // This should be properly implemented with dependency injection
-            throw UnsupportedOperationException("Context must be provided through setConnectionCallback")
-        }
     }
 }
 

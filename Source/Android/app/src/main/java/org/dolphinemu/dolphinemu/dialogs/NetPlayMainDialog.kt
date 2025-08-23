@@ -1,6 +1,7 @@
 package org.dolphinemu.dolphinemu.dialogs
 
 import android.app.Dialog
+import android.app.AlertDialog
 import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -124,7 +125,7 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
         playersRecyclerView.adapter = playerAdapter
         
         // Chat adapter
-        chatAdapter = ChatAdapter(netPlayManager.getChatMessages())
+        chatAdapter = ChatAdapter(netPlayManager.getChatMessages().toMutableList())
         chatRecyclerView.layoutManager = LinearLayoutManager(context).apply {
             stackFromEnd = true
         }

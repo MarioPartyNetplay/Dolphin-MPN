@@ -19,7 +19,7 @@ import org.dolphinemu.dolphinemu.adapters.NetPlaySessionAdapter
 import org.dolphinemu.dolphinemu.features.netplay.*
 import org.dolphinemu.dolphinemu.model.GameFile
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentStateAdapter
+import androidx.viewpager2.adapter.FragmentStateAdapter
 
 /**
  * NetPlay Setup Dialog for Android - matches Dolphin's architecture
@@ -361,7 +361,7 @@ class HostTabFragment : Fragment() {
     
     fun updateConnectionType(isTraversal: Boolean) {
         // Update UI based on connection type
-        upnpCheckBox.isVisible = !isTraversal
+        upnpCheckBox.visibility = if (!isTraversal) View.VISIBLE else View.GONE
     }
     
     private fun showError(message: String) {

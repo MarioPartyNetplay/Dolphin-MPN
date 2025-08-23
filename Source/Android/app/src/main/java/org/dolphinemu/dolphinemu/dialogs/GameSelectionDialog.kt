@@ -2,6 +2,7 @@ package org.dolphinemu.dolphinemu.dialogs
 
 import android.app.Dialog
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -118,17 +119,9 @@ class GameSelectionDialog : DialogFragment() {
     }
     
     private fun loadSampleGames() {
-        val sampleGames = listOf(
-            GameFile("Super Mario Sunshine", "/path/to/sms.iso", "GMSJ01", "GameCube"),
-            GameFile("Mario Kart: Double Dash!!", "/path/to/mkdd.iso", "GM4P01", "GameCube"),
-            GameFile("Super Smash Bros. Melee", "/path/to/ssbm.iso", "GALE01", "GameCube"),
-            GameFile("Mario Party 4", "/path/to/mp4.iso", "GMP401", "GameCube"),
-            GameFile("Mario Party 5", "/path/to/mp5.iso", "GMP501", "GameCube"),
-            GameFile("Mario Party 6", "/path/to/mp6.iso", "GMP601", "GameCube"),
-            GameFile("Mario Party 7", "/path/to/mp7.iso", "GMP701", "GameCube")
-        )
-        
-        gameAdapter.updateGames(sampleGames)
+        // For now, we'll create empty games since we can't instantiate the native GameFile class
+        // In a real implementation, this would load from the actual game list
+        Log.d("GameSelectionDialog", "Loading sample games (placeholder)")
     }
     
     /**
@@ -141,63 +134,9 @@ class GameSelectionDialog : DialogFragment() {
         // For now, just filter the current list
         val currentGames = gameAdapter.getCurrentGames()
         val filteredGames = currentGames.filter { game ->
-            game.name.contains(query, ignoreCase = true) ||
-            game.gameId.contains(query, ignoreCase = true)
+            game.getTitle().contains(query, ignoreCase = true) ||
+            game.getGameId().contains(query, ignoreCase = true)
         }
         gameAdapter.updateGames(filteredGames)
     }
 }
-
-// Game list adapter
-class GameListAdapter(
-    private val onGameSelected: (GameFile) -> Unit
-) : RecyclerView.Adapter<GameListAdapter.GameViewHolder>() {
-    
-    private val games = mutableListOf<GameFile>()
-    
-    fun updateGames(newGames: List<GameFile>) {
-        games.clear()
-        games.addAll(newGames)
-        notifyDataSetChanged()
-    }
-    
-    fun getCurrentGames(): List<GameFile> = games.toList()
-    
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): GameViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_game_selection, parent, false)
-        return GameViewHolder(view)
-    }
-    
-    override fun onBindViewHolder(holder: GameViewHolder, position: Int) {
-        holder.bind(games[position])
-    }
-    
-    override fun getItemCount(): Int = games.size
-    
-    inner class GameViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val gameNameText: TextView = itemView.findViewById(R.id.text_game_name)
-        private val gameIdText: TextView = itemView.findViewById(R.id.text_game_id)
-        private val platformText: TextView = itemView.findViewById(R.id.text_platform)
-        private val selectionIndicator: View = itemView.findViewById(R.id.indicator_selection)
-        
-        fun bind(game: GameFile) {
-            gameNameText.text = game.name
-            gameIdText.text = game.gameId
-            platformText.text = game.platform
-            
-            // Handle item click
-            itemView.setOnClickListener {
-                onGameSelected(game)
-            }
-        }
-    }
-}
-
-// Game file data class
-data class GameFile(
-    val name: String,
-    val path: String,
-    val gameId: String,
-    val platform: String
-)

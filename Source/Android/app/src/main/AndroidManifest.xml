@@ -83,19 +83,19 @@
             android:name=".features.settings.ui.SettingsActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize"
-            android:theme="@style/Theme.Dolphin.Main"
+            android:theme="@style/Theme.Dolphin.Main.MaterialYou"
             android:label="@string/settings"/>
 
         <activity
             android:name=".features.cheats.ui.CheatsActivity"
             android:exported="false"
-            android:theme="@style/Theme.Dolphin.Main"
+            android:theme="@style/Theme.Dolphin.Main.MaterialYou"
             android:label="@string/cheats"/>
 
         <activity
             android:name=".activities.EmulationActivity"
             android:exported="false"
-            android:theme="@style/Theme.Dolphin.Main"
+            android:theme="@style/Theme.Dolphin.Main.MaterialYou"
             android:preferMinimalPostProcessing="true"/>
 
         <activity
@@ -126,18 +126,18 @@
         <activity
             android:name=".activities.ConvertActivity"
             android:exported="false"
-            android:theme="@style/Theme.Dolphin.Main" />
+            android:theme="@style/Theme.Dolphin.Main.MaterialYou" />
 
         <activity
             android:name=".activities.UserDataActivity"
             android:exported="false"
             android:label="@string/user_data_submenu"
-            android:theme="@style/Theme.Dolphin.Main" />
+            android:theme="@style/Theme.Dolphin.Main.MaterialYou" />
 
         <activity
             android:name=".features.riivolution.ui.RiivolutionBootActivity"
             android:exported="false"
-            android:theme="@style/Theme.Dolphin.Main" />
+            android:theme="@style/Theme.Dolphin.Main.MaterialYou" />
 
         <service
             android:name=".services.SyncChannelJobService"
