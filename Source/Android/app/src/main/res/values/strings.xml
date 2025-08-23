@@ -490,6 +490,7 @@
     <string name="grid_menu_load_vwii_system_menu_installed">Load vWii System Menu (%s)</string>
     <string name="grid_menu_netplay">Start NetPlay</string>
     <string name="grid_menu_netplay_browser">Browse NetPlay Sessions</string>
+    <string name="grid_menu_netplay_combined">Online Play</string>
     <string name="grid_menu_about">About</string>
     <string name="import_in_progress">Importing…</string>
     <string name="export_in_progress">Exporting…</string>

@@ -56,7 +56,8 @@ class NetPlayManager private constructor() {
     private var connectionCallback: ConnectionCallback? = null
     private var chatCallback: ChatCallback? = null
     private var playerCallback: PlayerCallback? = null
-    
+    private var lobbyCallback: LobbyCallback? = null
+
     // Native methods
     external fun netPlayConnect(address: String, port: Int): Boolean
     external fun netPlayHost(port: Int): Boolean
@@ -71,7 +72,7 @@ class NetPlayManager private constructor() {
     external fun netPlayIsConnected(): Boolean
     
     init {
-        System.loadLibrary("dolphin-mpn")
+        System.loadLibrary("main")
     }
     
     // Public API methods
@@ -292,6 +293,126 @@ class NetPlayManager private constructor() {
     fun setPlayerCallback(callback: PlayerCallback?) {
         this.playerCallback = callback
     }
+
+    fun setLobbyCallback(callback: LobbyCallback?) {
+        this.lobbyCallback = callback
+    }
+
+    /**
+     * Discover available netplay servers from the lobby
+     */
+    fun discoverServers() {
+        Thread {
+            try {
+                // Query the real Dolphin lobby server for MPN sessions
+                val lobbyUrl = "https://lobby.dolphin-emu.org/v0/list"
+                val filters = mapOf("version" to "MPN")
+                
+                val urlBuilder = StringBuilder(lobbyUrl)
+                if (filters.isNotEmpty()) {
+                    urlBuilder.append('?')
+                    filters.forEach { (key, value) ->
+                        urlBuilder.append("$key=$value&")
+                    }
+                    urlBuilder.setLength(urlBuilder.length - 1) // Remove trailing &
+                }
+                
+                val url = java.net.URL(urlBuilder.toString())
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("X-Is-Dolphin", "1")
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    val inputStream = connection.inputStream
+                    val response = inputStream.bufferedReader().use { it.readText() }
+                    
+                    // Parse JSON response
+                    val servers = parseLobbyResponse(response)
+                    lobbyCallback?.onServersDiscovered(servers)
+                } else {
+                    lobbyCallback?.onDiscoveryFailed("HTTP Error: $responseCode")
+                }
+                
+                connection.disconnect()
+            } catch (e: Exception) {
+                lobbyCallback?.onDiscoveryFailed("Failed to discover servers: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Parse the lobby server response JSON
+     */
+    private fun parseLobbyResponse(jsonResponse: String): List<LobbyServer> {
+        val servers = mutableListOf<LobbyServer>()
+        
+        try {
+            val jsonObject = org.json.JSONObject(jsonResponse)
+            if (jsonObject.getString("status") == "OK") {
+                val sessions = jsonObject.getJSONArray("sessions")
+                
+                for (i in 0 until sessions.length()) {
+                    val session = sessions.getJSONObject(i)
+                    
+                    // Only include MPN version sessions that are NOT in-game
+                    if (session.optString("version", "") == "MPN" && !session.getBoolean("in_game")) {
+                        val server = LobbyServer(
+                            name = session.getString("name"),
+                            address = session.getString("server_id"), // server_id contains the IP/address
+                            port = session.getInt("port"),
+                            gameId = session.getString("game"),
+                            gameName = getGameNameFromId(session.getString("game")),
+                            playerCount = session.getInt("player_count"),
+                            maxPlayers = 4, // Default max players
+                            version = "MPN"
+                        )
+                        servers.add(server)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse lobby response: ${e.message}")
+        }
+        
+        return servers
+    }
+
+    /**
+     * Get a friendly game name from the game ID
+     */
+    private fun getGameNameFromId(gameId: String): String {
+        // Common game ID to name mappings
+        val gameNames = mapOf(
+            "RMCE01" to "Mario Kart: Double Dash!!",
+            "GALE01" to "Super Smash Bros. Melee",
+            "GALE02" to "Super Smash Bros. Brawl",
+            "RMCP01" to "Mario Kart Wii",
+            "RZDP01" to "Mario Party 8",
+            "RZDP02" to "Mario Party 9"
+        )
+        
+        return gameNames[gameId] ?: "Unknown Game ($gameId)"
+    }
+
+    /**
+     * Connect to a specific server from the lobby
+     */
+    fun connectToLobbyServer(server: LobbyServer, callback: ConnectionCallback) {
+        this.connectionCallback = callback
+        Log.d(TAG, "Connecting to lobby server: ${server.name} at ${server.address}:${server.port}")
+        
+        if (netPlayConnect(server.address, server.port)) {
+            isConnected = true
+            isHost = false
+            connectionCallback?.onConnected()
+            startPlayerUpdateLoop()
+        } else {
+            connectionCallback?.onConnectionFailed("Failed to connect to ${server.name}")
+        }
+    }
     
     // Private helper methods
     private fun startPlayerUpdateLoop() {
@@ -380,6 +501,24 @@ enum class RoomVisibility {
     PUBLIC,
     PRIVATE,
     FRIENDS_ONLY
+}
+
+// Lobby server data class
+data class LobbyServer(
+    val name: String,
+    val address: String,
+    val port: Int,
+    val gameId: String,
+    val gameName: String,
+    val playerCount: Int,
+    val maxPlayers: Int,
+    val version: String
+)
+
+// Lobby callback interface
+interface LobbyCallback {
+    fun onServersDiscovered(servers: List<LobbyServer>)
+    fun onDiscoveryFailed(error: String)
 }
 
 // Callback interfaces

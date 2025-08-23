@@ -166,11 +166,18 @@ class TvMainActivity : FragmentActivity(), MainView, OnRefreshListener {
     }
 
     override fun showNetPlayDialog() {
-        // NetPlay is hidden for TV version
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
     }
 
     override fun showNetPlayBrowser() {
-        // NetPlay is hidden for TV version
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    private fun showMPNNetPlayBrowser() {
+        val dialog = org.dolphinemu.dolphinemu.dialogs.MPNNetPlayBrowserDialog()
+        dialog.show(supportFragmentManager, "MPNNetPlayBrowser")
     }
 
     /**
