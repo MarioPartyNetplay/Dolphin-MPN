@@ -461,8 +461,8 @@ jobs:
     - name: Install Dependencies
       run: |
         # Update package database and install dependencies as root
-        pacman -Sy --noconfirm
-        pacman -S --noconfirm --needed cmake ninja qt6-tools
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm --needed --overwrite="*" cmake ninja qt6-tools
 
     - name: Build
       run: |
