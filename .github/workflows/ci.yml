@@ -451,11 +451,12 @@ jobs:
         # Create a non-root user for building
         useradd -m -G wheel builder
         echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+        # Give builder user access to the workspace
+        chown -R builder:builder /github/workspace
 
     - name: Build
       run: |
         sudo -u builder bash -c "
-          mkdir -p /github/workspace/Distribution
           cd /github/workspace/Distribution
           curl -L -o PKGBUILD https://raw.githubusercontent.com/MarioPartyNetplay/Dolphin-MPN/${{ github.ref_name }}/Distribution/PKGBUILD
           makepkg -si
