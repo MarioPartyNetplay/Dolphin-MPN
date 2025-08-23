@@ -58,6 +58,7 @@ class NetPlayDialog : DialogFragment(), ConnectionCallback, ChatCallback, Player
         
         context = requireContext()
         netPlayManager = NetPlayManager.getInstance()
+        netPlayManager.setContext(context)
         
         initializeViews()
         setupTabs()
@@ -143,9 +144,10 @@ class NetPlayDialog : DialogFragment(), ConnectionCallback, ChatCallback, Player
     // ConnectionCallback implementation
     override fun onConnected() {
         requireActivity().runOnUiThread {
-            // Close dialog and open main netplay dialog
+            // Close setup dialog and open main netplay dialog
             dismiss()
-            // TODO: Open main NetPlayDialog
+            val mainDialog = NetPlayMainDialog()
+            mainDialog.show(parentFragmentManager, "NetPlayMain")
         }
     }
     
@@ -271,6 +273,7 @@ class HostTabFragment : Fragment() {
     private lateinit var portEdit: EditText
     private lateinit var gameList: RecyclerView
     private lateinit var hostButton: Button
+    private lateinit var selectGameButton: Button
     private lateinit var serverNameEdit: EditText
     private lateinit var upnpCheckBox: CheckBox
     private lateinit var chunkedUploadCheckBox: CheckBox
@@ -290,6 +293,7 @@ class HostTabFragment : Fragment() {
         portEdit = view.findViewById(R.id.edit_host_port)
         gameList = view.findViewById(R.id.recycler_games)
         hostButton = view.findViewById(R.id.button_host)
+        selectGameButton = view.findViewById(R.id.button_select_game)
         serverNameEdit = view.findViewById(R.id.edit_server_name)
         upnpCheckBox = view.findViewById(R.id.checkbox_upnp)
         chunkedUploadCheckBox = view.findViewById(R.id.checkbox_chunked_upload)
@@ -306,6 +310,10 @@ class HostTabFragment : Fragment() {
     }
     
     private fun setupListeners() {
+        selectGameButton.setOnClickListener {
+            showGameSelectionDialog()
+        }
+        
         hostButton.setOnClickListener {
             val port = portEdit.text.toString().toIntOrNull() ?: 2626
             val serverName = serverNameEdit.text.toString()
@@ -339,6 +347,15 @@ class HostTabFragment : Fragment() {
     
     private fun showError(message: String) {
         Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun showGameSelectionDialog() {
+        val gameDialog = GameSelectionDialog.newInstance { game ->
+            // Game selected, update UI and enable host button
+            Toast.makeText(requireContext(), "Selected: ${game.name}", Toast.LENGTH_SHORT).show()
+            // TODO: Store selected game and enable host button
+        }
+        gameDialog.show(parentFragmentManager, "GameSelection")
     }
 }
 

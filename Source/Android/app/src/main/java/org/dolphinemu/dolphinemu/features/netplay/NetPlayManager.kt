@@ -29,6 +29,17 @@ class NetPlayManager private constructor() {
         }
     }
     
+    // Context management for preferences
+    private var appContext: Context? = null
+    
+    fun setContext(context: Context) {
+        appContext = context.applicationContext
+    }
+    
+    private fun getContext(): Context? {
+        return appContext
+    }
+    
     // NetPlay state
     private var isConnected = false
     private var isHost = false
@@ -80,6 +91,13 @@ class NetPlayManager private constructor() {
     fun hostServer(port: Int, callback: ConnectionCallback) {
         this.connectionCallback = callback
         Log.d(TAG, "Hosting server on port: $port")
+        
+        // Generate new host code for this session
+        val context = getContext()
+        if (context != null) {
+            clearHostCode(context)
+            generateHostCode()
+        }
         
         if (netPlayHost(port)) {
             isConnected = true
@@ -195,6 +213,38 @@ class NetPlayManager private constructor() {
     fun setServerName(context: Context, serverName: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString("server_name", serverName).apply()
+    }
+    
+    /**
+     * Generate a unique host code for traversal server connections
+     */
+    fun generateHostCode(): String {
+        // Generate a random 8-character alphanumeric code
+        val chars = "ABCDEF0123456789"
+        return (1..8).map { chars.random() }.joinToString("")
+    }
+    
+    /**
+     * Get the current host code (generates new one if none exists)
+     */
+    fun getHostCode(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        var hostCode = prefs.getString("host_code", "")
+        
+        if (hostCode.isBlank()) {
+            hostCode = generateHostCode()
+            prefs.edit().putString("host_code", hostCode).apply()
+        }
+        
+        return hostCode
+    }
+    
+    /**
+     * Clear the current host code (for new sessions)
+     */
+    fun clearHostCode(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().remove("host_code").apply()
     }
     
     // Chat management

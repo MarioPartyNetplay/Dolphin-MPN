@@ -115,12 +115,28 @@
     </LinearLayout>
 
     <!-- Game Selection -->
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Select Game to Host:"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Select Game to Host:"
+            android:textStyle="bold"
+            android:layout_gravity="center_vertical" />
+
+        <Button
+            android:id="@+id/button_select_game"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Browse Games"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_games"

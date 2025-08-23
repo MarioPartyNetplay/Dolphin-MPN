@@ -5,11 +5,21 @@
 #include <vector>
 #include <memory>
 
+// Include Dolphin's NetPlay headers
+#include "Core/NetPlayClient.h"
+#include "Core/NetPlayServer.h"
+#include "Core/NetPlayProto.h"
+#include "Core/Config/NetplaySettings.h"
+#include "UICommon/NetPlayIndex.h"
+#include "Common/Config/Config.h"
+
 #define LOG_TAG "DolphinMPN-Multiplayer"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // Global variables for NetPlay state
+static std::unique_ptr<NetPlay::NetPlayClient> g_netplay_client;
+static std::unique_ptr<NetPlay::NetPlayServer> g_netplay_server;
 static bool g_is_connected = false;
 static bool g_is_host = false;
 static std::string g_server_address;
@@ -42,7 +52,7 @@ void callJavaCallback(const char* method_name, ...) {
     LOGI("Calling Java callback: %s", method_name);
 }
 
-// NetPlay implementation
+// NetPlay implementation using Dolphin's classes
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
     JNIEnv* env, jobject thiz, jstring address, jint port) {
@@ -54,17 +64,31 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
     
     LOGI("Connecting to server: %s:%d", g_server_address.c_str(), g_server_port);
     
-    // TODO: Implement actual connection logic using Dolphin's NetPlayClient
-    // For now, simulate connection
-    g_is_connected = true;
-    g_is_host = false;
-    
-    // Add local player
-    g_players.clear();
-    g_players.push_back({1, "Local Player", true});
-    
-    callJavaCallback("onConnected");
-    return JNI_TRUE;
+    try {
+        // Create NetPlayClient using Dolphin's implementation
+        g_netplay_client = std::make_unique<NetPlay::NetPlayClient>(
+            g_server_address, g_server_port, nullptr, "Android Player",
+            NetPlay::NetTraversalConfig{false, "", 0, 0}
+        );
+        
+        if (g_netplay_client && g_netplay_client->IsConnected()) {
+            g_is_connected = true;
+            g_is_host = false;
+            
+            // Add local player
+            g_players.clear();
+            g_players.push_back({1, "Local Player", true});
+            
+            callJavaCallback("onConnected");
+            return JNI_TRUE;
+        } else {
+            LOGE("Failed to connect to server");
+            return JNI_FALSE;
+        }
+    } catch (const std::exception& e) {
+        LOGE("Exception during connection: %s", e.what());
+        return JNI_FALSE;
+    }
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -74,17 +98,31 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayHost(
     g_server_port = port;
     LOGI("Hosting server on port: %d", g_server_port);
     
-    // TODO: Implement actual hosting logic using Dolphin's NetPlayServer
-    // For now, simulate hosting
-    g_is_connected = true;
-    g_is_host = true;
-    
-    // Add host player
-    g_players.clear();
-    g_players.push_back({1, "Host Player", true});
-    
-    callJavaCallback("onConnected");
-    return JNI_TRUE;
+    try {
+        // Create NetPlayServer using Dolphin's implementation
+        g_netplay_server = std::make_unique<NetPlay::NetPlayServer>(
+            g_server_port, false, nullptr,
+            NetPlay::NetTraversalConfig{false, "", 0, 0}
+        );
+        
+        if (g_netplay_server && g_netplay_server->is_connected) {
+            g_is_connected = true;
+            g_is_host = true;
+            
+            // Add host player
+            g_players.clear();
+            g_players.push_back({1, "Host Player", true});
+            
+            callJavaCallback("onConnected");
+            return JNI_TRUE;
+        } else {
+            LOGE("Failed to host server");
+            return JNI_FALSE;
+        }
+    } catch (const std::exception& e) {
+        LOGE("Exception during hosting: %s", e.what());
+        return JNI_FALSE;
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -92,6 +130,11 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayDisconnect
     JNIEnv* env, jobject thiz) {
     
     LOGI("Disconnecting from server");
+    
+    // Clean up Dolphin's NetPlay objects
+    g_netplay_client.reset();
+    g_netplay_server.reset();
+    
     g_is_connected = false;
     g_is_host = false;
     g_players.clear();
@@ -109,8 +152,14 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlaySendMessag
     const char* msg = env->GetStringUTFChars(message, nullptr);
     LOGI("Sending message: %s", msg);
     
-    // TODO: Implement actual message sending through Dolphin's NetPlay
-    // For now, just add to local chat
+    // Send message through Dolphin's NetPlay
+    if (g_netplay_client) {
+        g_netplay_client->SendChatMessage(std::string(msg));
+    } else if (g_netplay_server) {
+        g_netplay_server->SendChatMessage(std::string(msg));
+    }
+    
+    // Add to local chat
     ChatMessage chat_msg = {"Local Player", "", std::string(msg), "now"};
     g_chat_messages.push_back(chat_msg);
     
@@ -125,13 +174,10 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayKickPlayer
     
     LOGI("Kicking player: %d", player_id);
     
-    // TODO: Implement actual player kicking through Dolphin's NetPlay
-    // For now, just remove from local list
-    g_players.erase(
-        std::remove_if(g_players.begin(), g_players.end(),
-            [player_id](const NetPlayPlayer& p) { return p.id == player_id; }),
-        g_players.end()
-    );
+    // Kick player through Dolphin's NetPlayServer
+    if (g_netplay_server) {
+        g_netplay_server->KickPlayer(static_cast<NetPlay::PlayerId>(player_id));
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -142,8 +188,7 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayBanPlayer(
     
     LOGI("Banning player: %d", player_id);
     
-    // TODO: Implement actual player banning through Dolphin's NetPlay
-    // For now, just kick the player
+    // For now, just kick the player (banning would need additional implementation)
     netPlayKickPlayer(env, thiz, player_id);
 }
 
@@ -155,14 +200,21 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlaySetRoomVis
     
     LOGI("Setting room visibility: %d", visibility);
     
-    // TODO: Implement room visibility setting
+    // TODO: Implement room visibility setting through NetPlayServer
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetPlayerCount(
     JNIEnv* env, jobject thiz) {
     
-    return static_cast<jint>(g_players.size());
+    if (g_netplay_client) {
+        return static_cast<jint>(g_netplay_client->GetPlayers().size());
+    } else if (g_netplay_server) {
+        // Server always has at least 1 player (host)
+        return static_cast<jint>(g_players.size());
+    }
+    
+    return 0;
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
@@ -188,6 +240,82 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsConnecte
     JNIEnv* env, jobject thiz) {
     
     return g_is_connected ? JNI_TRUE : JNI_FALSE;
+}
+
+// NetPlay Browser JNI functions
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayBrowser_fetchSessionsFromNetPlayIndex(
+    JNIEnv* env, jobject thiz) {
+    
+    LOGI("Fetching sessions from NetPlayIndex");
+    
+    try {
+        // TODO: Integrate with Dolphin's actual NetPlayIndex
+        // For now, return empty array to trigger fallback to sample sessions
+        
+        // Get the NetPlaySession class
+        jclass sessionClass = env->FindClass("org/dolphinemu/dolphinemu/model/NetPlaySession");
+        if (!sessionClass) {
+            LOGE("Could not find NetPlaySession class");
+            return nullptr;
+        }
+        
+        // Get the constructor
+        jmethodID constructor = env->GetMethodID(sessionClass, "<init>", 
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIZZ)V");
+        if (!constructor) {
+            LOGE("Could not find NetPlaySession constructor");
+            return nullptr;
+        }
+        
+        // Create empty array
+        jobjectArray result = env->NewObjectArray(0, sessionClass, nullptr);
+        
+        LOGI("Returning empty session array (will use fallback)");
+        return result;
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception in fetchSessionsFromNetPlayIndex: %s", e.what());
+        return nullptr;
+    }
+}
+
+// Game List JNI functions
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_dolphinemu_dolphinemu_dialogs_GameSelectionDialog_loadGamesFromDolphin(
+    JNIEnv* env, jobject thiz) {
+    
+    LOGI("Loading games from Dolphin's game list");
+    
+    try {
+        // TODO: Integrate with Dolphin's actual game list
+        // For now, return empty array to trigger fallback to sample games
+        
+        // Get the GameFile class
+        jclass gameFileClass = env->FindClass("org/dolphinemu/dolphinemu/model/GameFile");
+        if (!gameFileClass) {
+            LOGE("Could not find GameFile class");
+            return nullptr;
+        }
+        
+        // Get the constructor
+        jmethodID constructor = env->GetMethodID(gameFileClass, "<init>", 
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+        if (!constructor) {
+            LOGE("Could not find GameFile constructor");
+            return nullptr;
+        }
+        
+        // Create empty array
+        jobjectArray result = env->NewObjectArray(0, gameFileClass, nullptr);
+        
+        LOGI("Returning empty game array (will use fallback)");
+        return result;
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception in loadGamesFromDolphin: %s", e.what());
+        return nullptr;
+    }
 }
 
 // JNI_OnLoad implementation
