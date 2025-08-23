@@ -165,6 +165,14 @@ class TvMainActivity : FragmentActivity(), MainView, OnRefreshListener {
         GridOptionDialogFragment().show(supportFragmentManager, "gridOptions")
     }
 
+    override fun showNetPlayDialog() {
+        // NetPlay is hidden for TV version
+    }
+
+    override fun showNetPlayBrowser() {
+        // NetPlay is hidden for TV version
+    }
+
     /**
      * Callback from AddDirectoryActivity. Applies any changes necessary to the GameGridActivity.
      *
