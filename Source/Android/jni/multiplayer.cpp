@@ -181,18 +181,6 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayKickPlayer
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayBanPlayer(
-    JNIEnv* env, jobject thiz, jint player_id) {
-    
-    if (!g_is_host || !g_is_connected) return;
-    
-    LOGI("Banning player: %d", player_id);
-    
-    // For now, just kick the player (banning would need additional implementation)
-    netPlayKickPlayer(env, thiz, player_id);
-}
-
-extern "C" JNIEXPORT void JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlaySetRoomVisibility(
     JNIEnv* env, jobject thiz, jint visibility) {
     

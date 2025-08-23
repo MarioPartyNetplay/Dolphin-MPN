@@ -39,6 +39,9 @@ add_library(main SHARED
   WiiUtils.cpp
 )
 
+# Enable C++ exceptions and RTTI for Android
+target_compile_options(main PRIVATE -fexceptions -frtti)
+
 target_link_libraries(main
 PRIVATE
   androidcommon

@@ -51,10 +51,6 @@ extern "C" {
         JNIEnv* env, jobject thiz, jint player_id);
     
     JNIEXPORT void JNICALL
-    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayBanPlayer(
-        JNIEnv* env, jobject thiz, jint player_id);
-    
-    JNIEXPORT void JNICALL
     Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlaySetRoomVisibility(
         JNIEnv* env, jobject thiz, jint visibility);
     
