@@ -454,10 +454,9 @@ jobs:
 
     - name: Build
       run: |
-        cd Distribution
         sudo -u builder bash -c "
-          mkdir -p Distribution
-          cd Distribution
+          mkdir -p /github/workspace/Distribution
+          cd /github/workspace/Distribution
           curl -L -o PKGBUILD https://raw.githubusercontent.com/MarioPartyNetplay/Dolphin-MPN/${{ github.ref_name }}/Distribution/PKGBUILD
           makepkg -si
           
