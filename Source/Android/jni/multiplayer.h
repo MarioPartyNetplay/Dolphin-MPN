@@ -73,4 +73,25 @@ extern "C" {
     JNIEXPORT jboolean JNICALL
     Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayIsConnected(
         JNIEnv* env, jobject thiz);
+    
+    // Game validation and checksum functions
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameChecksum(
+        JNIEnv* env, jobject thiz, jstring gamePath);
+    
+    JNIEXPORT jboolean JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayValidateGameFile(
+        JNIEnv* env, jobject thiz, jstring gamePath);
+    
+    JNIEXPORT jboolean JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayLaunchGame(
+        JNIEnv* env, jobject thiz, jstring gamePath);
+    
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayGetGameId(
+        JNIEnv* env, jobject thiz, jstring gamePath);
+    
+    JNIEXPORT jboolean JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayCheckAndStartGame(
+        JNIEnv* env, jobject thiz);
 }

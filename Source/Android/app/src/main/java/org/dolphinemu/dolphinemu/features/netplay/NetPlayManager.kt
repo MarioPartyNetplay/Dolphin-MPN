@@ -1,8 +1,11 @@
 package org.dolphinemu.dolphinemu.features.netplay
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.util.Log
+import org.dolphinemu.dolphinemu.DolphinApplication
+import org.dolphinemu.dolphinemu.activities.EmulationActivity
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -71,6 +74,13 @@ class NetPlayManager private constructor() {
     external fun netPlayIsHost(): Boolean
     external fun netPlayIsConnected(): Boolean
     external fun setNetPlayManagerReference()
+    
+    // Game validation and checksum methods
+    external fun netPlayGetGameChecksum(gamePath: String): String?
+    external fun netPlayValidateGameFile(gamePath: String): Boolean
+    external fun netPlayLaunchGame(gamePath: String): Boolean
+    external fun netPlayGetGameId(gamePath: String): String?
+    external fun netPlayCheckAndStartGame(): Boolean
     
     init {
         try {
@@ -379,19 +389,28 @@ class NetPlayManager private constructor() {
         val servers = mutableListOf<LobbyServer>()
         
         try {
+            Log.d(TAG, "Raw lobby response: $jsonResponse")
             val jsonObject = org.json.JSONObject(jsonResponse)
             if (jsonObject.getString("status") == "OK") {
                 val sessions = jsonObject.getJSONArray("sessions")
+                Log.d(TAG, "Found ${sessions.length()} sessions")
                 
                 for (i in 0 until sessions.length()) {
                     val session = sessions.getJSONObject(i)
+                    Log.d(TAG, "Session $i: ${session.toString()}")
                     
                     // Only include MPN version sessions that are NOT in-game
                     if (session.optString("version", "") == "MPN" && !session.getBoolean("in_game")) {
+                        val serverId = session.getString("server_id")
+                        val serverName = session.getString("name")
+                        val serverPort = session.getInt("port")
+                        
+                        Log.d(TAG, "Creating server: name='$serverName', server_id='$serverId', port=$serverPort")
+                        
                         val server = LobbyServer(
-                            name = session.getString("name"),
-                            address = session.getString("server_id"), // server_id contains the IP/address
-                            port = session.getInt("port"),
+                            name = serverName,
+                            address = serverId, // server_id contains the IP/address
+                            port = serverPort,
                             gameId = session.getString("game"),
                             gameName = getGameNameFromId(session.getString("game")),
                             playerCount = session.getInt("player_count"),
@@ -399,6 +418,7 @@ class NetPlayManager private constructor() {
                             version = "MPN"
                         )
                         servers.add(server)
+                        Log.d(TAG, "Added server: ${server.name} at ${server.address}:${server.port}")
                     }
                 }
             }
@@ -474,6 +494,24 @@ class NetPlayManager private constructor() {
     }
     
     @Suppress("unused")
+    fun startNetPlayGame(filename: String) {
+        Log.d(TAG, "Starting NetPlay game: $filename")
+        
+        try {
+            // Launch the game using EmulationActivity
+            val context = DolphinApplication.getAppContext()
+            val intent = Intent(context, EmulationActivity::class.java).apply {
+                putExtra(EmulationActivity.EXTRA_SELECTED_GAMES, arrayOf(filename))
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Log.d(TAG, "Successfully launched game: $filename")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start NetPlay game: ${e.message}")
+        }
+    }
+    
+    @Suppress("unused")
     fun onConnectionFailed(error: String) {
         Log.d(TAG, "Native onConnectionFailed callback received: $error")
         connectionCallback?.onConnectionFailed(error)
@@ -486,7 +524,7 @@ class NetPlayManager private constructor() {
     }
     
     @Suppress("unused")
-    private fun onMessageReceived(nickname: String, message: String) {
+    fun onMessageReceived(nickname: String, message: String) {
         val chatMessage = ChatMessage(
             nickname = nickname,
             username = "",
@@ -497,7 +535,7 @@ class NetPlayManager private constructor() {
     }
     
     @Suppress("unused")
-    private fun onPlayerJoined(playerId: Int, nickname: String) {
+    fun onPlayerJoined(playerId: Int, nickname: String) {
         val player = NetPlayPlayer(playerId, nickname, true)
         players.add(player)
         playerCount = players.size
@@ -506,7 +544,7 @@ class NetPlayManager private constructor() {
     }
     
     @Suppress("unused")
-    private fun onPlayerLeft(playerId: Int) {
+    fun onPlayerLeft(playerId: Int) {
         players.removeAll { it.id == playerId }
         playerCount = players.size
         playerCallback?.onPlayerLeft(playerId)
@@ -514,7 +552,7 @@ class NetPlayManager private constructor() {
     }
     
     @Suppress("unused")
-    private fun onConnectionLost() {
+    fun onConnectionLost() {
         isConnected = false
         isHost = false
         connectionCallback?.onConnectionLost()
@@ -574,6 +612,84 @@ class NetPlayManager private constructor() {
         
         return gameNames[gameId] ?: "Game ($gameId)"
     }
+    
+    // Game validation and checksum helper methods
+    fun validateGameForNetPlay(gamePath: String): NetPlayGameValidation {
+        return try {
+            val isValid = netPlayValidateGameFile(gamePath)
+            val checksum = if (isValid) netPlayGetGameChecksum(gamePath) else null
+            val gameId = if (isValid) netPlayGetGameId(gamePath) else null
+            
+            NetPlayGameValidation(
+                isValid = isValid,
+                checksum = checksum,
+                gameId = gameId,
+                errorMessage = if (isValid) null else "Game file validation failed"
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating game: ${e.message}")
+            NetPlayGameValidation(
+                isValid = false,
+                checksum = null,
+                gameId = null,
+                errorMessage = "Validation error: ${e.message}"
+            )
+        }
+    }
+    
+    fun launchGameInNetPlay(gamePath: String): Boolean {
+        return try {
+            val isValid = netPlayValidateGameFile(gamePath)
+            if (!isValid) {
+                Log.e(TAG, "Cannot launch invalid game file: $gamePath")
+                return false
+            }
+            
+            if (!isConnected) {
+                Log.e(TAG, "Cannot launch game: not connected to NetPlay server")
+                return false
+            }
+            
+            val success = netPlayLaunchGame(gamePath)
+            if (success) {
+                Log.d(TAG, "Game launch initiated: $gamePath")
+            } else {
+                Log.e(TAG, "Failed to launch game: $gamePath")
+            }
+            success
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching game: ${e.message}")
+            false
+        }
+    }
+    
+    fun getGameChecksum(gamePath: String): String? {
+        return try {
+            netPlayGetGameChecksum(gamePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting game checksum: ${e.message}")
+            null
+        }
+    }
+    
+    fun getGameId(gamePath: String): String? {
+        return try {
+            netPlayGetGameId(gamePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting game ID: ${e.message}")
+            null
+        }
+    }
+    
+    fun checkAndStartGame(): Boolean {
+        return try {
+            netPlayCheckAndStartGame()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for game start: ${e.message}")
+            false
+        }
+    }
 }
 
 // Data classes
@@ -588,6 +704,13 @@ data class NetPlayPlayer(
     val id: Int,
     val nickname: String,
     val isConnected: Boolean
+)
+
+data class NetPlayGameValidation(
+    val isValid: Boolean,
+    val checksum: String?,
+    val gameId: String?,
+    val errorMessage: String?
 )
 
 enum class RoomVisibility {

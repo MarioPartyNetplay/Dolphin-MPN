@@ -131,7 +131,10 @@ class MPNNetPlayBrowserDialog : DialogFragment(), LobbyCallback, ConnectionCallb
     override fun onConnected() {
         requireActivity().runOnUiThread {
             Toast.makeText(context, "Connected to server!", Toast.LENGTH_SHORT).show()
-            dismiss() // Close the browser dialog
+            // Close the browser dialog and open the main NetPlay lobby dialog
+            dismiss()
+            val mainDialog = NetPlayMainDialog()
+            mainDialog.show(parentFragmentManager, "NetPlayMain")
         }
     }
 

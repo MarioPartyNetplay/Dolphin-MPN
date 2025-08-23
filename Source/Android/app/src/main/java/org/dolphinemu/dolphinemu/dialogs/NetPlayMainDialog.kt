@@ -99,98 +99,93 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
             chatInput = rootView.findViewById(R.id.edit_chat_input)
             sendButton = rootView.findViewById(R.id.button_send)
             
-            // Players section
+            // Players section - hidden on mobile
             playersRecyclerView = rootView.findViewById(R.id.recycler_players)
             kickButton = rootView.findViewById(R.id.button_kick)
             banButton = rootView.findViewById(R.id.button_ban)
             assignPortsButton = rootView.findViewById(R.id.button_assign_ports)
             
-            // Game controls
+            // Game controls - hidden on mobile
             gameButton = rootView.findViewById(R.id.button_game)
             startButton = rootView.findViewById(R.id.button_start)
             quitButton = rootView.findViewById(R.id.button_quit)
             
-            // Settings
+            // Settings - hidden on mobile
             bufferSizeBox = rootView.findViewById(R.id.spinner_buffer_size)
             bufferLabel = rootView.findViewById(R.id.label_buffer)
+            
+            // Hide mobile-unfriendly elements
+            hideMobileUnfriendlyElements()
         }
     }
     
-    private fun setupAdapters() {
-        // Player adapter
-        playerAdapter = NetPlayPlayerAdapter { player ->
-            showPlayerOptions(player)
-        }
-        playersRecyclerView.layoutManager = LinearLayoutManager(context)
-        playersRecyclerView.adapter = playerAdapter
+    private fun hideMobileUnfriendlyElements() {
+        // Hide game controls on mobile (but keep quit button for exiting)
+        gameButton.visibility = View.GONE
+        startButton.visibility = View.GONE
+        // quitButton.visibility = View.VISIBLE (keep visible for exiting)
         
+        // Hide player management controls on mobile (but keep player list visible)
+        kickButton.visibility = View.GONE
+        banButton.visibility = View.GONE
+        assignPortsButton.visibility = View.GONE
+        
+        // Hide buffer controls on mobile
+        bufferSizeBox.visibility = View.GONE
+        bufferLabel.visibility = View.GONE
+        
+        // Hide room selection on mobile
+        roomBox.visibility = View.GONE
+        
+        // Keep player list visible but remove management functionality
+        // playersRecyclerView.visibility = View.VISIBLE (default)
+    }
+    
+    private fun setupAdapters() {
+        // Mobile: Only setup chat adapter since player list is hidden
         // Chat adapter
         chatAdapter = ChatAdapter(netPlayManager.getChatMessages().toMutableList())
         chatRecyclerView.layoutManager = LinearLayoutManager(context).apply {
             stackFromEnd = true
         }
         chatRecyclerView.adapter = chatAdapter
-        
-        // Buffer size spinner
-        val bufferSizes = arrayOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")
-        val bufferAdapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, bufferSizes)
-        bufferAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        bufferSizeBox.adapter = bufferAdapter
-        bufferSizeBox.setSelection(4) // Default to 5
+
+        // Player adapter
+        playerAdapter = NetPlayPlayerAdapter { player ->
+            // Mobile: No player management needed, just log selection for debugging
+            android.util.Log.d("NetPlayPlayer", "Player selected: ${player.nickname}")
+        }
+        playersRecyclerView.layoutManager = LinearLayoutManager(context)
+        playersRecyclerView.adapter = playerAdapter
     }
     
     private fun setupListeners() {
         sendButton.setOnClickListener {
             val message = chatInput.text.toString()
             if (message.isNotBlank()) {
-                netPlayManager.sendMessage(message)
+                // Debug: Log what we're sending
+                android.util.Log.d("NetPlayChat", "Sending message: '$message'")
+                
+                // Clean the message before sending
+                val cleanMessage = message.trim()
+                netPlayManager.sendMessage(cleanMessage)
                 chatInput.text?.clear()
             }
         }
         
-        kickButton.setOnClickListener {
-            val selectedPlayer = playerAdapter.getSelectedPlayer()
-            if (selectedPlayer != null) {
-                netPlayManager.kickPlayer(selectedPlayer.id)
-            }
-        }
-        
-        banButton.setOnClickListener {
-            val selectedPlayer = playerAdapter.getSelectedPlayer()
-            if (selectedPlayer != null) {
-                netPlayManager.banPlayer(selectedPlayer.id)
-            }
-        }
-        
-        assignPortsButton.setOnClickListener {
-            showAssignPortsDialog()
-        }
-        
-        gameButton.setOnClickListener {
-            showGameSelectionDialog()
-        }
-        
-        startButton.setOnClickListener {
-            startGame()
-        }
-        
+        // Quit button for exiting NetPlay
         quitButton.setOnClickListener {
             netPlayManager.disconnect()
             dismiss()
         }
         
+        // Mobile: Only keep essential listeners
         hostCodeActionButton.setOnClickListener {
             copyHostCode()
         }
         
-        bufferSizeBox.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val bufferSize = position + 1
-                // TODO: Set buffer size in NetPlayManager
-            }
-            
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
+        // Note: Game controls and player management controls are hidden on mobile
+        // but quit button is kept for exiting NetPlay sessions
     }
     
     private fun updateUI() {
@@ -209,15 +204,13 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
         val playerCount = netPlayManager.getPlayerCount()
         playerCountText.text = "Players: $playerCount/4"
         
-        // Update button states
-        kickButton.isEnabled = isHost && isConnected
-        banButton.isEnabled = isHost && isConnected
-        assignPortsButton.isEnabled = isHost && isConnected
-        gameButton.isEnabled = isHost && isConnected
-        startButton.isEnabled = isHost && isConnected
+        // Refresh player list to show current players immediately
+        if (::playerAdapter.isInitialized) {
+            val currentPlayers = netPlayManager.getPlayers()
+            playerAdapter.updatePlayers(currentPlayers)
+        }
         
-        // Update room box visibility
-        roomBox.visibility = if (isHost) View.VISIBLE else View.GONE
+        // Mobile: Only show host code if hosting
         hostCodeLabel.visibility = if (isHost) View.VISIBLE else View.GONE
         hostCodeActionButton.visibility = if (isHost) View.VISIBLE else View.GONE
         
@@ -225,7 +218,6 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
         if (isHost) {
             val hostCode = netPlayManager.getHostCode(context)
             hostCodeLabel.text = "Code: $hostCode"
-            updateRoomOptions()
         }
     }
     
@@ -237,37 +229,6 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
         roomBox.adapter = adapter
     }
     
-    private fun showPlayerOptions(player: NetPlayPlayer) {
-        if (!netPlayManager.isHost()) return
-        
-        val options = arrayOf("Kick Player", "Ban Player")
-        AlertDialog.Builder(context)
-            .setTitle("Player Options: ${player.nickname}")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> netPlayManager.kickPlayer(player.id)
-                    1 -> netPlayManager.banPlayer(player.id)
-                }
-            }
-            .show()
-    }
-    
-    private fun showAssignPortsDialog() {
-        val portDialog = PortAssignmentDialog.newInstance { assignments ->
-            // Handle port assignments
-            val message = "Ports assigned: ${assignments.entries.joinToString { "P${it.key}=${it.value}" }}"
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            
-            // TODO: Send port assignments to NetPlayManager
-            // netPlayManager.assignPorts(assignments)
-        }
-        portDialog.show(parentFragmentManager, "PortAssignment")
-    }
-    
-    private fun showGameSelectionDialog() {
-        // TODO: Implement game selection dialog
-        Toast.makeText(context, "Game selection not yet implemented", Toast.LENGTH_SHORT).show()
-    }
     
     private fun startGame() {
         // TODO: Implement game start
@@ -312,6 +273,8 @@ class NetPlayMainDialog : DialogFragment(), ConnectionCallback, ChatCallback, Pl
     
     // ChatCallback implementation
     override fun onMessageReceived(message: ChatMessage) {
+        android.util.Log.d("NetPlayChat", "Message received: nickname='${message.nickname}', message='${message.message}', timestamp='${message.timestamp}'")
+        
         requireActivity().runOnUiThread {
             chatAdapter.addMessage(message)
             chatRecyclerView.scrollToPosition(chatAdapter.itemCount - 1)
@@ -361,11 +324,22 @@ class ChatAdapter(private val messages: MutableList<ChatMessage>) :
     RecyclerView.Adapter<ChatAdapter.ChatViewHolder>() {
     
     fun addMessage(message: ChatMessage) {
-        messages.add(message)
-        if (messages.size > 100) {
-            messages.removeAt(0)
+        // Check for duplicate messages to prevent showing the same message twice
+        val isDuplicate = messages.any { existing ->
+            existing.nickname == message.nickname && 
+            existing.message == message.message && 
+            existing.timestamp == message.timestamp
         }
-        notifyDataSetChanged()
+        
+        if (!isDuplicate) {
+            messages.add(message)
+            if (messages.size > 100) {
+                messages.removeAt(0)
+            }
+            notifyDataSetChanged()
+        } else {
+            android.util.Log.d("NetPlayChat", "Duplicate message detected, ignoring: ${message.message}")
+        }
     }
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChatViewHolder {
@@ -387,13 +361,18 @@ class ChatAdapter(private val messages: MutableList<ChatMessage>) :
         private val userIcon: ImageView = itemView.findViewById(R.id.icon_user)
         
         fun bind(message: ChatMessage) {
-            usernameText.text = message.nickname
+            // Debug: Log the message content to see what's happening
+            android.util.Log.d("NetPlayChat", "Message: nickname='${message.nickname}', message='${message.message}'")
+            
+            // Clean up nickname if it contains duplicate text
+            val cleanNickname = message.nickname.trim()
+            usernameText.text = cleanNickname
             timestampText.text = message.timestamp
             messageText.text = message.message
             
             // Set user icon based on nickname
-            val iconRes = when (message.nickname) {
-                "System" -> R.drawable.ic_system
+            val iconRes = when {
+                cleanNickname.equals("System", ignoreCase = true) -> R.drawable.ic_system
                 else -> R.drawable.ic_user
             }
             userIcon.setImageResource(iconRes)
