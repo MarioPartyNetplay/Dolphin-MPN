@@ -306,16 +306,15 @@ Java_org_dolphinemu_dolphinemu_dialogs_GameSelectionDialog_loadGamesFromDolphin(
     }
 }
 
-// JNI_OnLoad implementation
-extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+// Multiplayer initialization function - called from IDCache.cpp JNI_OnLoad
+void InitializeMultiplayerJNI(JavaVM* vm) {
     g_jvm = vm;
-    LOGI("Multiplayer JNI loaded");
-    return JNI_VERSION_1_6;
+    LOGI("Multiplayer JNI initialized");
 }
 
-// JNI_OnUnload implementation
-extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
+// Multiplayer cleanup function - called from IDCache.cpp JNI_OnUnload
+void CleanupMultiplayerJNI() {
     g_jvm = nullptr;
     g_netplay_manager = nullptr;
-    LOGI("Multiplayer JNI unloaded");
+    LOGI("Multiplayer JNI cleaned up");
 }

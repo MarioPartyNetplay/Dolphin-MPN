@@ -28,6 +28,10 @@ struct ChatMessage {
 JNIEnv* getJNIEnv();
 void callJavaCallback(const char* method_name, ...);
 
+// Multiplayer JNI lifecycle functions
+void InitializeMultiplayerJNI(JavaVM* vm);
+void CleanupMultiplayerJNI();
+
 // NetPlay JNI functions
 extern "C" {
     JNIEXPORT jboolean JNICALL

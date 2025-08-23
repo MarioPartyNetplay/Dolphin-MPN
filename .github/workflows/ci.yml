@@ -422,34 +422,34 @@ jobs:
         hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
 
         rm -rf Dolphin-MPN.app
-    - name: Codesign Executable
-      run: >
-        if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
-          echo "Code signing with local certificate..."
-          
-          # Create a temporary keychain
-          security create-keychain -p "temp" build.keychain
-          security list-keychains -s build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "temp" build.keychain
-          security set-keychain-settings build.keychain
-
-          # Import the certificate
-          echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 -d > certificate.p12
-          security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-
-          # Set the certificate as trusted
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "temp" build.keychain
-
-          # Code sign the app (use --deep for complete signing)
-          codesign --force --deep --sign "66B0C1FCF086977A36F88689D6FBD6269400E086" --keychain build.keychain "/build/OUT/Dolphin-MPN.app" -v
-
-          # Clean up
-          security delete-keychain build.keychain
-          rm -f certificate.p12
-        else
-          echo "No certificate provided, skipping code signing"
-        fi
+    # - name: Codesign Executable
+    #   run: >
+    #     if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+    #       echo "Code signing with local certificate..."
+    #       
+    #       # Create a temporary keychain
+    #       security create-keychain -p "temp" build.keychain
+    #       security list-keychains -s build.keychain
+    #       security default-keychain -s build.keychain
+    #       security unlock-keychain -p "temp" build.keychain
+    #       security set-keychain-settings build.keychain
+# 
+    #       # Import the certificate
+    #       echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 -d > certificate.p12
+    #       security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+# 
+    #       # Set the certificate as trusted
+    #       security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "temp" build.keychain
+# 
+    #       # Code sign the app (use --deep for complete signing)
+    #       codesign --force --deep --sign "66B0C1FCF086977A36F88689D6FBD6269400E086" --keychain build.keychain "/build/OUT/Dolphin-MPN.app" -v
+# 
+    #       # Clean up
+    #       security delete-keychain build.keychain
+    #       rm -f certificate.p12
+    #     else
+    #       echo "No certificate provided, skipping code signing"
+    #     fi
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
