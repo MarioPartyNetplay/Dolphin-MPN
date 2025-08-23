@@ -302,6 +302,10 @@ class HostTabFragment : Fragment() {
         setupGameList()
         setupListeners()
         loadSettings()
+        
+        // Show that hosting is disabled
+        hostButton.text = "Hosting Disabled"
+        selectGameButton.text = "Select Game (Disabled)"
     }
     
     private fun setupGameList() {
@@ -310,6 +314,20 @@ class HostTabFragment : Fragment() {
     }
     
     private fun setupListeners() {
+        // Disable hosting functionality for now
+        selectGameButton.isEnabled = false
+        hostButton.isEnabled = false
+        
+        selectGameButton.setOnClickListener {
+            Toast.makeText(requireContext(), "Hosting is temporarily disabled", Toast.LENGTH_SHORT).show()
+        }
+        
+        hostButton.setOnClickListener {
+            Toast.makeText(requireContext(), "Hosting is temporarily disabled", Toast.LENGTH_SHORT).show()
+        }
+        
+        // Original hosting code (commented out)
+        /*
         selectGameButton.setOnClickListener {
             showGameSelectionDialog()
         }
@@ -328,10 +346,11 @@ class HostTabFragment : Fragment() {
             dialog?.let {
                 val netPlayManager = NetPlayManager.getInstance()
                 netPlayManager.setServerPort(requireContext(), port)
-                netPlayManager.setServerName(requireContext(), serverName)
+                netPlayManager.setServerName(requireContext(), port)
                 netPlayManager.hostServer(port, it)
             }
         }
+        */
     }
     
     private fun loadSettings() {
@@ -350,12 +369,18 @@ class HostTabFragment : Fragment() {
     }
     
     private fun showGameSelectionDialog() {
+        // Game selection is disabled for now
+        Toast.makeText(requireContext(), "Game selection is temporarily disabled", Toast.LENGTH_SHORT).show()
+        
+        // Original game selection code (commented out)
+        /*
         val gameDialog = GameSelectionDialog.newInstance { game ->
             // Game selected, update UI and enable host button
             Toast.makeText(requireContext(), "Selected: ${game.name}", Toast.LENGTH_SHORT).show()
             // TODO: Store selected game and enable host button
         }
         gameDialog.show(parentFragmentManager, "GameSelection")
+        */
     }
 }
 
