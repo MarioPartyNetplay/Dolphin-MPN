@@ -500,6 +500,7 @@ jobs:
           miniupnpc \
           pugixml \
           qt6-base \
+          qt6-svg \
           sdl2 \
           sfml \
           zlib \
