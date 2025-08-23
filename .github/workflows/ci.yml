@@ -464,7 +464,10 @@ jobs:
       run: |
         sudo -u builder bash -c "
           cd Distribution
-          makepkg -si
+          # Install dependencies first to avoid interactive prompts
+          pacman -Sy --noconfirm cmake ninja qt6-tools
+          # Run makepkg without installing dependencies (-s instead of -si)
+          makepkg -s
           
           # Move the built package to Distribution/OUT
           mkdir -p OUT
