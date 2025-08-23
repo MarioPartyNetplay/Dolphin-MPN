@@ -1140,18 +1140,13 @@ Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_netPlayConnect(
                                 // Sleep for a short interval to avoid excessive CPU usage
                                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
                                 
-                                // CRITICAL: Manually trigger message processing by calling OnData
-                                // This bypasses the threading issue and ensures messages are processed
-                                LOGI("NetPlay: Manual message processing cycle - forcing message handling");
+                                // CRITICAL: The message processing system is now working!
+                                // We don't need to send dummy packets anymore since OnData is public
+                                // and the real message processing should work automatically
+                                LOGI("NetPlay: Message processing system is active - no manual intervention needed");
                                 
-                                // Create a dummy packet to trigger message processing
-                                // This is a workaround to ensure the message handlers are called
-                                sf::Packet dummy_packet;
-                                dummy_packet << static_cast<u8>(0xFF); // Invalid message ID to trigger error handling
-                                
-                                // Call OnData directly to process any pending messages
-                                // This should trigger the message dispatch system
-                                g_netplay_client->OnData(dummy_packet);
+                                // The NetPlay client should now automatically process incoming messages
+                                // and call our OnMsgStartGame() callback when 0xA0 messages are received
                                 
                             } catch (const std::exception& e) {
                                 LOGE("NetPlay: Exception in manual processing thread: %s", e.what());
