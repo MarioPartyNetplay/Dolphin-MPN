@@ -156,6 +156,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
+# Enable gamemode support on Linux and macOS Game Mode
+
+
 if(UNIX)
   # Builds a relocatable binary on Linux.
   # The Sys folder will need to be copied to the Binaries folder.

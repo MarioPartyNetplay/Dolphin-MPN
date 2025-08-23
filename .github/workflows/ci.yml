@@ -231,8 +231,6 @@ jobs:
 
           make -C build "-j$NPROCS"
 
-          make -C build install
-
           cd ..
 
 
@@ -307,6 +305,7 @@ jobs:
             -DUSE_SYSTEM_CURL=ON
             -DUSE_SYSTEM_ICONV=ON
             -DUSE_SYSTEM_SDL3=OFF
+
             -G Ninja
           )
 

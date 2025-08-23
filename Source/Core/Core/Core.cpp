@@ -444,6 +444,8 @@ static void FifoPlayerThread(Core::System& system, const std::optional<std::stri
     State expected = State::Starting;
     s_state.compare_exchange_strong(expected, State::Running);
 
+
+
     CPUSetInitialExecutionState();
     system.GetCPU().Run();
 
@@ -565,6 +567,8 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
 
     g_video_backend->Shutdown();
   }};
+
+
 
   if (cpu_info.HTT)
     Config::SetBaseOrCurrent(Config::MAIN_DSP_THREAD, cpu_info.num_cores > 4);
@@ -691,6 +695,9 @@ void SetState(Core::System& system, State state, bool report_state_change,
     system.GetCPU().SetStepping(true);  // Break
     Wiimote::Pause();
     ResetRumble();
+    
+
+    
 #ifdef USE_RETRO_ACHIEVEMENTS
     AchievementManager::GetInstance().DoIdle();
 #endif  // USE_RETRO_ACHIEVEMENTS
@@ -699,6 +706,8 @@ void SetState(Core::System& system, State state, bool report_state_change,
   {
     system.GetCPU().SetStepping(false);
     Wiimote::Resume();
+  
+
     break;
   }
   default:
