@@ -56,11 +56,11 @@ void MarioPartyNetplayPane::CreateLayout()
   auto* hud_scale_layout = new QHBoxLayout;
   m_label_hud_scale = new QLabel(tr("HUD Scale:"));
   m_slider_hud_scale = new QSlider(Qt::Horizontal);
-  m_slider_hud_scale->setRange(10, 500);  // 0.1x to 5.0x scale
-  m_slider_hud_scale->setValue(100);  // Default to 1.0x
+  m_slider_hud_scale->setRange(10, 500);
+  m_slider_hud_scale->setValue(100);
   m_slider_hud_scale->setToolTip(tr("Adjust the size of the Mario Party HUD elements (turn counter, etc.)."));
   
-  m_label_hud_scale_value = new QLabel("100%");
+  m_label_hud_scale_value = new QLabel(QStringLiteral("100%"));
   m_label_hud_scale_value->setMinimumWidth(50);
   
   hud_scale_layout->addWidget(m_label_hud_scale);
@@ -80,7 +80,7 @@ void MarioPartyNetplayPane::ConnectLayout()
   connect(m_checkbox_log_turn_count_to_file, &QCheckBox::toggled, this, &MarioPartyNetplayPane::OnSaveConfig);
   connect(m_slider_hud_scale, &QSlider::valueChanged, this, [this](int value) {
     // Update the value label
-    m_label_hud_scale_value->setText(QString::number(value) + "%");
+    m_label_hud_scale_value->setText(QString::number(value) + QStringLiteral("%"));
     // Save the config
     OnSaveConfig();
   });
@@ -99,7 +99,7 @@ void MarioPartyNetplayPane::LoadConfig()
   const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
   const int slider_value = static_cast<int>(hud_scale * 100);
   m_slider_hud_scale->setValue(slider_value);
-  m_label_hud_scale_value->setText(QString::number(slider_value) + "%");
+  m_label_hud_scale_value->setText(QString::number(slider_value) + QStringLiteral("%"));
 
   m_checkbox_show_turn_count->setEnabled(!running);
   m_checkbox_show_buttons_new->setEnabled(!running);

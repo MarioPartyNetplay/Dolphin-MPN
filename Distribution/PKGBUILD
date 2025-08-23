@@ -1,7 +1,7 @@
 # Maintainer: Tabitha Hanegan <info@tabithahanegan.com>
 # Contributor: Dolphin Team <team@dolphin-emu.org>
 pkgname=dolphin-mpn
-pkgver=$(git rev-parse --short=7 HEAD)
+pkgver=edeb50f
 pkgrel=1
 pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
 arch=('x86_64' 'aarch64')

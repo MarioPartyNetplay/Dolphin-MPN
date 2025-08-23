@@ -1,4 +1,3 @@
----
 name: Combined CI
 on:
   push: null
@@ -435,3 +434,29 @@ jobs:
         with:
           name: DolphinMPN-windows-x86_64
           path: Binary/x64/
+  
+  build_archlinux:
+    name: Arch Linux x86_64
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    steps:
+    - name: Install Git
+      run: |
+        pacman -Sy --noconfirm git
+
+    - name: Build
+      run: |
+        cd Distribution
+        makepkg -si
+        
+        # Move the built package to Distribution/OUT
+        mkdir -p OUT
+        mv *.pkg.tar.zst OUT/ || mv *.pkg.tar.gz OUT/ || mv *.pkg.tar.xz OUT/ || echo "No package found to move"
+      
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DolphinMPN-archlinux-x86_64
+        path: Distribution/OUT/
