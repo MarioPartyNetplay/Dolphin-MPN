@@ -7,7 +7,7 @@ plugins {
 
 @Suppress("UnstableApiUsage")
 android {
-    compileSdkVersion = "android-34"
+    compileSdkVersion = "android-36"
     ndkVersion = "27.0.12077973"
 
     buildFeatures {
@@ -38,9 +38,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "org.dolphinemu.dolphinemu"
+        applicationId = "org.dolphinemu.dolphinmpn"
         minSdk = 21
-        targetSdk = 34
+        targetSdk = 36
 
         versionCode = getBuildVersionCode()
 
@@ -71,7 +71,7 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
 
-            resValue("string", "app_name_suffixed", "Dolphin Emulator")
+            resValue("string", "app_name_suffixed", "Dolphin-MPN")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -104,7 +104,8 @@ android {
                 arguments(
                     "-DANDROID_STL=c++_static",
                     "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
-                    "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+                    "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
                     // , "-DENABLE_GENERIC=ON"
                 )
                 abiFilters("arm64-v8a", "x86_64") //, "armeabi-v7a", "x86"

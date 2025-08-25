@@ -178,6 +178,7 @@
     <ClInclude Include="Common\VariantUtil.h" />
     <ClInclude Include="Common\Version.h" />
     <ClInclude Include="Common\WaitableFlag.h" />
+    <ClInclude Include="Common\WindowsDevice.h" />
     <ClInclude Include="Common\WindowsRegistry.h" />
     <ClInclude Include="Common\WindowSystemInfo.h" />
     <ClInclude Include="Common\WorkQueueThread.h" />
@@ -402,6 +403,8 @@
     <ClInclude Include="Core\IOS\USB\Bluetooth\BTEmu.h" />
     <ClInclude Include="Core\IOS\USB\Bluetooth\BTReal.h" />
     <ClInclude Include="Core\IOS\USB\Bluetooth\BTStub.h" />
+    <ClInclude Include="Core\IOS\USB\Bluetooth\LibUSBBluetoothAdapter.h" />
+    <ClInclude Include="Core\IOS\USB\Bluetooth\RealtekFirmwareLoader.h" />
     <ClInclude Include="Core\IOS\USB\Bluetooth\hci.h" />
     <ClInclude Include="Core\IOS\USB\Bluetooth\l2cap.h" />
     <ClInclude Include="Core\IOS\USB\Bluetooth\WiimoteDevice.h" />
@@ -471,6 +474,7 @@
     <ClInclude Include="Core\System.h" />
     <ClInclude Include="Core\TimePlayed.h" />
     <ClInclude Include="Core\TitleDatabase.h" />
+    <ClInclude Include="Core\USBUtils.h" />
     <ClInclude Include="Core\WC24PatchEngine.h" />
     <ClInclude Include="Core\WiiRoot.h" />
     <ClInclude Include="Core\WiiUtils.h" />
@@ -544,6 +548,7 @@
     <ClInclude Include="InputCommon\ControllerInterface\MappingCommon.h" />
     <ClInclude Include="InputCommon\ControllerInterface\WGInput\WGInput.h" />
     <ClInclude Include="InputCommon\ControllerInterface\Wiimote\WiimoteController.h" />
+    <ClInclude Include="InputCommon\ControllerInterface\GCAdapter\GCAdapterController.h" />
     <ClInclude Include="InputCommon\ControllerInterface\Win32\Win32.h" />
     <ClInclude Include="InputCommon\ControllerInterface\XInput\XInput.h" />
     <ClInclude Include="InputCommon\ControllerInterface\SDL\SDL.h" />
@@ -571,7 +576,6 @@
     <ClInclude Include="UICommon\ResourcePack\Manifest.h" />
     <ClInclude Include="UICommon\ResourcePack\ResourcePack.h" />
     <ClInclude Include="UICommon\UICommon.h" />
-    <ClInclude Include="UICommon\USBUtils.h" />
     <ClInclude Include="UpdaterCommon\UI.h" />
     <ClInclude Include="UpdaterCommon\UpdaterCommon.h" />
     <ClInclude Include="VideoBackends\D3D\D3DBase.h" />
@@ -640,7 +644,6 @@
     <ClInclude Include="VideoBackends\Software\TextureEncoder.h" />
     <ClInclude Include="VideoBackends\Software\TextureSampler.h" />
     <ClInclude Include="VideoBackends\Software\TransformUnit.h" />
-    <ClInclude Include="VideoBackends\Software\Vec3.h" />
     <ClInclude Include="VideoBackends\Software\VideoBackend.h" />
     <ClInclude Include="VideoBackends\Vulkan\CommandBufferManager.h" />
     <ClInclude Include="VideoBackends\Vulkan\Constants.h" />
@@ -678,6 +681,7 @@
     <ClInclude Include="VideoCommon\Assets\ShaderAsset.h" />
     <ClInclude Include="VideoCommon\Assets\TextureAsset.h" />
     <ClInclude Include="VideoCommon\Assets\TextureAssetUtils.h" />
+    <ClInclude Include="VideoCommon\Assets\TextureSamplerValue.h" />
     <ClInclude Include="VideoCommon\Assets\Types.h" />
     <ClInclude Include="VideoCommon\Assets\WatchableFilesystemAssetLibrary.h" />
     <ClInclude Include="VideoCommon\AsyncRequests.h" />
@@ -860,6 +864,7 @@
     <ClCompile Include="Common\TimeUtil.cpp" />
     <ClCompile Include="Common\TraversalClient.cpp" />
     <ClCompile Include="Common\UPnP.cpp" />
+    <ClCompile Include="Common\WindowsDevice.cpp" />
     <ClCompile Include="Common\WindowsRegistry.cpp" />
     <ClCompile Include="Common\Version.cpp" />
     <ClCompile Include="Core\AchievementManager.cpp" />
@@ -958,6 +963,7 @@
     <ClCompile Include="Core\HW\DVD\DVDThread.cpp" />
     <ClCompile Include="Core\HW\DVD\FileMonitor.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\BuiltIn.cpp" />
+    <ClCompile Include="Core\HW\EXI\BBA\IPC.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\TAP_Win32.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\TAPServerConnection.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\TAPServerBBA.cpp" />
@@ -1079,6 +1085,8 @@
     <ClCompile Include="Core\IOS\USB\Bluetooth\BTEmu.cpp" />
     <ClCompile Include="Core\IOS\USB\Bluetooth\BTReal.cpp" />
     <ClCompile Include="Core\IOS\USB\Bluetooth\BTStub.cpp" />
+    <ClCompile Include="Core\IOS\USB\Bluetooth\LibUSBBluetoothAdapter.cpp" />
+    <ClCompile Include="Core\IOS\USB\Bluetooth\RealtekFirmwareLoader.cpp" />
     <ClCompile Include="Core\IOS\USB\Bluetooth\WiimoteDevice.cpp" />
     <ClCompile Include="Core\IOS\USB\Bluetooth\WiimoteHIDAttr.cpp" />
     <ClCompile Include="Core\IOS\USB\Common.cpp" />
@@ -1148,6 +1156,7 @@
     <ClCompile Include="Core\System.cpp" />
     <ClCompile Include="Core\TimePlayed.cpp" />
     <ClCompile Include="Core\TitleDatabase.cpp" />
+    <ClCompile Include="Core\USBUtils.cpp" />
     <ClCompile Include="Core\WiiRoot.cpp" />
     <ClCompile Include="Core\WiiUtils.cpp" />
     <ClCompile Include="Core\WC24PatchEngine.cpp" />
@@ -1216,6 +1225,7 @@
     <ClCompile Include="InputCommon\ControllerInterface\MappingCommon.cpp" />
     <ClCompile Include="InputCommon\ControllerInterface\WGInput\WGInput.cpp" />
     <ClCompile Include="InputCommon\ControllerInterface\Wiimote\WiimoteController.cpp" />
+    <ClCompile Include="InputCommon\ControllerInterface\GCAdapter\GCAdapterController.cpp" />
     <ClCompile Include="InputCommon\ControllerInterface\Win32\Win32.cpp" />
     <ClCompile Include="InputCommon\ControllerInterface\XInput\XInput.cpp" />
     <ClCompile Include="InputCommon\ControllerInterface\SDL\SDL.cpp" />
@@ -1240,7 +1250,6 @@
     <ClCompile Include="UICommon\ResourcePack\Manifest.cpp" />
     <ClCompile Include="UICommon\ResourcePack\ResourcePack.cpp" />
     <ClCompile Include="UICommon\UICommon.cpp" />
-    <ClCompile Include="UICommon\USBUtils.cpp" />
     <ClCompile Include="UpdaterCommon\UpdaterCommon.cpp" />
     <ClCompile Include="VideoBackends\D3D\D3DBase.cpp" />
     <ClCompile Include="VideoBackends\D3D\D3DBoundingBox.cpp" />
@@ -1335,6 +1344,7 @@
     <ClCompile Include="VideoCommon\Assets\ShaderAsset.cpp" />
     <ClCompile Include="VideoCommon\Assets\TextureAsset.cpp" />
     <ClCompile Include="VideoCommon\Assets\TextureAssetUtils.cpp" />
+    <ClCompile Include="VideoCommon\Assets\TextureSamplerValue.cpp" />
     <ClCompile Include="VideoCommon\AsyncRequests.cpp" />
     <ClCompile Include="VideoCommon\AsyncShaderCompiler.cpp" />
     <ClCompile Include="VideoCommon\BoundingBox.cpp" />

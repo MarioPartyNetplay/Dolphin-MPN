@@ -185,7 +185,9 @@ void mpn_per_frame()
     }
 
     mpn_update_board();
+#ifdef USE_DISCORD_PRESENCE
     mpn_update_discord();
+#endif
 
     // Log turn count changes
     if (CurrentState.IsMarioParty && CurrentState.Addresses)

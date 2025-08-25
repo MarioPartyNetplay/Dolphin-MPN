@@ -113,6 +113,11 @@ class MainPresenter(private val mainView: MainView, private val activity: Fragme
                 true
             }
 
+            R.id.menu_netplay -> {
+                mainView.showNetPlayBrowser()
+                true
+            }
+
             R.id.menu_about -> {
                 showAboutDialog()
                 false

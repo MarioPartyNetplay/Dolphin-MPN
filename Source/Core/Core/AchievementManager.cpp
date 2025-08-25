@@ -192,8 +192,8 @@ void AchievementManager::LoadGame(const DiscIO::Volume* volume)
     std::lock_guard lg{m_lock};
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
     const auto& names = volume->GetLongNames();
-    if (names.contains(DiscIO::Language::English))
-      m_title_estimate = names.at(DiscIO::Language::English);
+    if (const auto it = names.find(DiscIO::Language::English); it != names.end())
+      m_title_estimate = it->second;
     else if (!names.empty())
       m_title_estimate = names.begin()->second;
     else
@@ -215,7 +215,7 @@ void AchievementManager::LoadGame(const DiscIO::Volume* volume)
   rc_hash_init_custom_filereader(&volume_reader);
   if (rc_client_get_game_info(m_client))
   {
-    rc_client_begin_change_media(m_client, "", NULL, 0, ChangeMediaCallback, NULL);
+    rc_client_begin_change_media(m_client, "", ChangeMediaCallback, NULL);
   }
   else
   {
@@ -485,8 +485,16 @@ bool AchievementManager::CheckApprovedCode(const T& code, const std::string& gam
   for (const std::string& filename : ConfigLoaders::GetGameIniFilenames(game_id, revision))
   {
     auto config = filename.substr(0, filename.length() - 4);
-    if (m_ini_root->contains(config) && m_ini_root->get(config).contains(hash))
-      verified = true;
+    if (m_ini_root->contains(config))
+    {
+      auto ini_config = m_ini_root->get(config);
+      if (ini_config.is<picojson::object>() && ini_config.contains(code.name))
+      {
+        auto ini_code = ini_config.get(code.name);
+        if (ini_code.template is<std::string>())
+          verified = (ini_code.template get<std::string>() == hash);
+      }
+    }
   }
 
   if (!verified)

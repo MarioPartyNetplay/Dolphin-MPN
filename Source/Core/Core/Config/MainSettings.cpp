@@ -27,6 +27,7 @@
 #include "Core/HW/Memmap.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/USBUtils.h"
 #include "DiscIO/Enums.h"
 #include "VideoCommon/VideoBackendBase.h"
 
@@ -46,7 +47,13 @@ const Info<bool> MAIN_DSP_HLE{{System::Main, "Core", "DSPHLE"}, true};
 const Info<int> MAIN_MAX_FALLBACK{{System::Main, "Core", "MaxFallback"}, 100};
 const Info<int> MAIN_TIMING_VARIANCE{{System::Main, "Core", "TimingVariance"}, 40};
 const Info<bool> MAIN_CORRECT_TIME_DRIFT{{System::Main, "Core", "CorrectTimeDrift"}, false};
-const Info<bool> MAIN_CPU_THREAD{{System::Main, "Core", "CPUThread"}, true};
+#if defined(ANDROID)
+// Currently enabled by default on Android because the performance boost is really needed.
+constexpr bool DEFAULT_CPU_THREAD = true;
+#else
+constexpr bool DEFAULT_CPU_THREAD = false;
+#endif
+const Info<bool> MAIN_CPU_THREAD{{System::Main, "Core", "CPUThread"}, DEFAULT_CPU_THREAD};
 const Info<bool> MAIN_SYNC_ON_SKIP_IDLE{{System::Main, "Core", "SyncOnSkipIdle"}, true};
 const Info<std::string> MAIN_DEFAULT_ISO{{System::Main, "Core", "DefaultISO"}, ""};
 const Info<bool> MAIN_ENABLE_CHEATS{{System::Main, "Core", "EnableCheats"}, true};
@@ -196,6 +203,8 @@ const Info<std::string> MAIN_WIIMOTE_AUTO_CONNECT_ADDRESSES{
 const Info<bool> MAIN_WIIMOTE_ENABLE_SPEAKER{{System::Main, "Core", "WiimoteEnableSpeaker"}, false};
 const Info<bool> MAIN_CONNECT_WIIMOTES_FOR_CONTROLLER_INTERFACE{
     {System::Main, "Core", "WiimoteControllerInterface"}, false};
+const Info<bool> MAIN_USE_GC_ADAPTER_FOR_CONTROLLER_INTERFACE{
+    {System::Main, "Core", "GCAdapterControllerInterface"}, false};
 const Info<bool> MAIN_MMU{{System::Main, "Core", "MMU"}, false};
 const Info<bool> MAIN_PAUSE_ON_PANIC{{System::Main, "Core", "PauseOnPanic"}, false};
 const Info<int> MAIN_BB_DUMP_PORT{{System::Main, "Core", "BBDumpPort"}, -1};
@@ -551,40 +560,35 @@ const Info<bool> MAIN_USB_PASSTHROUGH_DISGUISE_PLAYSTATION_AS_WII{
 const Info<std::string> MAIN_USB_PASSTHROUGH_DEVICES{{System::Main, "USBPassthrough", "Devices"},
                                                      ""};
 
-static std::set<std::pair<u16, u16>> LoadUSBWhitelistFromString(const std::string& devices_string)
+static std::set<USBUtils::DeviceInfo> LoadUSBWhitelistFromString(const std::string& devices_string)
 {
-  std::set<std::pair<u16, u16>> devices;
+  std::set<USBUtils::DeviceInfo> devices;
   for (const auto& pair : SplitString(devices_string, ','))
   {
-    const auto index = pair.find(':');
-    if (index == std::string::npos)
-      continue;
-
-    const u16 vid = static_cast<u16>(strtol(pair.substr(0, index).c_str(), nullptr, 16));
-    const u16 pid = static_cast<u16>(strtol(pair.substr(index + 1).c_str(), nullptr, 16));
-    if (vid && pid)
-      devices.emplace(vid, pid);
+    auto device = USBUtils::DeviceInfo::FromString(pair);
+    if (device)
+      devices.emplace(*device);
   }
   return devices;
 }
 
-static std::string SaveUSBWhitelistToString(const std::set<std::pair<u16, u16>>& devices)
+static std::string SaveUSBWhitelistToString(const std::set<USBUtils::DeviceInfo>& devices)
 {
   std::ostringstream oss;
   for (const auto& device : devices)
-    oss << fmt::format("{:04x}:{:04x}", device.first, device.second) << ',';
+    oss << device.ToString() << ',';
   std::string devices_string = oss.str();
   if (!devices_string.empty())
     devices_string.pop_back();
   return devices_string;
 }
 
-std::set<std::pair<u16, u16>> GetUSBDeviceWhitelist()
+std::set<USBUtils::DeviceInfo> GetUSBDeviceWhitelist()
 {
   return LoadUSBWhitelistFromString(Config::Get(Config::MAIN_USB_PASSTHROUGH_DEVICES));
 }
 
-void SetUSBDeviceWhitelist(const std::set<std::pair<u16, u16>>& devices)
+void SetUSBDeviceWhitelist(const std::set<USBUtils::DeviceInfo>& devices)
 {
   Config::SetBase(Config::MAIN_USB_PASSTHROUGH_DEVICES, SaveUSBWhitelistToString(devices));
 }

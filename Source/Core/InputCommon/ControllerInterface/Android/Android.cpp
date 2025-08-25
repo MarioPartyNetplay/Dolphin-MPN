@@ -64,7 +64,7 @@ jmethodID s_motion_event_get_source;
 jclass s_controller_interface_class;
 jmethodID s_controller_interface_register_input_device_listener;
 jmethodID s_controller_interface_unregister_input_device_listener;
-jmethodID s_controller_interface_get_vibrator_manager;
+jmethodID s_controller_interface_get_device_vibrator_manager;
 jmethodID s_controller_interface_get_system_vibrator_manager;
 jmethodID s_controller_interface_vibrate;
 
@@ -442,6 +442,25 @@ std::shared_ptr<ciface::Core::Device> FindDevice(jint device_id)
   return device;
 }
 
+void RegisterDevicesChangedCallbackIfNeeded(JNIEnv* env, jclass controller_interface_class)
+{
+  static bool registered = false;
+  if (registered)
+    return;
+  registered = true;
+
+  const jclass global_controller_interface_class =
+      reinterpret_cast<jclass>(env->NewGlobalRef(controller_interface_class));
+  const jmethodID controller_interface_on_devices_changed =
+      env->GetStaticMethodID(global_controller_interface_class, "onDevicesChanged", "()V");
+
+  g_controller_interface.RegisterDevicesChangedCallback(
+      [global_controller_interface_class, controller_interface_on_devices_changed] {
+        IDCache::GetEnvForThread()->CallStaticVoidMethod(global_controller_interface_class,
+                                                         controller_interface_on_devices_changed);
+      });
+}
+
 }  // namespace
 
 namespace ciface::Android
@@ -747,7 +766,8 @@ private:
   void AddMotors(JNIEnv* env, jobject input_device)
   {
     jobject vibrator_manager = env->CallStaticObjectMethod(
-        s_controller_interface_class, s_controller_interface_get_vibrator_manager, input_device);
+        s_controller_interface_class, s_controller_interface_get_device_vibrator_manager,
+        input_device);
     AddMotorsFromManager(env, vibrator_manager);
     env->DeleteLocalRef(vibrator_manager);
   }
@@ -858,8 +878,8 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
       env->GetStaticMethodID(s_controller_interface_class, "registerInputDeviceListener", "()V");
   s_controller_interface_unregister_input_device_listener =
       env->GetStaticMethodID(s_controller_interface_class, "unregisterInputDeviceListener", "()V");
-  s_controller_interface_get_vibrator_manager =
-      env->GetStaticMethodID(s_controller_interface_class, "getVibratorManager",
+  s_controller_interface_get_device_vibrator_manager =
+      env->GetStaticMethodID(s_controller_interface_class, "getDeviceVibratorManager",
                              "(Landroid/view/InputDevice;)Lorg/dolphinemu/dolphinemu/features/"
                              "input/model/DolphinVibratorManager;");
   s_controller_interface_get_system_vibrator_manager = env->GetStaticMethodID(
@@ -903,6 +923,8 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
 
   env->CallStaticVoidMethod(s_controller_interface_class,
                             s_controller_interface_register_input_device_listener);
+
+  RegisterDevicesChangedCallbackIfNeeded(env, s_controller_interface_class);
 }
 
 InputBackend::~InputBackend()
@@ -1002,7 +1024,7 @@ void InputBackend::PopulateDevices()
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatchKeyEvent(
+Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatchKeyEventNative(
     JNIEnv* env, jclass, jobject key_event)
 {
   const jint action = env->CallIntMethod(key_event, s_key_event_get_action);
@@ -1046,7 +1068,7 @@ Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatch
 }
 
 JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatchGenericMotionEvent(
+Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatchGenericMotionEventNative(
     JNIEnv* env, jclass, jobject motion_event)
 {
   const jint device_id = env->CallIntMethod(motion_event, s_input_event_get_device_id);
@@ -1090,7 +1112,7 @@ Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatch
 }
 
 JNIEXPORT jboolean JNICALL
-Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatchSensorEvent(
+Java_org_dolphinemu_dolphinemu_features_input_model_ControllerInterface_dispatchSensorEventNative(
     JNIEnv* env, jclass, jstring j_device_qualifier, jstring j_axis_name, jfloat value)
 {
   ciface::Core::DeviceQualifier device_qualifier;

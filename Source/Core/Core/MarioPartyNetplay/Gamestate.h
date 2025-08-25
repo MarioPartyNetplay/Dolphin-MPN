@@ -35,7 +35,9 @@
 #undef MPN_USE_LEADERBOARDS
 #define MPN_USE_OSD
 
+#ifdef USE_DISCORD_PRESENCE
 #include "Discord.h"
+#endif
 
 #ifdef MPN_USE_LEADERBOARDS
 #include "Core/MarioPartyNetplay/Leaderboards.h"

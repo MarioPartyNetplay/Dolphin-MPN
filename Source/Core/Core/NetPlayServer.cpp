@@ -290,8 +290,8 @@ void NetPlayServer::ThreadFunc()
         auto& e = m_async_queue.Front();
         if (e.target_mode == TargetMode::Only)
         {
-          if (m_players.contains(e.target_pid))
-            Send(m_players.at(e.target_pid).socket, e.packet, e.channel_id);
+          if (const auto it = m_players.find(e.target_pid); it != m_players.end())
+            Send(it->second.socket, e.packet, e.channel_id);
         }
         else
         {
@@ -794,9 +794,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     u32 cid;
     packet >> cid;
 
-    if (m_chunked_data_complete_count.contains(cid))
+    if (const auto it = m_chunked_data_complete_count.find(cid);
+        it != m_chunked_data_complete_count.end())
     {
-      m_chunked_data_complete_count[cid]++;
+      it->second++;
       m_chunked_data_complete_event.Set();
     }
   }
@@ -839,8 +840,11 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     if (m_host_input_authority)
     {
       // Prevent crash before game stop if the golfer disconnects
-      if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
-        Send(m_players.at(m_current_golfer).socket, spac);
+      if (m_current_golfer != 0)
+      {
+        if (const auto it = m_players.find(m_current_golfer); it != m_players.end())
+          Send(it->second.socket, spac);
+      }
     }
     else
     {
@@ -1586,6 +1590,56 @@ bool NetPlayServer::StartGame()
   SConfig::GetInstance().m_strSRAM = File::GetUserPath(F_GCSRAM_IDX);
   InitSRAM(&m_settings.sram, SConfig::GetInstance().m_strSRAM);
 
+  // CRITICAL FIX: Ensure all clients have proper NetPlay configuration before starting game
+  // This prevents black screens and improper P1 binding issues
+  
+  // Send PadMapping configuration to all clients
+  sf::Packet pad_mapping_packet;
+  pad_mapping_packet << MessageID::PadMapping;
+  for (PlayerId mapping : m_pad_map)
+  {
+    pad_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(pad_mapping_packet));
+  
+  // Send WiimoteMapping configuration to all clients
+  sf::Packet wiimote_mapping_packet;
+  wiimote_mapping_packet << MessageID::WiimoteMapping;
+  for (PlayerId mapping : m_wiimote_map)
+  {
+    wiimote_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(wiimote_mapping_packet));
+  
+  // Send GBA configuration to all clients
+  sf::Packet gba_config_packet;
+  gba_config_packet << MessageID::GBAConfig;
+  for (const auto& config : m_gba_config)
+  {
+    gba_config_packet << config.enabled << config.has_rom << config.title;
+    for (auto& data : config.hash)
+      gba_config_packet << data;
+  }
+  SendAsyncToClients(std::move(gba_config_packet));
+  
+  // Send HostInputAuthority setting to all clients
+  sf::Packet host_input_packet;
+  host_input_packet << MessageID::HostInputAuthority;
+  host_input_packet << m_host_input_authority;
+  SendAsyncToClients(std::move(host_input_packet));
+  
+  // Send PadBuffer size to all clients (if not using host input authority)
+  if (!m_host_input_authority)
+  {
+    sf::Packet pad_buffer_packet;
+    pad_buffer_packet << MessageID::PadBuffer;
+    pad_buffer_packet << m_target_buffer_size;
+    SendAsyncToClients(std::move(pad_buffer_packet));
+  }
+  
+  // Wait a moment for all configuration to be processed
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  
   // tell clients to start game
   sf::Packet spac;
   spac << MessageID::StartGame;

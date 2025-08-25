@@ -125,7 +125,7 @@ u32 VideoBackendBase::Video_GetQueryResult(PerfQueryType type)
 
 u16 VideoBackendBase::Video_GetBoundingBox(int index)
 {
-  DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::READS_BOUNDING_BOX);
+  DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::ReadsBoundingBox);
 
   if (!g_ActiveConfig.bBBoxEnable)
   {
@@ -369,7 +369,6 @@ void VideoBackendBase::ShutdownShared()
   g_vertex_manager.reset();
   g_efb_interface.reset();
   g_widescreen.reset();
-  g_presenter.reset();
   g_gfx.reset();
 
   m_initialized = false;

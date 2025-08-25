@@ -117,8 +117,7 @@ void FIFOAnalyzer::CreateWidgets()
 void FIFOAnalyzer::ConnectWidgets()
 {
   connect(m_tree_widget, &QTreeWidget::itemSelectionChanged, this, &FIFOAnalyzer::UpdateDetails);
-  connect(m_detail_list, &QListWidget::itemSelectionChanged, this,
-          &FIFOAnalyzer::UpdateDescription);
+  connect(m_detail_list, &QListWidget::currentRowChanged, this, &FIFOAnalyzer::UpdateDescription);
 
   connect(m_search_edit, &QLineEdit::returnPressed, this, &FIFOAnalyzer::BeginSearch);
   connect(m_search_new, &QPushButton::clicked, this, &FIFOAnalyzer::BeginSearch);
@@ -315,11 +314,6 @@ public:
   OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {}
 
   OPCODE_CALLBACK(CPState& GetCPState()) { return m_cpmem; }
-
-  OPCODE_CALLBACK(u32 GetVertexSize(const u8 vat))
-  {
-    return VertexLoaderBase::GetVertexSize(GetCPState().vtx_desc, GetCPState().vtx_attr[vat]);
-  }
 
   QString text;
   CPState m_cpmem;
@@ -737,11 +731,6 @@ public:
   OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {}
 
   OPCODE_CALLBACK(CPState& GetCPState()) { return m_cpmem; }
-
-  OPCODE_CALLBACK(u32 GetVertexSize(const u8 vat))
-  {
-    return VertexLoaderBase::GetVertexSize(GetCPState().vtx_desc, GetCPState().vtx_attr[vat]);
-  }
 
   QString text;
   CPState m_cpmem;

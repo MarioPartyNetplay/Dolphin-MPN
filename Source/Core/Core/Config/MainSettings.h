@@ -11,6 +11,7 @@
 #include "Common/Common.h"
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
+#include "Core/USBUtils.h"
 #include "DiscIO/Enums.h"
 
 // DSP Backend Types
@@ -111,6 +112,7 @@ extern const Info<bool> MAIN_WIIMOTE_CONTINUOUS_SCANNING;
 extern const Info<std::string> MAIN_WIIMOTE_AUTO_CONNECT_ADDRESSES;
 extern const Info<bool> MAIN_WIIMOTE_ENABLE_SPEAKER;
 extern const Info<bool> MAIN_CONNECT_WIIMOTES_FOR_CONTROLLER_INTERFACE;
+extern const Info<bool> MAIN_USE_GC_ADAPTER_FOR_CONTROLLER_INTERFACE;
 extern const Info<bool> MAIN_MMU;
 extern const Info<bool> MAIN_PAUSE_ON_PANIC;
 extern const Info<int> MAIN_BB_DUMP_PORT;
@@ -358,8 +360,8 @@ extern const Info<std::string> MAIN_BLUETOOTH_PASSTHROUGH_LINK_KEYS;
 
 extern const Info<bool> MAIN_USB_PASSTHROUGH_DISGUISE_PLAYSTATION_AS_WII;
 extern const Info<std::string> MAIN_USB_PASSTHROUGH_DEVICES;
-std::set<std::pair<u16, u16>> GetUSBDeviceWhitelist();
-void SetUSBDeviceWhitelist(const std::set<std::pair<u16, u16>>& devices);
+std::set<USBUtils::DeviceInfo> GetUSBDeviceWhitelist();
+void SetUSBDeviceWhitelist(const std::set<USBUtils::DeviceInfo>& devices);
 
 // Main.EmulatedUSBDevices
 

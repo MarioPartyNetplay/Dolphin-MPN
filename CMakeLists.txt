@@ -156,6 +156,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
+# Enable gamemode support on Linux and macOS Game Mode
+
+
 if(UNIX)
   # Builds a relocatable binary on Linux.
   # The Sys folder will need to be copied to the Binaries folder.
@@ -787,6 +790,12 @@ if (USE_RETRO_ACHIEVEMENTS)
 endif()
 
 add_subdirectory(Externals/watcher)
+
+if(WIN32 OR LINUX)
+  add_subdirectory(Externals/cpp-ipc)
+elseif(NOT ANDROID)
+  add_subdirectory(Externals/libzmq)
+endif()
 
 ########################################
 # Pre-build events: Define configuration variables and write SCM info header

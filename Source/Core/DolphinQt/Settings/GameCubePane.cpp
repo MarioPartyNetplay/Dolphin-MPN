@@ -145,6 +145,7 @@ void GameCubePane::CreateWidgets()
            EXIDeviceType::EthernetXLink,
            EXIDeviceType::EthernetTapServer,
            EXIDeviceType::EthernetBuiltIn,
+           EXIDeviceType::EthernetIPC,
            EXIDeviceType::ModemTapServer,
        })
   {
@@ -726,7 +727,7 @@ void GameCubePane::LoadSettings()
     }
   }
 
-  m_skip_main_menu->setEnabled(have_menu);
+  m_skip_main_menu->setEnabled(have_menu || !m_skip_main_menu->isChecked());
   m_skip_main_menu->setToolTip(have_menu ? QString{} : tr("Put IPL ROMs in User/GC/<region>."));
 
   // Device Settings

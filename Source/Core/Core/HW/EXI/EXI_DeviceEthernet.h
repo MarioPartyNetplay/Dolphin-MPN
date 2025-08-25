@@ -15,6 +15,9 @@
 #endif
 
 #include <SFML/Network.hpp>
+#if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+#include <libipc/ipc.h>
+#endif
 
 #include "Common/Flag.h"
 #include "Common/Network.h"
@@ -210,6 +213,7 @@ enum class BBADeviceType
   XLINK,
   TAPSERVER,
   BuiltIn,
+  IPC,
 };
 
 class CEXIETHERNET : public IEXIDevice
@@ -269,7 +273,7 @@ private:
 
     u8 revision_id = 0;  // 0xf0
     u8 interrupt_mask = 0;
-    u8 interrupt = 0;
+    std::atomic<u8> interrupt = 0;
     u16 device_id = 0xD107;
     u8 acstart = 0x4E;
     u32 hash_challenge = 0;
@@ -473,6 +477,84 @@ private:
     void HandleUPnPClient();
     const Common::MACAddress& ResolveAddress(u32 inet_ip);
   };
+
+#if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+
+  class IPCBBAInterface : public NetworkInterface
+  {
+  public:
+    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
+
+    bool Activate() override;
+    void Deactivate() override;
+    bool IsActivated() override;
+    bool SendFrame(const u8* frame, u32 size) override;
+    bool RecvInit() override;
+    void RecvStart() override;
+    void RecvStop() override;
+
+  private:
+    void ReadThreadHandler();
+
+    bool m_active{};
+    ipc::channel m_channel;
+    std::thread m_read_thread;
+    Common::Flag m_read_enabled;
+    Common::Flag m_read_thread_shutdown;
+  };
+
+#elif !defined(__ANDROID__)
+
+  class IPCBBAInterface : public NetworkInterface
+  {
+  public:
+    explicit IPCBBAInterface(CEXIETHERNET* eth_ref);
+    ~IPCBBAInterface() override;
+
+    bool Activate() override;
+    void Deactivate() override;
+    bool IsActivated() override;
+    bool SendFrame(const u8* frame, u32 size) override;
+    bool RecvInit() override;
+    void RecvStart() override;
+    void RecvStop() override;
+
+  private:
+    void ReadThreadHandler();
+    void ProxyThreadHandler();
+
+    bool m_active{};
+    void* m_context{};
+    void* m_publisher{};
+    void* m_subscriber{};
+    std::thread m_read_thread;
+    Common::Flag m_read_enabled;
+    Common::Flag m_read_thread_shutdown;
+
+    std::thread m_proxy_thread;
+    Common::Flag m_proxy_thread_shutdown;
+    std::mutex m_proxy_mutex;
+    void* m_proxy_publisher{};
+    void* m_proxy_subscriber{};
+  };
+
+#else
+
+  class IPCBBAInterface : public NetworkInterface
+  {
+  public:
+    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
+
+    bool Activate() override { return false; }
+    void Deactivate() override {}
+    bool IsActivated() override { return false; }
+    bool SendFrame(const u8* const frame, const u32 size) override { return false; }
+    bool RecvInit() override { return false; }
+    void RecvStart() override {}
+    void RecvStop() override {}
+  };
+
+#endif
 
   std::unique_ptr<NetworkInterface> m_network_interface;
 

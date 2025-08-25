@@ -82,7 +82,6 @@
 #include "DolphinQt/Achievements/AchievementsWindow.h"
 #include "DolphinQt/CheatsManager.h"
 #include "DolphinQt/Config/FreeLookWindow.h"
-#include "DolphinQt/Config/Graphics/GraphicsWindow.h"
 #include "DolphinQt/Config/LogConfigWidget.h"
 #include "DolphinQt/Config/LogWidget.h"
 #include "DolphinQt/Config/Mapping/MappingWindow.h"
@@ -1315,6 +1314,15 @@ void MainWindow::ShowSettingsWindow()
 {
   if (!m_settings_window)
   {
+#ifdef HAVE_XRANDR
+    if (GetWindowSystemType() == WindowSystemType::X11)
+    {
+      m_xrr_config = std::make_unique<X11Utils::XRRConfiguration>(
+          static_cast<Display*>(QGuiApplication::platformNativeInterface()->nativeResourceForWindow(
+              "display", windowHandle())),
+          winId());
+    }
+#endif
     m_settings_window = new SettingsWindow(this);
     InstallHotkeyFilter(m_settings_window);
   }
@@ -1433,24 +1441,8 @@ void MainWindow::ShowHotkeyDialog()
 
 void MainWindow::ShowGraphicsWindow()
 {
-  if (!m_graphics_window)
-  {
-#ifdef HAVE_XRANDR
-    if (GetWindowSystemType() == WindowSystemType::X11)
-    {
-      m_xrr_config = std::make_unique<X11Utils::XRRConfiguration>(
-          static_cast<Display*>(QGuiApplication::platformNativeInterface()->nativeResourceForWindow(
-              "display", windowHandle())),
-          winId());
-    }
-#endif
-    m_graphics_window = new GraphicsWindow(this);
-    InstallHotkeyFilter(m_graphics_window);
-  }
-
-  m_graphics_window->show();
-  m_graphics_window->raise();
-  m_graphics_window->activateWindow();
+  ShowSettingsWindow();
+  m_settings_window->SelectPane(SettingsWindowPaneIndex::Graphics);
 }
 
 void MainWindow::ShowNetPlaySetupDialog()
@@ -1472,8 +1464,8 @@ void MainWindow::ShowFIFOPlayer()
 {
   if (!m_fifo_window)
   {
-    m_fifo_window = new FIFOPlayerWindow(m_system.GetFifoPlayer(), m_system.GetFifoRecorder());
-    connect(m_fifo_window, &FIFOPlayerWindow::LoadFIFORequested, this,
+    m_fifo_window.reset(new FIFOPlayerWindow(m_system.GetFifoPlayer(), m_system.GetFifoRecorder()));
+    connect(m_fifo_window.get(), &FIFOPlayerWindow::LoadFIFORequested, this,
             [this](const QString& path) { StartGame(path, ScanForSecondDisc::No); });
   }
 

@@ -16,6 +16,7 @@
 #endif  // USE_RETRO_ACHIEVEMENTS
 
 #include "Core/Boot/Boot.h"
+#include "DolphinQt/FIFO/FIFOPlayerWindow.h"
 
 class QMenu;
 class QStackedWidget;
@@ -29,13 +30,11 @@ class CheatsManager;
 class CodeWidget;
 class DiscordHandler;
 class DragEnterEvent;
-class FIFOPlayerWindow;
 class FreeLookWindow;
 class GameList;
 class GBATASInputWindow;
 class GCTASInputWindow;
 class GeckoDialog;
-class GraphicsWindow;
 class HotkeyScheduler;
 class InfinityBaseWindow;
 class JITWidget;
@@ -93,6 +92,8 @@ public:
 
   bool eventFilter(QObject* object, QEvent* event) override;
   QMenu* createPopupMenu() override;
+
+  void CheckForUpdatesAuto();
 
 signals:
   void ReadOnlyModeChanged(bool read_only);
@@ -193,8 +194,6 @@ private:
   void OnHardcoreChanged();
 #endif  // USE_RETRO_ACHIEVEMENTS
 
-  void CheckForUpdatesAuto();
-  
   void NetPlayInit();
   bool NetPlayJoin();
   bool NetPlayHost(const UICommon::GameFile& game);
@@ -254,8 +253,9 @@ private:
   GeckoDialog* m_gecko_dialog = nullptr;
   ControllersPane* m_controllers_window = nullptr;
   SettingsWindow* m_settings_window = nullptr;
-  GraphicsWindow* m_graphics_window = nullptr;
-  FIFOPlayerWindow* m_fifo_window = nullptr;
+  // m_fifo_window doesn't set MainWindow as its parent so that the fifo can be focused without
+  // raising the main window, so use a unique_ptr to make sure it gets destroyed.
+  std::unique_ptr<FIFOPlayerWindow> m_fifo_window = nullptr;
   SkylanderPortalWindow* m_skylander_window = nullptr;
   InfinityBaseWindow* m_infinity_window = nullptr;
   WiiSpeakWindow* m_wii_speak_window = nullptr;

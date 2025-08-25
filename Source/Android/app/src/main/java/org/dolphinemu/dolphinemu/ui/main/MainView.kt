@@ -37,4 +37,8 @@ interface MainView {
     fun reloadGrid()
 
     fun showGridOptions()
+
+    fun showNetPlayDialog()
+
+    fun showNetPlayBrowser()
 }

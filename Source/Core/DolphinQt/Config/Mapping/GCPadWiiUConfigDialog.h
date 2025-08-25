@@ -13,6 +13,11 @@ class QVBoxLayout;
 
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 
+namespace ciface
+{
+class ControllerInterface;
+}
+
 class GCPadWiiUConfigDialog final : public QDialog
 {
   Q_OBJECT

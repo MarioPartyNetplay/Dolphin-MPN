@@ -186,6 +186,7 @@ extern const Info<bool> GFX_HACK_NO_MIPMAPPING;
 // Graphics.GameSpecific
 
 extern const Info<bool> GFX_PERF_QUERIES_ENABLE;
+extern const Info<float> GFX_MPN_HUD_SCALE;
 
 // Android custom GPU drivers
 

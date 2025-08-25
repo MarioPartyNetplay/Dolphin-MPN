@@ -557,6 +557,8 @@ add_library(core
   TimePlayed.h
   TitleDatabase.cpp
   TitleDatabase.h
+  USBUtils.cpp
+  USBUtils.h
   WC24PatchEngine.cpp
   WC24PatchEngine.h
   WiiRoot.cpp
@@ -701,6 +703,10 @@ if(TARGET LibUSB::LibUSB)
     IOS/USB/LibusbDevice.h
     IOS/USB/Bluetooth/BTReal.cpp
     IOS/USB/Bluetooth/BTReal.h
+    IOS/USB/Bluetooth/LibUSBBluetoothAdapter.cpp
+    IOS/USB/Bluetooth/LibUSBBluetoothAdapter.h
+    IOS/USB/Bluetooth/RealtekFirmwareLoader.cpp
+    IOS/USB/Bluetooth/RealtekFirmwareLoader.h
   )
 endif()
 
@@ -795,6 +801,15 @@ if(UNIX)
     MemoryWatcher.cpp
     MemoryWatcher.h
   )
+endif()
+
+if(WIN32 OR LINUX)
+  target_sources(core PRIVATE HW/EXI/BBA/IPC.cpp)
+  target_link_libraries(core PRIVATE cpp-ipc::ipc)
+elseif(NOT ANDROID)
+  target_sources(core PRIVATE HW/EXI/BBA/IPC_zmq.cpp)
+  target_link_libraries(core PRIVATE libzmq::libzmq)
+  target_include_directories(core PRIVATE "${CMAKE_SOURCE_DIR}/Externals/Cross-Compatible-FileLock-Windows-and-Linux/include")
 endif()
 
 if(MSVC)

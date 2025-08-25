@@ -165,6 +165,21 @@ class TvMainActivity : FragmentActivity(), MainView, OnRefreshListener {
         GridOptionDialogFragment().show(supportFragmentManager, "gridOptions")
     }
 
+    override fun showNetPlayDialog() {
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    override fun showNetPlayBrowser() {
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    private fun showMPNNetPlayBrowser() {
+        val dialog = org.dolphinemu.dolphinemu.dialogs.MPNNetPlayBrowserDialog()
+        dialog.show(supportFragmentManager, "MPNNetPlayBrowser")
+    }
+
     /**
      * Callback from AddDirectoryActivity. Applies any changes necessary to the GameGridActivity.
      *

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:background="?android:attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Selection Indicator -->
+    <View
+        android:id="@+id/indicator_selection"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        android:layout_marginEnd="12dp" />
+
+    <!-- Game Info -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/text_game_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Game Name"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/text_game_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="GAME01"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:id="@+id/text_platform"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="GameCube"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray" />
+
+    </LinearLayout>
+
+</LinearLayout>
