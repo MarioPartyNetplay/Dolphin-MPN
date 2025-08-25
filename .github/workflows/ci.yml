@@ -400,18 +400,16 @@ jobs:
               -B build-arm .
     - name: Build Dolphin (x86_64)
       working-directory: build
-      run: ninja
+      run: ninja dolphin-mpn
     - name: Build Dolphin (arm64)
       working-directory: build-arm
-      run: ninja
+      run: ninja dolphin-mpn
     - name: Prepare Build Artifacts
       run: >
-        lipo -create build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
-        build-arm/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt -o dolphin
+        lipo -create build/Binaries/Dolphin-MPN.app/Contents/MacOS/Dolphin
+        build-arm/Binaries/Dolphin-MPN.app/Contents/MacOS/Dolphin -o dolphin
 
-        mv dolphin build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
-
-        mv build/Binaries/DolphinQt.app "Dolphin-MPN.app"
+        mv dolphin build/Binaries/Dolphin-MPN.app/Contents/MacOS/Dolphin
 
         mkdir -p build/OUT
 
