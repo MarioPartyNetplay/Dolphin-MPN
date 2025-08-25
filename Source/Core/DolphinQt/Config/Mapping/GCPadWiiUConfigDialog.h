@@ -4,11 +4,14 @@
 #pragma once
 
 #include <QDialog>
+#include <optional>
 
 class QCheckBox;
 class QLabel;
 class QDialogButtonBox;
 class QVBoxLayout;
+
+#include "InputCommon/ControllerInterface/ControllerInterface.h"
 
 class GCPadWiiUConfigDialog final : public QDialog
 {
@@ -26,6 +29,7 @@ private:
 
 private:
   void UpdateAdapterStatus();
+  bool IsGCAdapterAvailable() const;
 
   int m_port;
 
@@ -36,4 +40,7 @@ private:
   // Checkboxes
   QCheckBox* m_rumble;
   QCheckBox* m_simulate_bongos;
+
+  // ControllerInterface callback handle
+  std::optional<ControllerInterface::HotplugCallbackHandle> m_devices_changed_handle;
 };

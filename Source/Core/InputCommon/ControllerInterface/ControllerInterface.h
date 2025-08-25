@@ -150,7 +150,7 @@ class RelativeInputState
 public:
   void Update()
   {
-    const auto channel = int(ControllerInterface::GetCurrentInputChannel());
+    const auto channel = int(::ControllerInterface::GetCurrentInputChannel());
 
     m_value[channel] = m_delta[channel];
     m_delta[channel] = {};
@@ -158,7 +158,7 @@ public:
 
   T GetValue() const
   {
-    const auto channel = int(ControllerInterface::GetCurrentInputChannel());
+    const auto channel = int(::ControllerInterface::GetCurrentInputChannel());
 
     return m_value[channel];
   }
