@@ -100,45 +100,35 @@ void GCPadWiiUConfigDialog::UpdateAdapterStatus()
   if (!m_status_label || !m_rumble || !m_simulate_bongos)
     return;
 
-  try
+  // Use the new helper method to detect GC adapter
+  bool detected = IsGCAdapterAvailable();
+  QString status_text;
+  
+  // For error messages, we still need to check the old API
+  if (!detected)
   {
-    // Use the new helper method to detect GC adapter
-    bool detected = IsGCAdapterAvailable();
-    QString status_text;
+    const char* error_message = nullptr;
+    GCAdapter::IsDetected(&error_message);
     
-    // For error messages, we still need to check the old API
-    if (!detected)
+    if (error_message)
     {
-      const char* error_message = nullptr;
-      GCAdapter::IsDetected(&error_message);
-      
-      if (error_message)
-      {
-        status_text = tr("Error Opening Adapter: %1").arg(QString::fromUtf8(error_message));
-      }
+      status_text = tr("Error Opening Adapter: %1").arg(QString::fromUtf8(error_message));
     }
-
-    if (detected)
-    {
-      status_text = tr("Adapter Detected");
-    }
-    else if (status_text.isEmpty())
-    {
-      status_text = tr("No Adapter Detected");
-    }
-
-    m_status_label->setText(status_text);
-
-    m_rumble->setEnabled(detected);
-    m_simulate_bongos->setEnabled(detected);
   }
-  catch (...)
+
+  if (detected)
   {
-    // Handle any Windows-specific exceptions gracefully
-    m_status_label->setText(tr("Error: Unable to detect adapter"));
-    m_rumble->setEnabled(false);
-    m_simulate_bongos->setEnabled(false);
+    status_text = tr("Adapter Detected");
   }
+  else if (status_text.isEmpty())
+  {
+    status_text = tr("No Adapter Detected");
+  }
+
+  m_status_label->setText(status_text);
+
+  m_rumble->setEnabled(detected);
+  m_simulate_bongos->setEnabled(detected);
 }
 
 void GCPadWiiUConfigDialog::LoadSettings()
