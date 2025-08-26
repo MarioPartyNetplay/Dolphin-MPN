@@ -32,6 +32,14 @@ void CopyImageRegion(const ImagePixelData& src, ImagePixelData& dst, const Rect&
     return;
   }
 
+  if (src_region.left + src_region.GetWidth() > src.width ||
+      src_region.top + src_region.GetHeight() > src.height ||
+      dst_region.left + dst_region.GetWidth() > dst.width ||
+      dst_region.top + dst_region.GetHeight() > dst.height)
+  {
+    return;
+  }
+
   for (u32 x = 0; x < dst_region.GetWidth(); x++)
   {
     for (u32 y = 0; y < dst_region.GetHeight(); y++)
@@ -45,16 +53,50 @@ void CopyImageRegion(const ImagePixelData& src, ImagePixelData& dst, const Rect&
 std::optional<ImagePixelData> LoadImage(const std::string& path)
 {
   File::IOFile file;
-  file.Open(path, "rb");
-  Common::UniqueBuffer<u8> buffer(file.GetSize());
-  file.ReadBytes(buffer.data(), file.GetSize());
+  if (!file.Open(path, "rb"))
+  {
+    ERROR_LOG_FMT(COMMON, "Failed to open image file: {}", path);
+    return std::nullopt;
+  }
+    
+  const u64 file_size = file.GetSize();
+  if (file_size == 0 || file_size > 100 * 1024 * 1024)
+  {
+    ERROR_LOG_FMT(COMMON, "Invalid file size for image: {} (size: {})", path, file_size);
+    return std::nullopt;
+  }
+    
+  Common::UniqueBuffer<u8> buffer(file_size);
+  if (!file.ReadBytes(buffer.data(), file_size))
+  {
+    ERROR_LOG_FMT(COMMON, "Failed to read image file: {}", path);
+    return std::nullopt;
+  }
 
   ImagePixelData image;
   Common::UniqueBuffer<u8> data;
   if (!Common::LoadPNG(buffer, &data, &image.width, &image.height))
+  {
+    ERROR_LOG_FMT(COMMON, "Failed to load PNG from file: {}", path);
     return std::nullopt;
+  }
+    
+  if (image.width == 0 || image.height == 0 || 
+      image.width > 16384 || image.height > 16384)
+  {
+    ERROR_LOG_FMT(COMMON, "Invalid image dimensions: {}x{} for file: {}", image.width, image.height, path);
+    return std::nullopt;
+  }
 
   image.pixels.resize(image.width * image.height);
+  
+  if (data.size() < image.width * image.height * 4)
+  {
+    ERROR_LOG_FMT(COMMON, "Insufficient data for image: expected {} bytes, got {} for file: {}", 
+                  image.width * image.height * 4, data.size(), path);
+    return std::nullopt;
+  }
+    
   for (u32 x = 0; x < image.width; x++)
   {
     for (u32 y = 0; y < image.height; y++)
@@ -71,6 +113,10 @@ std::optional<ImagePixelData> LoadImage(const std::string& path)
 
 bool WriteImage(const std::string& path, const ImagePixelData& image)
 {
+  if (image.width == 0 || image.height == 0 || 
+      image.width > 16384 || image.height > 16384)
+    return false;
+    
   Common::UniqueBuffer<u8> buffer;
   buffer.reset(image.width * image.height * 4);
 
@@ -94,14 +140,17 @@ bool WriteImage(const std::string& path, const ImagePixelData& image)
 
 ImagePixelData Resize(ResizeMode mode, const ImagePixelData& src, u32 new_width, u32 new_height)
 {
+  if (new_width == 0 || new_height == 0)
+    return ImagePixelData();
+    
   ImagePixelData result(new_width, new_height);
 
   for (u32 x = 0; x < new_width; x++)
   {
-    const double u = x / static_cast<double>(new_width - 1);
+    const double u = (new_width > 1) ? x / static_cast<double>(new_width - 1) : 0.0;
     for (u32 y = 0; y < new_height; y++)
     {
-      const double v = y / static_cast<double>(new_height - 1);
+      const double v = (new_height > 1) ? y / static_cast<double>(new_height - 1) : 0.0;
 
       switch (mode)
       {
@@ -118,6 +167,9 @@ ImagePixelData Resize(ResizeMode mode, const ImagePixelData& src, u32 new_width,
 ImagePixelData ResizeKeepAspectRatio(ResizeMode mode, const ImagePixelData& src, u32 new_width,
                                      u32 new_height, const Pixel& background_color)
 {
+  if (new_width == 0 || new_height == 0 || src.width == 0 || src.height == 0)
+    return ImagePixelData();
+    
   ImagePixelData result(new_width, new_height, background_color);
 
   const double corrected_height = new_width * (src.height / static_cast<double>(src.width));

@@ -88,6 +88,12 @@ bool Configuration::GenerateTexture(const Common::IniFile& file,
   // The first one is used as a fallback if a key or device isn't mapped
   // the second one is used as the final image to write to the textures directory
   const auto original_image = LoadImage(m_base_path + texture_data.m_image_name);
+  
+  if (!original_image.has_value())
+  {
+    return false;
+  }
+  
   auto image_to_write = original_image;
 
   bool dirty = false;
@@ -148,6 +154,13 @@ bool Configuration::GenerateTexture(const Common::IniFile& file,
       else
       {
         const auto host_key_image = LoadImage(m_base_path + input_image_iter->second);
+        
+        // Check if the image loaded successfully before proceeding
+        if (!host_key_image.has_value())
+        {
+          dirty = true;
+          continue;
+        }
 
         for (const auto& rect : rects)
         {
