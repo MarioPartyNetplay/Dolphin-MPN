@@ -406,14 +406,14 @@ jobs:
       run: ninja dolphin-mpn
     - name: Prepare Build Artifacts
       run: >
-        lipo -create build/Binaries/Dolphin-MPN.app/Contents/MacOS/Dolphin
-        build-arm/Binaries/Dolphin-MPN.app/Contents/MacOS/Dolphin -o dolphin
+        lipo -create build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
+        build-arm/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt -o dolphin
 
-        mv dolphin build/Binaries/Dolphin-MPN.app/Contents/MacOS/Dolphin
+        mv dolphin build/Binaries/DolphinQt.app/Contents/MacOS/Dolphin
 
         mkdir -p build/OUT
 
-        mv build/Binaries/Dolphin-MPN.app build/OUT/
+        rsync -av build/Binaries/DolphinQt.app/ build/OUT/Dolphin-MPN.app/
 
         cd build/OUT
 
