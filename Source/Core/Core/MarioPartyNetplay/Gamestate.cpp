@@ -280,3 +280,14 @@ uint32_t mpn_read_value(uint32_t Address, uint8_t Size)
 
   return Value;
 }
+
+bool mpn_get_turn_info(uint32_t* current_turn, uint32_t* total_turns)
+{
+  if (!CurrentState.IsMarioParty || !CurrentState.Addresses)
+    return false;
+    
+  *current_turn = mpn_read_value(CurrentState.Addresses->CurrentTurn, 1);
+  *total_turns = mpn_read_value(CurrentState.Addresses->TotalTurns, 1);
+  
+  return true;
+}

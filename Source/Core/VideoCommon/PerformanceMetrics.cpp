@@ -129,11 +129,10 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     b = (speed - 0.9) / 0.1;
   }
 
-  const float window_padding = 8.f * backbuffer_scale * hud_scale;
-  const float window_width = 93.f * backbuffer_scale;
-  
   // Get HUD scale for consistent scaling across all performance metrics
   const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
+  const float window_padding = 8.f * backbuffer_scale * hud_scale;
+  const float window_width = 93.f * backbuffer_scale;
 
   const ImVec2& display_size = ImGui::GetIO().DisplaySize;
   const bool display_size_changed =

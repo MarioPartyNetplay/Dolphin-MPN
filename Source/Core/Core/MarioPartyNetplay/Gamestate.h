@@ -119,6 +119,7 @@ uint8_t mpn_get_needs(uint16_t StateId, bool IsSceneId = false);
 void mpn_per_frame();
 uint32_t mpn_read_value(uint32_t Address, uint8_t Size);
 bool mpn_update_state();
+bool mpn_get_turn_info(uint32_t* current_turn, uint32_t* total_turns);
 
 /* ============================================================================
    Mario Party 4 metadata
