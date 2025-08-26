@@ -332,7 +332,7 @@ bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device
 
 void ControllerInterface::ProcessDeviceQueue()
 {
-  std::lock_guard lk_queue(m_device_queue_mutex);
+  std::unique_lock lk_queue(m_device_queue_mutex);
   
   while (!m_device_queue.empty())
   {
@@ -340,7 +340,7 @@ void ControllerInterface::ProcessDeviceQueue()
     m_device_queue.pop();
     
     // Release the queue lock while processing the operation
-    lk_queue.~lock_guard();
+    lk_queue.unlock();
     
     switch (operation.type)
     {
@@ -362,7 +362,7 @@ void ControllerInterface::ProcessDeviceQueue()
     }
     
     // Re-acquire the queue lock for the next iteration
-    lk_queue = std::lock_guard<std::mutex>(m_device_queue_mutex);
+    lk_queue.lock();
   }
 }
 
