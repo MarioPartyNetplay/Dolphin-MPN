@@ -129,8 +129,11 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     b = (speed - 0.9) / 0.1;
   }
 
-  const float window_padding = 8.f * backbuffer_scale;
+  const float window_padding = 8.f * backbuffer_scale * hud_scale;
   const float window_width = 93.f * backbuffer_scale;
+  
+  // Get HUD scale for consistent scaling across all performance metrics
+  const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
 
   const ImVec2& display_size = ImGui::GetIO().DisplaySize;
   const bool display_size_changed =
@@ -253,23 +256,27 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   if (g_ActiveConfig.bShowSpeed)
   {
     // Position in the top-right corner of the screen.
-    float window_height = 47.f * backbuffer_scale;
+    float window_height = 47.f * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
 
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
 
     if (stack_vertically)
       window_y += window_height + window_padding;
     else
-      window_x -= window_width + window_padding;
+      window_x -= scaled_window_width + window_padding;
 
     if (ImGui::Begin("SpeedStats", nullptr, imgui_flags))
     {
       clamp_window_position();
+      // Scale the text size using ImGui's font scaling
+      ImGui::SetWindowFontScale(hud_scale);
       ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Speed:%4.0lf%%", 100.0 * speed);
       ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Max:%6.0lf%%", 100.0 * GetMaxSpeed());
+      ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
     }
     ImGui::End();
   }
@@ -277,22 +284,25 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   if (g_ActiveConfig.bShowFPS || g_ActiveConfig.bShowFTimes)
   {
     int count = g_ActiveConfig.bShowFPS + 2 * g_ActiveConfig.bShowFTimes;
-    float window_height = (12.f + 17.f * count) * backbuffer_scale;
+    float window_height = (12.f + 17.f * count) * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
 
     // Position in the top-right corner of the screen.
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
 
     if (stack_vertically)
       window_y += window_height + window_padding;
     else
-      window_x -= window_width + window_padding;
+      window_x -= scaled_window_width + window_padding;
 
     if (ImGui::Begin("FPSStats", nullptr, imgui_flags))
     {
       clamp_window_position();
+      // Scale the text size using ImGui's font scaling
+      ImGui::SetWindowFontScale(hud_scale);
       if (g_ActiveConfig.bShowFPS)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "FPS:%7.2lf", fps);
       if (g_ActiveConfig.bShowFTimes)
@@ -302,6 +312,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), " ±:%6.2lfms",
                            DT_ms(m_fps_counter.GetDtStd()).count());
       }
+      ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
     }
     ImGui::End();
   }
@@ -309,12 +320,12 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board && CurrentState.Boards)
   {
     // Apply HUD scale to the turn counter
-    const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
     float window_height = (30.f) * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;  // Scale the width as well
 
     // Position in the top-left corner of the screen, below the FPS stats.
     ImGui::SetNextWindowPos(ImVec2(100.0f, window_y), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
    
     if (ImGui::Begin("MPStats", nullptr, imgui_flags))
@@ -335,22 +346,25 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   if (g_ActiveConfig.bShowVPS || g_ActiveConfig.bShowVTimes)
   {
     int count = g_ActiveConfig.bShowVPS + 2 * g_ActiveConfig.bShowVTimes;
-    float window_height = (12.f + 17.f * count) * backbuffer_scale;
+    float window_height = (12.f + 17.f * count) * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
 
     // Position in the top-right corner of the screen.
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(window_width, (12.f + 17.f * count) * backbuffer_scale));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
 
     if (stack_vertically)
       window_y += window_height + window_padding;
     else
-      window_x -= window_width + window_padding;
+      window_x -= scaled_window_width + window_padding;
 
     if (ImGui::Begin("VPSStats", nullptr, imgui_flags))
     {
       clamp_window_position();
+      // Scale the text size using ImGui's font scaling
+      ImGui::SetWindowFontScale(hud_scale);
       if (g_ActiveConfig.bShowVPS)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "VPS:%7.2lf", vps);
       if (g_ActiveConfig.bShowVTimes)
@@ -360,6 +374,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), " ±:%6.2lfms",
                            DT_ms(m_vps_counter.GetDtStd()).count());
       }
+      ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
     }
     ImGui::End();
   }
