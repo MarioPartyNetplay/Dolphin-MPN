@@ -175,6 +175,10 @@ bool mpn_update_state()
       return false;
   }
 
+  // Safety check: ensure Addresses is valid before accessing it
+  if (CurrentState.Addresses == NULL)
+    return false;
+
   CurrentState.PreviousSceneId = CurrentState.CurrentSceneId;
   CurrentState.CurrentSceneId = mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2);
 
@@ -238,10 +242,18 @@ void mpn_per_frame()
       }
     }
 
+    // Safety check: ensure Addresses is valid before accessing it
+    if (CurrentState.Addresses == NULL)
+      return;
+
     Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
     if (Needs != MPN_NEEDS_NOTHING)
     {
+      // Safety check: ensure Scene is valid before using OSD_PUSH macro
+      if (CurrentState.Scene == NULL)
+        return;
+
       if (Needs & MPN_NEEDS_SAFE_TEX_CACHE)
       {
         OSD_PUSH(GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES)
