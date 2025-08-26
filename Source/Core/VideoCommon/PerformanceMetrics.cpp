@@ -332,12 +332,22 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     {
       if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board && CurrentState.Boards)
       {
-        // Scale the text size using ImGui's font scaling
-        ImGui::SetWindowFontScale(hud_scale);
-        ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d",
-                           mpn_read_value(CurrentState.Addresses->CurrentTurn, 1),
-                           mpn_read_value(CurrentState.Addresses->TotalTurns, 1));
-        ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
+        // Use safe turn reading function
+        uint32_t current_turn, total_turns;
+        if (mpn_get_turn_info(&current_turn, &total_turns))
+        {
+          // Scale the text size using ImGui's font scaling
+          ImGui::SetWindowFontScale(hud_scale);
+          ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d", current_turn, total_turns);
+          ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
+        }
+        else
+        {
+          // Show "Loading..." or similar when turn info isn't available
+          ImGui::SetWindowFontScale(hud_scale);
+          ImGui::TextColored(ImVec4(r, g, b, 0.7f), "Turn: Loading...");
+          ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
+        }
       }
       ImGui::End();
     }

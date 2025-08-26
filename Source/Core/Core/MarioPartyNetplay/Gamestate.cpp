@@ -136,12 +136,44 @@ void mpn_push_osd_message(const std::string& Message)
 
 bool mpn_update_state()
 {
-  if (CurrentState.Scenes == NULL && !mpn_init_state())
-    return false;
   auto& system = Core::System::GetInstance();
   auto& memory = system.GetMemory();
   if (!memory.IsInitialized())
     return false;
+
+  // Check if we need to reinitialize (new game loaded or no state)
+  if (CurrentState.Scenes == NULL || !mpn_init_state())
+    return false;
+    
+  // Check if the game has changed by reading the game ID
+  uint32_t current_game_id = mpn_read_value(0x00000000, 4);
+  bool game_changed = false;
+  
+  // If we have a previous game ID stored, check if it changed
+  static uint32_t previous_game_id = 0;
+  if (previous_game_id != 0 && previous_game_id != current_game_id)
+  {
+    game_changed = true;
+    // Reset the state for the new game
+    CurrentState.Addresses = NULL;
+    CurrentState.Boards = NULL;
+    CurrentState.Scenes = NULL;
+    CurrentState.IsMarioParty = false;
+    CurrentState.Board = NULL;
+    CurrentState.Scene = NULL;
+    CurrentState.CurrentSceneId = 0;
+    CurrentState.PreviousSceneId = 0;
+  }
+  
+  // Store current game ID for next check
+  previous_game_id = current_game_id;
+  
+  // If game changed or no state, reinitialize
+  if (game_changed || CurrentState.Scenes == NULL)
+  {
+    if (!mpn_init_state())
+      return false;
+  }
 
   CurrentState.PreviousSceneId = CurrentState.CurrentSceneId;
   CurrentState.CurrentSceneId = mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2);
