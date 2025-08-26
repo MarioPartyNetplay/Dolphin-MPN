@@ -10,6 +10,7 @@
 
 #include "Common/IOFile.h"
 #include "Common/Image.h"
+#include "Common/Logging/Log.h"
 
 namespace InputCommon
 {
