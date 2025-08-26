@@ -105,7 +105,7 @@ void ControllerInterface::Initialize(const WindowSystemInfo& wsi)
     InvokeDevicesChangedCallbacks();
     
   // Process any queued device operations
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 void ControllerInterface::ChangeWindow(void* hwnd, WindowChangeReason reason)
@@ -121,13 +121,12 @@ void ControllerInterface::ChangeWindow(void* hwnd, WindowChangeReason reason)
   {
     ClearDevices();
     // Process any queued device operations after clearing
-    ProcessDeviceQueue();
+    this->ProcessDeviceQueue();
   }
   else
   {
     RefreshDevices(RefreshReason::WindowChangeOnly);
-    // Process any queued device operations after refresh
-    ProcessDeviceQueue();
+    this->ProcessDeviceQueue();
   }
 }
 
@@ -156,7 +155,7 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
       InvokeDevicesChangedCallbacks();
       
     // Process any queued device operations
-    ProcessDeviceQueue();
+    this->ProcessDeviceQueue();
 
     return;
   }
@@ -184,7 +183,7 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
     InvokeDevicesChangedCallbacks();
     
   // Process any queued device operations
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 void ControllerInterface::PlatformPopulateDevices(std::function<void()> callback)
@@ -202,7 +201,7 @@ void ControllerInterface::PlatformPopulateDevices(std::function<void()> callback
     InvokeDevicesChangedCallbacks();
     
   // Process any queued device operations
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 // Remove all devices and call library cleanup functions
@@ -230,7 +229,7 @@ void ControllerInterface::Shutdown()
   ClearDevices();
   
   // Process any queued device operations before final cleanup
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 void ControllerInterface::ClearDevices()
@@ -258,7 +257,7 @@ void ControllerInterface::ClearDevices()
   InvokeDevicesChangedCallbacks();
   
   // Process any queued device operations
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device)
@@ -326,7 +325,7 @@ bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device
     InvokeDevicesChangedCallbacks();
     
   // Process any queued device operations
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
   
   return true;
 }
@@ -363,7 +362,7 @@ void ControllerInterface::ProcessDeviceQueue()
     }
     
     // Re-acquire the queue lock for the next iteration
-    lk_queue = std::lock_guard(m_device_queue_mutex);
+    lk_queue = std::lock_guard<std::mutex>(m_device_queue_mutex);
   }
 }
 
@@ -407,7 +406,7 @@ void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::De
     InvokeDevicesChangedCallbacks();
     
   // Process any queued device operations
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 // Update input for all devices if lock can be acquired without waiting.
@@ -461,7 +460,7 @@ void ControllerInterface::UpdateInput()
   }
   
   // Process any queued device operations now that input updates are complete
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 void ControllerInterface::SetCurrentInputChannel(ciface::InputChannel input_channel)
@@ -469,13 +468,13 @@ void ControllerInterface::SetCurrentInputChannel(ciface::InputChannel input_chan
   tls_input_channel = input_channel;
   
   // Process any queued device operations after changing input channel
-  ProcessDeviceQueue();
+  g_controller_interface.ProcessDeviceQueue();
 }
 
 ciface::InputChannel ControllerInterface::GetCurrentInputChannel()
 {
   // Process any queued device operations before getting input channel
-  ProcessDeviceQueue();
+  g_controller_interface.ProcessDeviceQueue();
   
   return tls_input_channel;
 }
@@ -493,7 +492,7 @@ void ControllerInterface::SetAspectRatioAdjustment(float value)
   m_aspect_ratio_adjustment = value;
   
   // Process any queued device operations after changing aspect ratio
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 Common::Vec2 ControllerInterface::GetWindowInputScale() const
@@ -514,7 +513,7 @@ void ControllerInterface::SetMouseCenteringRequested(bool center)
   m_requested_mouse_centering = center;
   
   // Process any queued device operations after changing mouse centering
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 bool ControllerInterface::IsMouseCenteringRequested() const
@@ -535,7 +534,7 @@ ControllerInterface::RegisterDevicesChangedCallback(std::function<void()> callba
   m_devices_changed_callbacks.emplace_back(std::move(callback));
   
   // Process any queued device operations after registering callback
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
   
   return std::prev(m_devices_changed_callbacks.end());
 }
@@ -547,7 +546,7 @@ void ControllerInterface::UnregisterDevicesChangedCallback(const HotplugCallback
   m_devices_changed_callbacks.erase(handle);
   
   // Process any queued device operations after unregistering callback
-  ProcessDeviceQueue();
+  this->ProcessDeviceQueue();
 }
 
 // Invoke all callbacks that were registered
