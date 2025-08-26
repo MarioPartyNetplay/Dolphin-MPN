@@ -8,6 +8,8 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <queue>
+#include <thread>
 
 #include "Common/Matrix.h"
 #include "Common/WindowSystemInfo.h"
@@ -126,6 +128,7 @@ public:
 
 private:
   void ClearDevices();
+  void ProcessDeviceQueue();
 
   std::list<std::function<void()>> m_devices_changed_callbacks;
   mutable std::recursive_mutex m_devices_population_mutex;
@@ -140,6 +143,18 @@ private:
   std::atomic<bool> m_requested_mouse_centering = false;
 
   std::vector<std::unique_ptr<ciface::InputBackend>> m_input_backends;
+  
+  // Device queue for handling additions/removals during input updates
+  struct QueuedDeviceOperation
+  {
+    enum class Type { Add, Remove };
+    Type type;
+    std::shared_ptr<ciface::Core::Device> device;
+    std::function<bool(const ciface::Core::Device*)> remove_callback;
+    bool force_devices_release;
+  };
+  std::queue<QueuedDeviceOperation> m_device_queue;
+  mutable std::mutex m_device_queue_mutex;
 };
 
 namespace ciface

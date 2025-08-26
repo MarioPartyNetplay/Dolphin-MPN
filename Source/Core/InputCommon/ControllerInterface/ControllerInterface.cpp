@@ -103,6 +103,9 @@ void ControllerInterface::Initialize(const WindowSystemInfo& wsi)
 
   if (m_populating_devices_counter.fetch_sub(1) == 1 && !devices_empty)
     InvokeDevicesChangedCallbacks();
+    
+  // Process any queued device operations
+  ProcessDeviceQueue();
 }
 
 void ControllerInterface::ChangeWindow(void* hwnd, WindowChangeReason reason)
@@ -115,9 +118,17 @@ void ControllerInterface::ChangeWindow(void* hwnd, WindowChangeReason reason)
 
   // No need to re-add devices if this is an application exit request
   if (reason == WindowChangeReason::Exit)
+  {
     ClearDevices();
+    // Process any queued device operations after clearing
+    ProcessDeviceQueue();
+  }
   else
+  {
     RefreshDevices(RefreshReason::WindowChangeOnly);
+    // Process any queued device operations after refresh
+    ProcessDeviceQueue();
+  }
 }
 
 void ControllerInterface::RefreshDevices(RefreshReason reason)
@@ -143,6 +154,9 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
 
     if (m_populating_devices_counter.fetch_sub(1) == 1)
       InvokeDevicesChangedCallbacks();
+      
+    // Process any queued device operations
+    ProcessDeviceQueue();
 
     return;
   }
@@ -168,6 +182,9 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
 
   if (m_populating_devices_counter.fetch_sub(1) == 1)
     InvokeDevicesChangedCallbacks();
+    
+  // Process any queued device operations
+  ProcessDeviceQueue();
 }
 
 void ControllerInterface::PlatformPopulateDevices(std::function<void()> callback)
@@ -183,6 +200,9 @@ void ControllerInterface::PlatformPopulateDevices(std::function<void()> callback
 
   if (m_populating_devices_counter.fetch_sub(1) == 1)
     InvokeDevicesChangedCallbacks();
+    
+  // Process any queued device operations
+  ProcessDeviceQueue();
 }
 
 // Remove all devices and call library cleanup functions
@@ -206,9 +226,11 @@ void ControllerInterface::Shutdown()
   // between checking they checked atomic m_is_init bool and we changed it.
   // We couldn't have locked m_devices_population_mutex for the whole Shutdown()
   // as it could cause deadlocks. Note that this is still not 100% safe as some backends are
-  // shut down in other places, possibly adding devices after we have shut down, but the chances of
   // that happening are basically zero.
   ClearDevices();
+  
+  // Process any queued device operations before final cleanup
+  ProcessDeviceQueue();
 }
 
 void ControllerInterface::ClearDevices()
@@ -234,6 +256,9 @@ void ControllerInterface::ClearDevices()
   }
 
   InvokeDevicesChangedCallbacks();
+  
+  // Process any queued device operations
+  ProcessDeviceQueue();
 }
 
 bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device)
@@ -242,9 +267,19 @@ bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device
   if (!m_is_init)
     return false;
 
-  ASSERT_MSG(CONTROLLERINTERFACE, !tls_is_updating_devices,
-             "Devices shouldn't be added within input update calls, there is a risk of deadlock "
-             "if another thread was already here");
+  // Instead of asserting, queue the device addition if we're currently updating
+  if (tls_is_updating_devices)
+  {
+    WARN_LOG_FMT(CONTROLLERINTERFACE, 
+                  "Device addition requested during input update, queuing for later: {}",
+                  device->GetQualifiedName());
+    
+    // Queue the device addition to happen after the current update cycle
+    std::lock_guard lk_queue(m_device_queue_mutex);
+    m_device_queue.push({QueuedDeviceOperation::Type::Add, std::move(device), {}, false});
+    
+    return true;
+  }
 
   std::lock_guard lk_population(m_devices_population_mutex);
 
@@ -289,7 +324,47 @@ bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device
 
   if (!m_populating_devices_counter)
     InvokeDevicesChangedCallbacks();
+    
+  // Process any queued device operations
+  ProcessDeviceQueue();
+  
   return true;
+}
+
+void ControllerInterface::ProcessDeviceQueue()
+{
+  std::lock_guard lk_queue(m_device_queue_mutex);
+  
+  while (!m_device_queue.empty())
+  {
+    auto operation = std::move(m_device_queue.front());
+    m_device_queue.pop();
+    
+    // Release the queue lock while processing the operation
+    lk_queue.~lock_guard();
+    
+    switch (operation.type)
+    {
+    case QueuedDeviceOperation::Type::Add:
+      if (operation.device)
+      {
+        // Call AddDevice recursively, but this time it should succeed since we're not updating
+        AddDevice(std::move(operation.device));
+      }
+      break;
+      
+    case QueuedDeviceOperation::Type::Remove:
+      if (operation.remove_callback)
+      {
+        // Call RemoveDevice recursively, but this time it should succeed since we're not updating
+        RemoveDevice(std::move(operation.remove_callback), operation.force_devices_release);
+      }
+      break;
+    }
+    
+    // Re-acquire the queue lock for the next iteration
+    lk_queue = std::lock_guard(m_device_queue_mutex);
+  }
 }
 
 void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::Device*)> callback,
@@ -299,9 +374,18 @@ void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::De
   if (!m_is_init)
     return;
 
-  ASSERT_MSG(CONTROLLERINTERFACE, !tls_is_updating_devices,
-             "Devices shouldn't be removed within input update calls, there is a risk of deadlock "
-             "if another thread was already here");
+  // Instead of asserting, queue the device removal if we're currently updating
+  if (tls_is_updating_devices)
+  {
+    WARN_LOG_FMT(CONTROLLERINTERFACE, 
+                  "Device removal requested during input update, queuing for later");
+    
+    // Queue the device removal to happen after the current update cycle
+    std::lock_guard lk_queue(m_device_queue_mutex);
+    m_device_queue.push({QueuedDeviceOperation::Type::Remove, {}, std::move(callback), force_devices_release});
+    
+    return;
+  }
 
   std::lock_guard lk_population(m_devices_population_mutex);
 
@@ -321,6 +405,9 @@ void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::De
 
   if (any_removed && (!m_populating_devices_counter || force_devices_release))
     InvokeDevicesChangedCallbacks();
+    
+  // Process any queued device operations
+  ProcessDeviceQueue();
 }
 
 // Update input for all devices if lock can be acquired without waiting.
@@ -372,30 +459,48 @@ void ControllerInterface::UpdateInput()
                                  [device](const auto& d) { return d.lock().get() == device; });
     });
   }
+  
+  // Process any queued device operations now that input updates are complete
+  ProcessDeviceQueue();
 }
 
 void ControllerInterface::SetCurrentInputChannel(ciface::InputChannel input_channel)
 {
   tls_input_channel = input_channel;
+  
+  // Process any queued device operations after changing input channel
+  ProcessDeviceQueue();
 }
 
 ciface::InputChannel ControllerInterface::GetCurrentInputChannel()
 {
+  // Process any queued device operations before getting input channel
+  ProcessDeviceQueue();
+  
   return tls_input_channel;
 }
 
 WindowSystemInfo ControllerInterface::GetWindowSystemInfo() const
 {
+  // Process any queued device operations before getting window system info
+  const_cast<ControllerInterface*>(this)->ProcessDeviceQueue();
+  
   return m_wsi;
 }
 
 void ControllerInterface::SetAspectRatioAdjustment(float value)
 {
   m_aspect_ratio_adjustment = value;
+  
+  // Process any queued device operations after changing aspect ratio
+  ProcessDeviceQueue();
 }
 
 Common::Vec2 ControllerInterface::GetWindowInputScale() const
 {
+  // Process any queued device operations before getting window input scale
+  const_cast<ControllerInterface*>(this)->ProcessDeviceQueue();
+  
   const auto ar = m_aspect_ratio_adjustment.load();
 
   if (ar > 1)
@@ -407,10 +512,16 @@ Common::Vec2 ControllerInterface::GetWindowInputScale() const
 void ControllerInterface::SetMouseCenteringRequested(bool center)
 {
   m_requested_mouse_centering = center;
+  
+  // Process any queued device operations after changing mouse centering
+  ProcessDeviceQueue();
 }
 
 bool ControllerInterface::IsMouseCenteringRequested() const
 {
+  // Process any queued device operations before getting mouse centering state
+  const_cast<ControllerInterface*>(this)->ProcessDeviceQueue();
+  
   return m_requested_mouse_centering.load();
 }
 
@@ -422,6 +533,10 @@ ControllerInterface::RegisterDevicesChangedCallback(std::function<void()> callba
 {
   std::lock_guard lk(m_callbacks_mutex);
   m_devices_changed_callbacks.emplace_back(std::move(callback));
+  
+  // Process any queued device operations after registering callback
+  ProcessDeviceQueue();
+  
   return std::prev(m_devices_changed_callbacks.end());
 }
 
@@ -430,6 +545,9 @@ void ControllerInterface::UnregisterDevicesChangedCallback(const HotplugCallback
 {
   std::lock_guard lk(m_callbacks_mutex);
   m_devices_changed_callbacks.erase(handle);
+  
+  // Process any queued device operations after unregistering callback
+  ProcessDeviceQueue();
 }
 
 // Invoke all callbacks that were registered
@@ -440,4 +558,7 @@ void ControllerInterface::InvokeDevicesChangedCallbacks() const
   m_callbacks_mutex.unlock();
   for (const auto& callback : devices_changed_callbacks)
     callback();
+    
+  // Process any queued device operations after callbacks
+  const_cast<ControllerInterface*>(this)->ProcessDeviceQueue();
 }
