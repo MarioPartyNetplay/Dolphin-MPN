@@ -97,8 +97,7 @@ void GamecubeControllersWidget::CreateLayout()
     m_gc_layout->addWidget(gc_button, controller_row, 2);
   }
 
-  m_gcpad_ciface = new QCheckBox(tr("Use GameCube Controller Adapter for Emulated Controllers"));
-  m_gc_layout->addWidget(m_gcpad_ciface, m_gc_layout->rowCount(), 0, 1, -1);
+
 
   m_gc_box->setLayout(m_gc_layout);
 
@@ -120,7 +119,7 @@ void GamecubeControllersWidget::ConnectWidgets()
     connect(m_gc_buttons[i], &QPushButton::clicked, this, [this, i] { OnGCPadConfigure(i); });
   }
 
-  connect(m_gcpad_ciface, &QCheckBox::toggled, this, &GamecubeControllersWidget::SaveSettings);
+
 }
 
 void GamecubeControllersWidget::OnGCTypeChanged(size_t index)
@@ -190,8 +189,7 @@ void GamecubeControllersWidget::LoadSettings(Core::State state)
     }
   }
 
-  SignalBlocking(m_gcpad_ciface)
-      ->setChecked(Config::Get(Config::MAIN_USE_GC_ADAPTER_FOR_CONTROLLER_INTERFACE));
+
 }
 
 void GamecubeControllersWidget::SaveSettings()
@@ -212,8 +210,7 @@ void GamecubeControllersWidget::SaveSettings()
       }
     }
 
-    Config::SetBaseOrCurrent(Config::MAIN_USE_GC_ADAPTER_FOR_CONTROLLER_INTERFACE,
-                             m_gcpad_ciface->isChecked());
+
   }
 
   SConfig::GetInstance().SaveSettings();

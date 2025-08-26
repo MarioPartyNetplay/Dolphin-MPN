@@ -7,7 +7,6 @@
 
 #include <array>
 
-class QCheckBox;
 class QComboBox;
 class QHBoxLayout;
 class QGridLayout;
@@ -41,5 +40,4 @@ private:
   std::array<QComboBox*, 4> m_gc_controller_boxes;
   std::array<QPushButton*, 4> m_gc_buttons;
   std::array<QHBoxLayout*, 4> m_gc_groups;
-  QCheckBox* m_gcpad_ciface;
 };
