@@ -409,7 +409,7 @@ jobs:
         lipo -create build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
         build-arm/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt -o dolphin
 
-        mv dolphin build/Binaries/DolphinQt.app/Contents/MacOS/Dolphin
+        mv dolphin build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
 
         mkdir -p build/OUT
 
