@@ -1766,6 +1766,9 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
     // Automatically configure SP1 slot to use NetPlay BBA for this session only
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1), ExpansionInterface::EXIDeviceType::EthernetNetPlay);
     INFO_LOG_FMT(NETPLAY, "BBA mode enabled: SP1 slot configured to use NetPlay BBA (session only)");
+    
+    // Configure NetPlay server to use BBA-only mode
+    Settings::Instance().GetNetPlayServer()->SetBBAMode(true);
   }
 
   // Join our local server

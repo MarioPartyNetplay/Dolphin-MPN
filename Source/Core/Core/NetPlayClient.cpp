@@ -60,6 +60,7 @@
 #include "Core/HW/WiiSaveStructs.h"
 #include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
 #include "Core/HW/WiimoteEmu/WiimoteEmu.h"
+#include "Core/HW/Wiimote.h"
 #include "Core/HW/WiimoteReal/WiimoteReal.h"
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/FS/HostBackend/FS.h"
@@ -461,6 +462,10 @@ void NetPlayClient::OnData(sf::Packet& packet)
 
   case MessageID::BBAPacketData:
     OnBBAPacketData(packet);
+    break;
+
+  case MessageID::BBAMode:
+    OnBBAMode(packet);
     break;
 
   case MessageID::ComputeGameDigest:
@@ -2000,6 +2005,16 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
+  // Check if BBA mode is enabled - if so, disable input synchronization
+  // In BBA mode, we only sync BBA packets, not controller inputs
+  if (m_net_settings.bba_mode)
+  {
+    // In BBA mode, everyone uses local pad 0 (first controller slot)
+    // since we're only syncing BBA packets, not controller inputs
+    *pad_status = Pad::GetStatus(0);
+    return true;
+  }
+
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
@@ -2145,6 +2160,21 @@ u64 NetPlayClient::GetInitialRTCValue() const
 // called from ---CPU--- thread
 bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entries)
 {
+  // Check if BBA mode is enabled - if so, disable Wiimote synchronization
+  // In BBA mode, we only sync BBA packets, not controller inputs
+  if (m_net_settings.bba_mode)
+  {
+    // In BBA mode, everyone gets a default Wiimote state
+    // since we're only syncing BBA packets, not controller inputs
+    for (const WiimoteDataBatchEntry& entry : entries)
+    {
+      // Create a default/empty Wiimote state for all Wiimote requests
+      WiimoteEmu::SerializedWiimoteState default_state{};
+      *entry.state = default_state;
+    }
+    return true;
+  }
+
   for (const WiimoteDataBatchEntry& entry : entries)
   {
     const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
@@ -2792,6 +2822,25 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
     // This is a bit complex since we need to access the EXI system
     // For now, we'll just log that we received it
     // TODO: Implement proper injection into the BBA interface
+  }
+}
+
+void NetPlayClient::OnBBAMode(sf::Packet& packet)
+{
+  bool bba_mode;
+  packet >> bba_mode;
+  
+  m_net_settings.bba_mode = bba_mode;
+  
+  INFO_LOG_FMT(NETPLAY, "BBA mode {} by host", bba_mode ? "enabled" : "disabled");
+  
+  if (bba_mode)
+  {
+    m_dialog->AppendChat(Common::GetStringT("BBA mode enabled: Input synchronization disabled"));
+  }
+  else
+  {
+    m_dialog->AppendChat(Common::GetStringT("BBA mode disabled: Input synchronization enabled"));
   }
 }
 }  // namespace NetPlay

@@ -350,6 +350,7 @@ private:
   void OnSyncCodesNotifyAR(sf::Packet& packet);
   void OnSyncCodesDataAR(sf::Packet& packet);
   void OnBBAPacketData(sf::Packet& packet);
+  void OnBBAMode(sf::Packet& packet);
   void OnComputeGameDigest(sf::Packet& packet);
   void OnGameDigestProgress(sf::Packet& packet);
   void OnGameDigestResult(sf::Packet& packet);

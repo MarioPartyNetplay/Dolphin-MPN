@@ -497,6 +497,9 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
   SendResponseToPlayer(new_player, MessageID::HostInputAuthority, m_host_input_authority);
 
+  // Send BBA mode setting to new client
+  SendResponseToPlayer(new_player, MessageID::BBAMode, m_bba_mode);
+
   for (const auto& existing_player : std::views::values(m_players))
   {
     SendResponseToPlayer(new_player, MessageID::PlayerJoin, existing_player.pid,
@@ -714,6 +717,17 @@ void NetPlayServer::SetHostInputAuthority(const bool enable)
     AdjustPadBufferSize(m_target_buffer_size);
 }
 
+void NetPlayServer::SetBBAMode(const bool enable)
+{
+  std::lock_guard lkg(m_crit.game);
+
+  m_bba_mode = enable;
+
+  INFO_LOG_FMT(NETPLAY, "BBA mode {}: input synchronization will be {}", 
+               enable ? "enabled" : "disabled",
+               enable ? "disabled (BBA-only)" : "enabled");
+}
+
 void NetPlayServer::SendAsync(sf::Packet&& packet, const PlayerId pid, const u8 channel_id)
 {
   {
@@ -810,6 +824,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (m_bba_mode)
+      break;
+
     // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
       break;
@@ -860,6 +878,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadHostData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (m_bba_mode)
+      break;
+
     // Kick player if they're not the golfer.
     if (m_current_golfer != 0 && player.pid != m_current_golfer)
       return 1;
@@ -891,6 +913,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::WiimoteData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (m_bba_mode)
+      break;
+
     // if this is Wiimote data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
       break;

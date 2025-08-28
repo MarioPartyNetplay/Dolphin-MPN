@@ -69,6 +69,7 @@ public:
 
   void AdjustPadBufferSize(unsigned int size);
   void SetHostInputAuthority(bool enable);
+  void SetBBAMode(bool enable);
 
   void KickPlayer(PlayerId player);
 
@@ -186,6 +187,7 @@ private:
   bool m_codes_synced = true;
   bool m_start_pending = false;
   bool m_host_input_authority = false;
+  bool m_bba_mode = false;
   PlayerId m_current_golfer = 1;
   PlayerId m_pending_golfer = 0;
 
