@@ -44,6 +44,9 @@ bool CEXIETHERNET::NetPlayBBAInterface::Activate()
   // Initialize packet buffer
   m_packet_buffer.clear();
   
+  // Log that we're ready to handle BBA packets
+  INFO_LOG_FMT(SP1, "NetPlay BBA Interface ready to handle packets");
+  
   return true;
 }
 

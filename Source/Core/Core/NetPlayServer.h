@@ -70,6 +70,7 @@ public:
   void AdjustPadBufferSize(unsigned int size);
   void SetHostInputAuthority(bool enable);
   void SetBBAMode(bool enable);
+  bool IsBBAModeEnabled() const { return m_bba_mode; }
 
   void KickPlayer(PlayerId player);
 

@@ -1171,6 +1171,19 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
   // We need the render widget before booting.
   ShowRenderWidget();
 
+  // Configure BBA for NetPlay if enabled
+  if (NetPlay::IsNetPlayRunning())
+  {
+    auto server = Settings::Instance().GetNetPlayServer();
+    if (server && server->IsBBAModeEnabled())
+    {
+      // Set SP1 slot to use NetPlay BBA before the game starts
+      Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1), 
+                        ExpansionInterface::EXIDeviceType::EthernetNetPlay);
+      INFO_LOG_FMT(NETPLAY, "BBA mode enabled: SP1 slot configured to use NetPlay BBA before game start");
+    }
+  }
+
   // Boot up, show an error if it fails to load the game.
   if (!BootManager::BootCore(m_system, std::move(parameters),
                              ::GetWindowSystemInfo(m_render_widget->windowHandle())))
@@ -1757,18 +1770,15 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   Settings::Instance().GetNetPlayServer()->ChangeGame(game.GetSyncIdentifier(),
                                                       m_game_list->GetNetPlayName(game));
 
-  // Check if BBA mode is enabled and configure SP1 slot accordingly
+  // Check if BBA mode is enabled and configure NetPlay server accordingly
   const auto& settings = Settings::Instance().GetQSettings();
   const bool bba_enabled = settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool();
   
   if (bba_enabled)
   {
-    // Automatically configure SP1 slot to use NetPlay BBA for this session only
-    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1), ExpansionInterface::EXIDeviceType::EthernetNetPlay);
-    INFO_LOG_FMT(NETPLAY, "BBA mode enabled: SP1 slot configured to use NetPlay BBA (session only)");
-    
     // Configure NetPlay server to use BBA-only mode
     Settings::Instance().GetNetPlayServer()->SetBBAMode(true);
+    INFO_LOG_FMT(NETPLAY, "BBA mode enabled: NetPlay server configured for BBA-only mode");
   }
 
   // Join our local server
