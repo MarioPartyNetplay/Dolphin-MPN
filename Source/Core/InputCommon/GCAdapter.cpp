@@ -235,6 +235,13 @@ static void ReadThreadFunc()
         continue;
       }
     }
+    else
+    {
+      // Reset error counter on successful reads
+      static int consecutive_io_errors = 0;
+      consecutive_io_errors = 0;
+    }
+
     if (error == LIBUSB_ERROR_IO)
     {
       // Only reset the device after multiple consecutive errors to avoid unnecessary resets
@@ -251,12 +258,6 @@ static void ReadThreadFunc()
       }
       // If error is nonzero, try fixing it next loop iteration. We can't easily return
       // and cleanup program state without getting another thread to call Reset().
-    }
-    else
-    {
-      // Reset error counter on successful reads
-      static int consecutive_io_errors = 0;
-      consecutive_io_errors = 0;
     }
 
     ProcessInputPayload(input_buffer.data(), payload_size);

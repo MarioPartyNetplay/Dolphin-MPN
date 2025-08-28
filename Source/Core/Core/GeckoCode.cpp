@@ -173,8 +173,6 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
     }
   }
 
-  const bool is_mpn_handler_and_game_id_gm4e01 =
-      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GM4E01");
   const bool is_mpn_handler_and_game_id_rm8e01 =
       IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "RM8E01");
   const bool is_mpn_handler_and_game_id_gp7e01 =
@@ -187,7 +185,6 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
       IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GMPE01") || (SConfig::GetInstance().GetGameID() == "GMPEDX");
 
   u32 codelist_base_address =
-      is_mpn_handler_and_game_id_gm4e01 ? INSTALLER_BASE_ADDRESS_MKDD :
       is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_BASE_ADDRESS_MP8 :
       is_mpn_handler_and_game_id_gp7e01 ? INSTALLER_BASE_ADDRESS_MP7 :
       is_mpn_handler_and_game_id_gp6e01 ? INSTALLER_BASE_ADDRESS_MP6 :
@@ -205,7 +202,7 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
 
   if (is_mpn_handler_and_game_id_rm8e01 || is_mpn_handler_and_game_id_gp7e01 ||
       is_mpn_handler_and_game_id_gp6e01 || is_mpn_handler_and_game_id_gp5e01 ||
-      is_mpn_handler_and_game_id_gmpe01 || is_mpn_handler_and_game_id_gm4e01)
+      is_mpn_handler_and_game_id_gmpe01)
   {
     // Move Gecko code handler to the free mem region
     for (u32 addr = codelist_base_address; addr < codelist_end_address; addr += 4)
