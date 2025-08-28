@@ -59,7 +59,7 @@ namespace GCAdapter
 {
 #if GCADAPTER_USE_LIBUSB_IMPLEMENTATION
 
-constexpr unsigned int USB_TIMEOUT_MS = 16;
+constexpr unsigned int USB_TIMEOUT_MS = 50;
 
 static bool CheckDeviceAccess(libusb_device* device);
 static void AddGCAdapter(libusb_device* device);
@@ -210,21 +210,62 @@ static void ReadThreadFunc()
     {
       ERROR_LOG_FMT(CONTROLLERINTERFACE, "Read: libusb_interrupt_transfer failed: {}",
                     LibusbUtils::ErrorWrap(error));
+      
+      // Handle specific error types more gracefully
+      if (error == LIBUSB_ERROR_TIMEOUT)
+      {
+        // Timeout errors are common and usually recoverable, just continue
+        Common::YieldCPU();
+        continue;
+      }
+      else if (error == LIBUSB_ERROR_PIPE)
+      {
+        // Pipe errors can be temporary, try to recover
+        static int consecutive_pipe_errors = 0;
+        consecutive_pipe_errors++;
+        
+        if (consecutive_pipe_errors >= 5)  // Reset after 5 consecutive pipe errors
+        {
+          consecutive_pipe_errors = 0;
+          ERROR_LOG_FMT(CONTROLLERINTERFACE, "Too many pipe errors, resetting device");
+          Reset(CalledFromReadThread::No);
+          return;
+        }
+        Common::YieldCPU();
+        continue;
+      }
     }
     if (error == LIBUSB_ERROR_IO)
     {
-      // s_read_adapter_thread_running is cleared by the joiner, not the stopper.
-
-      // Reset the device, which may trigger a replug.
-      error = libusb_reset_device(s_handle);
-      ERROR_LOG_FMT(CONTROLLERINTERFACE, "Read: libusb_reset_device: {}",
-                    LibusbUtils::ErrorWrap(error));
-
+      // Only reset the device after multiple consecutive errors to avoid unnecessary resets
+      static int consecutive_io_errors = 0;
+      consecutive_io_errors++;
+      
+      if (consecutive_io_errors >= 3)  // Reset after 3 consecutive IO errors
+      {
+        consecutive_io_errors = 0;  // Reset counter
+        // Reset the device, which may trigger a replug.
+        error = libusb_reset_device(s_handle);
+        ERROR_LOG_FMT(CONTROLLERINTERFACE, "Read: libusb_reset_device after 3 consecutive errors: {}",
+                      LibusbUtils::ErrorWrap(error));
+      }
       // If error is nonzero, try fixing it next loop iteration. We can't easily return
       // and cleanup program state without getting another thread to call Reset().
     }
+    else
+    {
+      // Reset error counter on successful reads
+      static int consecutive_io_errors = 0;
+      consecutive_io_errors = 0;
+    }
 
     ProcessInputPayload(input_buffer.data(), payload_size);
+
+    // Add a small delay after successful reads to reduce USB bus contention
+    if (error == LIBUSB_SUCCESS)
+    {
+      Common::SleepCurrentThread(1);  // 1ms delay
+    }
 
 #elif GCADAPTER_USE_ANDROID_IMPLEMENTATION
     const int payload_size = env->CallStaticIntMethod(s_adapter_class, input_func);
@@ -383,7 +424,7 @@ static void ScanThreadFunc()
     if (hotplug_enabled)
       s_hotplug_event.Wait();
     else
-      Common::SleepCurrentThread(500);
+      Common::SleepCurrentThread(1000);
   }
 
 #if LIBUSB_API_HAS_HOTPLUG
