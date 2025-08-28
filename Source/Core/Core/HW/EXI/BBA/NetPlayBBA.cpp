@@ -26,6 +26,12 @@ void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender)
   g_bba_packet_sender = sender;
 }
 
+// Function to register the BBA packet sender callback for NetPlay clients
+void RegisterBBAPacketSenderForClient(std::function<void(const u8*, u32)> sender)
+{
+  g_bba_packet_sender = sender;
+}
+
 bool CEXIETHERNET::NetPlayBBAInterface::Activate()
 {
   if (m_active)

@@ -46,6 +46,7 @@
 #include "Core/GeckoCode.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #ifdef HAS_LIBMGBA
 #include "Core/HW/GBACore.h"
 #endif
@@ -2817,11 +2818,8 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
     
     INFO_LOG_FMT(NETPLAY, "Received BBA packet: {} bytes", packet_size);
     
-    // Inject the BBA packet into the NetPlayBBA interface if it exists
-    // We need to find the BBA interface and inject the packet
-    // This is a bit complex since we need to access the EXI system
-    // For now, we'll just log that we received it
-    // TODO: Implement proper injection into the BBA interface
+    // Inject the BBA packet into the NetPlayBBA interface
+    ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
   }
 }
 
@@ -2837,11 +2835,39 @@ void NetPlayClient::OnBBAMode(sf::Packet& packet)
   if (bba_mode)
   {
     m_dialog->AppendChat(Common::GetStringT("BBA mode enabled: Input synchronization disabled"));
+    // Register the BBA packet sender callback for this client
+    ExpansionInterface::RegisterBBAPacketSenderForClient(
+        [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
   }
   else
   {
     m_dialog->AppendChat(Common::GetStringT("BBA mode disabled: Input synchronization enabled"));
   }
+}
+
+void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
+{
+  if (!m_is_connected || !m_net_settings.bba_mode)
+    return;
+    
+  if (size > 1518)  // Max Ethernet frame size
+  {
+    ERROR_LOG_FMT(NETPLAY, "BBA packet too large: {} bytes", size);
+    return;
+  }
+  
+  INFO_LOG_FMT(NETPLAY, "Sending BBA packet to server: {} bytes", size);
+  
+  // Send BBA packet to the server
+  sf::Packet packet;
+  packet << MessageID::BBAPacketData;
+  packet << size;
+  for (u32 i = 0; i < size; ++i)
+  {
+    packet << data[i];
+  }
+  
+  SendAsync(std::move(packet));
 }
 }  // namespace NetPlay
 
