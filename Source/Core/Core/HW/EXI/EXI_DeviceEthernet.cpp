@@ -69,7 +69,7 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
     mac_addr = Common::GenerateMacAddress(Common::MACConsumer::BBA);  // Always randomize
     m_network_interface = std::make_unique<NetPlayBBAInterface>(this);
     INFO_LOG_FMT(SP1, "Created NetPlay-based network interface.");
-    INFO_LOG_FMT(SP1, "NetPlay BBA device created with MAC: {}", mac_addr->ToString());
+    INFO_LOG_FMT(SP1, "NetPlay BBA device created with MAC: {}", Common::MacAddressToString(*mac_addr));
     break;
   case BBADeviceType::XLINK:
     // TODO start BBA with network link down, bring it up after "connected" response from XLink
@@ -81,7 +81,7 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
     {
       PanicAlertFmtT(
           "BBA MAC address {0} invalid for XLink Kai. A valid Nintendo GameCube MAC address "
-          "must bex used. Generate a new MAC address starting with 00:09:bf or 00:17:ab.",
+          "must be used. Generate a new MAC address starting with 00:09:bf or 00:17:ab.",
           mac_addr_setting);
     }
 
