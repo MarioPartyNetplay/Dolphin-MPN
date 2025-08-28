@@ -36,8 +36,9 @@ class NetPlayServer : public Common::TraversalClientClient
 public:
   void ThreadFunc();
   void SendAsync(sf::Packet&& packet, PlayerId pid, u8 channel_id = DEFAULT_CHANNEL);
-  void SendAsyncToClients(sf::Packet&& packet, PlayerId skip_pid = 0,
-                          u8 channel_id = DEFAULT_CHANNEL);
+  void SendAsyncToClients(sf::Packet&& packet, const PlayerId skip_pid = 0, const u8 channel_id = 0);
+  void SendAsyncToClients(sf::Packet&& packet, const std::vector<PlayerId>& skip_pids,
+                           const u8 channel_id = 0);
   void SendChunked(sf::Packet&& packet, PlayerId pid, const std::string& title = "");
   void SendChunkedToClients(sf::Packet&& packet, PlayerId skip_pid = 0,
                             const std::string& title = "");
@@ -76,9 +77,7 @@ public:
   std::unordered_set<std::string> GetInterfaceSet() const;
   std::string GetInterfaceHost(const std::string& inter) const;
 
-  bool is_connected = false;
-
-private:
+  // Client class definition for BBA packet handling
   class Client
   {
   public:
@@ -99,6 +98,13 @@ private:
     bool IsHost() const { return pid == 1; }
   };
 
+  // BBA Packet Synchronization
+  void SendBBAPacket(const u8* data, u32 size);
+  void OnBBAPacketData(sf::Packet& packet, Client& player);
+
+  bool is_connected = false;
+
+private:
   enum class TargetMode
   {
     Only,

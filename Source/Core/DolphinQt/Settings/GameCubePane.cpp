@@ -146,6 +146,7 @@ void GameCubePane::CreateWidgets()
            EXIDeviceType::EthernetTapServer,
            EXIDeviceType::EthernetBuiltIn,
            EXIDeviceType::EthernetIPC,
+           EXIDeviceType::EthernetNetPlay,
            EXIDeviceType::ModemTapServer,
        })
   {
@@ -351,6 +352,8 @@ void GameCubePane::UpdateButton(ExpansionInterface::Slot slot)
                   device == ExpansionInterface::EXIDeviceType::EthernetXLink ||
                   device == ExpansionInterface::EXIDeviceType::EthernetTapServer ||
                   device == ExpansionInterface::EXIDeviceType::EthernetBuiltIn ||
+                  device == ExpansionInterface::EXIDeviceType::EthernetIPC ||
+                  device == ExpansionInterface::EXIDeviceType::EthernetNetPlay ||
                   device == ExpansionInterface::EXIDeviceType::ModemTapServer);
     break;
   case ExpansionInterface::Slot::SP2:
@@ -413,6 +416,18 @@ void GameCubePane::OnConfigPressed(ExpansionInterface::Slot slot)
   {
     BroadbandAdapterSettingsDialog dialog(this, BroadbandAdapterSettingsDialog::Type::BuiltIn);
     dialog.exec();
+    return;
+  }
+  case ExpansionInterface::EXIDeviceType::EthernetIPC:
+  {
+    BroadbandAdapterSettingsDialog dialog(this, BroadbandAdapterSettingsDialog::Type::IPC);
+    dialog.exec();
+    return;
+  }
+  case ExpansionInterface::EXIDeviceType::EthernetNetPlay:
+  {
+    // NetPlay BBA doesn't need configuration dialog
+    // It automatically integrates with the NetPlay system
     return;
   }
   default:

@@ -73,6 +73,7 @@
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiUtils.h"
+#include "Core/HW/EXI/EXI_Device.h"
 
 #include "DiscIO/DirectoryBlob.h"
 #include "DiscIO/NANDImporter.h"
@@ -1755,6 +1756,17 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
 
   Settings::Instance().GetNetPlayServer()->ChangeGame(game.GetSyncIdentifier(),
                                                       m_game_list->GetNetPlayName(game));
+
+  // Check if BBA mode is enabled and configure SP1 slot accordingly
+  const auto& settings = Settings::Instance().GetQSettings();
+  const bool bba_enabled = settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool();
+  
+  if (bba_enabled)
+  {
+    // Automatically configure SP1 slot to use NetPlay BBA for this session only
+    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1), ExpansionInterface::EXIDeviceType::EthernetNetPlay);
+    INFO_LOG_FMT(NETPLAY, "BBA mode enabled: SP1 slot configured to use NetPlay BBA (session only)");
+  }
 
   // Join our local server
   return NetPlayJoin();

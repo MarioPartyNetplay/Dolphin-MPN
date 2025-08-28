@@ -4,8 +4,12 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 #include "SFML/Network/IpAddress.hpp"
@@ -30,6 +34,10 @@ class PointerWrap;
 
 namespace ExpansionInterface
 {
+
+// Function to register BBA packet sender callback
+void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender);
+
 // Network Control Register A
 enum NCRA
 {
@@ -214,6 +222,7 @@ enum class BBADeviceType
   TAPSERVER,
   BuiltIn,
   IPC,
+  NetPlay,
 };
 
 class CEXIETHERNET : public IEXIDevice
@@ -555,6 +564,38 @@ private:
   };
 
 #endif
+
+  class NetPlayBBAInterface : public NetworkInterface
+  {
+  public:
+    explicit NetPlayBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
+
+    bool Activate() override;
+    void Deactivate() override;
+    bool IsActivated() override;
+    bool SendFrame(const u8* frame, u32 size) override;
+    bool RecvInit() override;
+    void RecvStart() override;
+    void RecvStop() override;
+    void RecvRead(u8* dest, u32 size);
+    void RecvReadDone();
+
+    // Called from NetPlay to inject received BBA packets
+    void InjectPacket(const u8* data, u32 size);
+
+  private:
+    std::mutex m_buffer_mutex;
+    std::condition_variable m_buffer_cv;
+    std::deque<std::vector<u8>> m_packet_buffer;
+    std::atomic<bool> m_active{false};
+    std::atomic<bool> m_shutdown{false};
+    std::atomic<bool> m_receiving{false};
+    
+    // NetPlay integration
+    void ProcessNetPlayPackets();
+    void BufferPacket(const u8* frame, u32 size);
+    std::optional<std::vector<u8>> GetNextPacket();
+  };
 
   std::unique_ptr<NetworkInterface> m_network_interface;
 

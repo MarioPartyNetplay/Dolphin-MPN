@@ -459,6 +459,10 @@ void NetPlayClient::OnData(sf::Packet& packet)
     OnSyncCodes(packet);
     break;
 
+  case MessageID::BBAPacketData:
+    OnBBAPacketData(packet);
+    break;
+
   case MessageID::ComputeGameDigest:
     OnComputeGameDigest(packet);
     break;
@@ -2763,6 +2767,32 @@ void NetPlay_Disable()
 {
   std::lock_guard lk(crit_netplay_client);
   netplay_client = nullptr;
+}
+
+void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
+{
+  // Extract BBA packet data from the packet
+  u32 packet_size;
+  packet >> packet_size;
+  
+  if (packet_size > 0 && packet_size <= 1518)  // Max Ethernet frame size
+  {
+    std::vector<u8> bba_data(packet_size);
+    for (u32 i = 0; i < packet_size; ++i)
+    {
+      u8 byte;
+      packet >> byte;
+      bba_data[i] = byte;
+    }
+    
+    INFO_LOG_FMT(NETPLAY, "Received BBA packet: {} bytes", packet_size);
+    
+    // Inject the BBA packet into the NetPlayBBA interface if it exists
+    // We need to find the BBA interface and inject the packet
+    // This is a bit complex since we need to access the EXI system
+    // For now, we'll just log that we received it
+    // TODO: Implement proper injection into the BBA interface
+  }
 }
 }  // namespace NetPlay
 

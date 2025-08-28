@@ -86,6 +86,7 @@ private:
   QSpinBox* m_host_chunked_upload_limit_box;
   QCheckBox* m_host_server_browser;
   QLineEdit* m_host_server_name;
+  QCheckBox* m_host_broadband_adapter;
 
   QTableWidget* m_table_widget;
   QComboBox* m_region_combo;

@@ -65,6 +65,7 @@
 #include "Core/NetPlayClient.h"  //for NetPlayUI
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
+#include "Core/HW/EXI/EXI_DeviceEthernet.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/RiivolutionPatcher.h"
@@ -175,6 +176,10 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
     m_thread = std::thread(&NetPlayServer::ThreadFunc, this);
     m_target_buffer_size = 5;
     m_chunked_data_thread = std::thread(&NetPlayServer::ChunkedDataThreadFunc, this);
+
+    // Register the BBA packet sender callback
+    ExpansionInterface::RegisterBBAPacketSender(
+        [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
 
 #ifdef USE_UPNP
     if (forward_port && !traversal_config.use_traversal)
@@ -1226,7 +1231,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         }
         else
         {
-          INFO_LOG_FMT(NETPLAY, "SyncCodes: Not all players synchronized. ({} < {})",
+          INFO_LOG_FMT(NETPLAY, "SyncCodes: Not all players synchronized. ({} >= {})",
                        m_codes_synced_players, m_players.size() - 1);
         }
       }
@@ -1251,6 +1256,12 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
           static_cast<u8>(sub_id), player.pid);
       return 1;
     }
+  }
+  break;
+
+  case MessageID::BBAPacketData:
+  {
+    OnBBAPacketData(packet, player);
   }
   break;
 
@@ -2595,5 +2606,58 @@ void NetPlayServer::ChunkedDataAbort()
   m_abort_chunked_data = true;
   m_chunked_data_event.Set();
   m_chunked_data_complete_event.Set();
+}
+
+void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& player)
+{
+  // Extract BBA packet data from the packet
+  u32 packet_size;
+  packet >> packet_size;
+  
+  if (packet_size > 0 && packet_size <= 1518)  // Max Ethernet frame size
+  {
+    std::vector<u8> bba_data(packet_size);
+    for (u32 i = 0; i < packet_size; ++i)
+    {
+      u8 byte;
+      packet >> byte;
+      bba_data[i] = byte;
+    }
+    
+    INFO_LOG_FMT(NETPLAY, "Received BBA packet from player {}: {} bytes", player.pid, packet_size);
+    
+    // Broadcast the BBA packet to all other clients
+    sf::Packet bba_packet;
+    bba_packet << MessageID::BBAPacketData;
+    bba_packet << packet_size;
+    for (u8 byte : bba_data)
+    {
+      bba_packet << byte;
+    }
+    
+    SendAsyncToClients(std::move(bba_packet), player.pid);
+  }
+}
+
+void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
+{
+  if (size > 1518)  // Max Ethernet frame size
+  {
+    ERROR_LOG_FMT(NETPLAY, "BBA packet too large: {} bytes", size);
+    return;
+  }
+  
+  INFO_LOG_FMT(NETPLAY, "Sending BBA packet: {} bytes", size);
+  
+  // Send BBA packet to all clients
+  sf::Packet packet;
+  packet << MessageID::BBAPacketData;
+  packet << size;
+  for (u32 i = 0; i < size; ++i)
+  {
+    packet << data[i];
+  }
+  
+  SendAsyncToClients(std::move(packet));
 }
 }  // namespace NetPlay

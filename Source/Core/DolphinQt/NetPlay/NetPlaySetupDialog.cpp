@@ -11,6 +11,7 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -43,7 +44,7 @@ NetPlaySetupDialog::NetPlaySetupDialog(const GameListModel& game_list_model, QWi
 
   CreateMainLayout();
 
-  bool use_index = Config::Get(Config::NETPLAY_USE_INDEX);
+  // bool use_index = Config::Get(Config::NETPLAY_USE_INDEX);
   std::string index_name = Config::Get(Config::NETPLAY_INDEX_NAME);
   std::string nickname = Config::Get(Config::NETPLAY_NICKNAME);
   std::string traversal_choice = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
@@ -60,8 +61,19 @@ NetPlaySetupDialog::NetPlaySetupDialog(const GameListModel& game_list_model, QWi
   m_connect_port_box->setValue(connect_port);
   m_host_port_box->setValue(host_port);
 
-  m_host_server_name->setEnabled(use_index);
-  m_host_server_name->setText(QString::fromStdString(index_name));
+  // Load server browser setting
+  const bool use_index = Config::Get(Config::NETPLAY_USE_INDEX);
+  m_host_server_browser->setChecked(use_index);
+
+  // Load chunked upload limit settings
+  // const bool enable_chunked_limit = Config::Get(Config::NETPLAY_ENABLE_CHUNKED_UPLOAD_LIMIT);
+  // const u32 chunked_limit_value = Config::Get(Config::NETPLAY_CHUNKED_UPLOAD_LIMIT);
+  // m_host_chunked_upload_limit_check->setChecked(enable_chunked_limit);
+  // m_host_chunked_upload_limit_box->setValue(static_cast<int>(chunked_limit_value));
+  // m_host_chunked_upload_limit_box->setEnabled(enable_chunked_limit);
+
+  // m_host_server_name->setEnabled(use_index);
+  // m_host_server_name->setText(QString::fromStdString(index_name));
 
   // Browser Stuff
   const auto& settings = Settings::Instance().GetQSettings();
@@ -197,9 +209,13 @@ void NetPlaySetupDialog::CreateMainLayout()
   
   m_host_server_browser = new QCheckBox(tr("Show in Browser"));
   m_host_server_browser->setChecked(true);
-  m_host_chunked_upload_limit_check = new QCheckBox(tr("Limit Chunked Upload Speed:"));
-  m_host_chunked_upload_limit_box = new QSpinBox;
-  m_host_server_name = new QLineEdit;
+  // m_host_chunked_upload_limit_check = new QCheckBox(tr("Limit Chunked Upload Speed:"));
+  // m_host_chunked_upload_limit_box = new QSpinBox;
+  // m_host_chunked_upload_limit_box->setRange(1, 10000);
+  // m_host_chunked_upload_limit_box->setSuffix(tr(" KB/s"));
+  // m_host_chunked_upload_limit_box->setEnabled(false);
+  m_host_broadband_adapter = new QCheckBox(tr("Enable Broadband Adapter (BBA)"));
+  m_host_broadband_adapter->setToolTip(tr("Enable BBA mode for this NetPlay session. BBA packets will be synchronized instead of controller inputs."));
 
 #ifdef USE_UPNP
   m_host_upnp = new QCheckBox(tr("Forward port (UPnP)"));
@@ -209,16 +225,27 @@ void NetPlaySetupDialog::CreateMainLayout()
 
   m_host_port_box->setMaximum(65535);
 
-  m_host_server_name->setToolTip(tr("Name of your session shown in the server browser"));
-  m_host_server_name->setPlaceholderText(tr("Name"));
+  // m_host_server_name->setToolTip(tr("Name of your session shown in the server browser"));
+  // m_host_server_name->setPlaceholderText(tr("Name"));
 
   host_layout->addWidget(m_host_port_box, 0, 0, Qt::AlignLeft);
 #ifdef USE_UPNP
   host_layout->addWidget(m_host_upnp, 0, 4, Qt::AlignRight);
 #endif
-  host_layout->addWidget(m_host_server_browser, 4, 0, Qt::AlignLeft);
-  host_layout->addWidget(m_host_games, 2, 0, 1, -1);
-  host_layout->addWidget(m_host_button, 4, 6, Qt::AlignRight);
+  // host_layout->addWidget(new QLabel(tr("Server Name:")), 1, 0);
+  // host_layout->addWidget(m_host_server_name, 1, 1, 1, 2);
+  // host_layout->addWidget(m_host_chunked_upload_limit_check, 3, 0, Qt::AlignLeft);
+  // host_layout->addWidget(m_host_chunked_upload_limit_box, 3, 1, Qt::AlignLeft);
+  host_layout->addWidget(m_host_games, 1, 0, 1, -1);
+  
+  // Create a horizontal layout for the bottom row
+  auto* bottom_layout = new QHBoxLayout;
+  bottom_layout->addWidget(m_host_server_browser);
+  bottom_layout->addWidget(m_host_broadband_adapter);
+  bottom_layout->addStretch(); // Add stretch to push the host button to the right
+  bottom_layout->addWidget(m_host_button);
+  
+  host_layout->addLayout(bottom_layout, 4, 0, 1, -1);
 
   host_widget->setLayout(host_layout);
 
@@ -274,9 +301,15 @@ void NetPlaySetupDialog::ConnectWidgets()
 
   connect(m_host_games, &QListWidget::itemDoubleClicked, this, &NetPlaySetupDialog::accept);
 
-  connect(m_host_server_name, &QLineEdit::textChanged, this, &NetPlaySetupDialog::SaveSettings);
+  // connect(m_host_server_name, &QLineEdit::textChanged, this, &NetPlaySetupDialog::SaveSettings);
 
   connect(m_host_server_browser, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
+  connect(m_host_broadband_adapter, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
+  // connect(m_host_chunked_upload_limit_check, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
+  // connect(m_host_chunked_upload_limit_check, &QCheckBox::toggled, [this](bool checked) {
+  //   m_host_chunked_upload_limit_box->setEnabled(checked);
+  // });
+  //connect(m_host_chunked_upload_limit_box, qOverload<int>(&QSpinBox::valueChanged), this, &NetPlaySetupDialog::SaveSettings);
   
 #ifdef USE_UPNP
   connect(m_host_upnp, &QCheckBox::stateChanged, this, &NetPlaySetupDialog::SaveSettings);
@@ -329,6 +362,10 @@ void NetPlaySetupDialog::SaveSettings()
   Config::SetBaseOrCurrent(Config::NETPLAY_INDEX_NAME, m_nickname_edit->text().toStdString());
   Config::SetBaseOrCurrent(Config::NETPLAY_INDEX_PASSWORD, "");
 
+  // Save chunked upload limit settings
+  // Config::SetBaseOrCurrent(Config::NETPLAY_ENABLE_CHUNKED_UPLOAD_LIMIT, m_host_chunked_upload_limit_check->isChecked());
+  // Config::SetBaseOrCurrent(Config::NETPLAY_CHUNKED_UPLOAD_LIMIT, static_cast<u32>(m_host_chunked_upload_limit_box->value()));
+
   // Browser Stuff
   auto& settings = Settings::Instance().GetQSettings();
 
@@ -345,6 +382,7 @@ void NetPlaySetupDialog::SaveSettings()
 
   settings.setValue(QStringLiteral("netplaybrowser/hide_incompatible"), true);
   settings.setValue(QStringLiteral("netplaybrowser/hide_ingame"), m_check_hide_ingame->isChecked());
+  settings.setValue(QStringLiteral("netplay/host_broadband_adapter"), m_host_broadband_adapter->isChecked());
 }
 
 void NetPlaySetupDialog::OnConnectionTypeChanged(int index)
@@ -372,11 +410,17 @@ void NetPlaySetupDialog::show()
 {
   // Here i'm setting the lobby name if it's empty to make
   // NetPlay sessions start more easily for first time players
-  if (m_host_server_name->text().isEmpty())
-  {
-    std::string nickname = Config::Get(Config::NETPLAY_NICKNAME);
-    m_host_server_name->setText(QString::fromStdString(nickname));
-  }
+  // if (m_host_server_name->text().isEmpty())
+  // {
+  //   std::string nickname = Config::Get(Config::NETPLAY_NICKNAME);
+  //   m_host_server_name->setText(QString::fromStdString(nickname));
+  // }
+  
+  // Load saved BBA checkbox state
+  const auto& settings = Settings::Instance().GetQSettings();
+  const bool bba_enabled = settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool();
+  m_host_broadband_adapter->setChecked(bba_enabled);
+  
   m_connection_type->setCurrentIndex(1);
   m_tab_widget->setCurrentIndex(2);
 
