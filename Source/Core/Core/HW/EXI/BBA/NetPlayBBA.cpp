@@ -12,6 +12,8 @@
 #include "Core/NetPlayServer.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Config/MainSettings.h"
+#include "Core/System.h"
+#include "Core/HW/EXI/EXI.h"
 
 namespace ExpansionInterface
 {
@@ -19,6 +21,10 @@ namespace ExpansionInterface
 // Global callback function pointer for sending BBA packets through NetPlay
 // This will be set by the NetPlay system when it initializes
 static std::function<void(const u8*, u32)> g_bba_packet_sender = nullptr;
+
+// Global callback function pointer for injecting BBA packets from NetPlay
+// This will be set by the NetPlay BBA interface when it activates
+static std::function<void(const u8*, u32)> g_bba_packet_injector = nullptr;
 
 // Function to register the BBA packet sender callback
 void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender)
@@ -30,6 +36,12 @@ void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender)
 void RegisterBBAPacketSenderForClient(std::function<void(const u8*, u32)> sender)
 {
   g_bba_packet_sender = sender;
+}
+
+// Function to register the BBA packet injector callback
+void RegisterBBAPacketInjector(std::function<void(const u8*, u32)> injector)
+{
+  g_bba_packet_injector = injector;
 }
 
 bool CEXIETHERNET::NetPlayBBAInterface::Activate()
@@ -44,6 +56,12 @@ bool CEXIETHERNET::NetPlayBBAInterface::Activate()
   // Initialize packet buffer
   m_packet_buffer.clear();
   
+  // Register this interface's injector callback
+  RegisterBBAPacketInjector([this](const u8* data, u32 size) {
+    if (m_active && !m_shutdown)
+      InjectPacket(data, size);
+  });
+  
   // Log that we're ready to handle BBA packets
   INFO_LOG_FMT(SP1, "NetPlay BBA Interface ready to handle packets");
   
@@ -53,6 +71,9 @@ bool CEXIETHERNET::NetPlayBBAInterface::Activate()
 void CEXIETHERNET::NetPlayBBAInterface::Deactivate()
 {
   INFO_LOG_FMT(SP1, "NetPlay BBA Interface deactivated");
+  
+  // Unregister the injector callback
+  RegisterBBAPacketInjector(nullptr);
   
   {
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
@@ -160,6 +181,29 @@ void CEXIETHERNET::NetPlayBBAInterface::InjectPacket(const u8* data, u32 size)
   
   // Notify that we have data available
   m_buffer_cv.notify_one();
+}
+
+// Function to inject BBA packets from NetPlay
+void InjectBBAPacketFromNetPlay(const u8* data, u32 size)
+{
+  if (!data || size == 0)
+  {
+    WARN_LOG_FMT(SP1, "Invalid packet data or size, cannot inject BBA packet");
+    return;
+  }
+  
+  INFO_LOG_FMT(SP1, "Injecting BBA packet from NetPlay: {} bytes", size);
+  
+  // Use the registered injector callback if available
+  if (g_bba_packet_injector)
+  {
+    g_bba_packet_injector(data, size);
+    INFO_LOG_FMT(SP1, "Packet injected via callback");
+  }
+  else
+  {
+    WARN_LOG_FMT(SP1, "No BBA packet injector registered, packet not injected");
+  }
 }
 
 }  // namespace ExpansionInterface
