@@ -595,6 +595,10 @@ private:
     void ProcessNetPlayPackets();
     void BufferPacket(const u8* frame, u32 size);
     std::optional<std::vector<u8>> GetNextPacket();
+    
+    // Store the injector callback for proper cleanup
+    std::function<void(const u8*, u32)> m_injector_callback;
+    u64 m_injector_id = 0;
   };
 
   std::unique_ptr<NetworkInterface> m_network_interface;

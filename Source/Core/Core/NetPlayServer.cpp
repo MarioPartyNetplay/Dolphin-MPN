@@ -66,6 +66,7 @@
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/RiivolutionPatcher.h"
@@ -726,6 +727,13 @@ void NetPlayServer::SetBBAMode(const bool enable)
   INFO_LOG_FMT(NETPLAY, "BBA mode {}: input synchronization will be {}", 
                enable ? "enabled" : "disabled",
                enable ? "disabled (BBA-only)" : "enabled");
+
+  // Notify all clients about the BBA mode change
+  sf::Packet spac;
+  spac << MessageID::BBAMode;
+  spac << m_bba_mode;
+
+  SendAsyncToClients(std::move(spac));
 }
 
 void NetPlayServer::SendAsync(sf::Packet&& packet, const PlayerId pid, const u8 channel_id)
@@ -1425,8 +1433,9 @@ bool NetPlayServer::SetupNetSettings()
     ExpansionInterface::EXIDeviceType device;
     if (slot == ExpansionInterface::Slot::SP1)
     {
-      // There's no way the BBA is going to sync, disable it
-      device = ExpansionInterface::EXIDeviceType::None;
+      // In BBA mode, use the NetPlay Ethernet BBA so clients bring up SP1
+      device = m_bba_mode ? ExpansionInterface::EXIDeviceType::EthernetNetPlay
+                          : ExpansionInterface::EXIDeviceType::None;
     }
     else
     {
@@ -2662,6 +2671,9 @@ void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& p
     }
     
     SendAsyncToClients(std::move(bba_packet), player.pid);
+
+    // Inject into host's local BBA as well so the host receives client frames
+    ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
   }
 }
 

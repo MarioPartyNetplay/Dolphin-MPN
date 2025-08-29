@@ -2838,10 +2838,17 @@ void NetPlayClient::OnBBAMode(sf::Packet& packet)
     // Register the BBA packet sender callback for this client
     ExpansionInterface::RegisterBBAPacketSenderForClient(
         [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
+
+    // Ensure SP1 is configured to NetPlay Ethernet on clients as soon as BBA mode is enabled
+    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
+                       ExpansionInterface::EXIDeviceType::EthernetNetPlay);
   }
   else
   {
     m_dialog->AppendChat(Common::GetStringT("BBA mode disabled: Input synchronization enabled"));
+    // Revert SP1 back to None when BBA mode is disabled (clients)
+    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
+                       ExpansionInterface::EXIDeviceType::None);
   }
 }
 

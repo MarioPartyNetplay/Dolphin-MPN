@@ -22,9 +22,15 @@ namespace ExpansionInterface
 // This will be set by the NetPlay system when it initializes
 static std::function<void(const u8*, u32)> g_bba_packet_sender = nullptr;
 
-// Global callback function pointer for injecting BBA packets from NetPlay
-// This will be set by the NetPlay BBA interface when it activates
-static std::function<void(const u8*, u32)> g_bba_packet_injector = nullptr;
+// Global list of active BBA interfaces for injecting packets from NetPlay
+struct InjectorEntry
+{
+  u64 id;
+  std::function<void(const u8*, u32)> fn;
+};
+static std::vector<InjectorEntry> g_bba_packet_injectors;
+static std::mutex g_bba_injectors_mutex;
+static std::atomic<u64> g_bba_injector_next_id{1};
 
 // Function to register the BBA packet sender callback
 void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender)
@@ -39,9 +45,23 @@ void RegisterBBAPacketSenderForClient(std::function<void(const u8*, u32)> sender
 }
 
 // Function to register the BBA packet injector callback
-void RegisterBBAPacketInjector(std::function<void(const u8*, u32)> injector)
+u64 RegisterBBAPacketInjector(std::function<void(const u8*, u32)> injector)
 {
-  g_bba_packet_injector = injector;
+  if (!injector)
+    return 0;
+  std::lock_guard<std::mutex> lock(g_bba_injectors_mutex);
+  const u64 id = g_bba_injector_next_id.fetch_add(1, std::memory_order_relaxed);
+  g_bba_packet_injectors.push_back(InjectorEntry{.id = id, .fn = std::move(injector)});
+  return id;
+}
+
+// Function to unregister the BBA packet injector callback
+void UnregisterBBAPacketInjector(u64 id)
+{
+  if (id == 0)
+    return;
+  std::lock_guard<std::mutex> lock(g_bba_injectors_mutex);
+  std::erase_if(g_bba_packet_injectors, [id](const InjectorEntry& e) { return e.id == id; });
 }
 
 bool CEXIETHERNET::NetPlayBBAInterface::Activate()
@@ -56,11 +76,14 @@ bool CEXIETHERNET::NetPlayBBAInterface::Activate()
   // Initialize packet buffer
   m_packet_buffer.clear();
   
-  // Register this interface's injector callback
-  RegisterBBAPacketInjector([this](const u8* data, u32 size) {
+  // Create and store the injector callback for this interface
+  m_injector_callback = [this](const u8* data, u32 size) {
     if (m_active && !m_shutdown)
       InjectPacket(data, size);
-  });
+  };
+  
+  // Register this interface's injector callback
+  m_injector_id = RegisterBBAPacketInjector(m_injector_callback);
   
   // Log that we're ready to handle BBA packets
   INFO_LOG_FMT(SP1, "NetPlay BBA Interface ready to handle packets");
@@ -73,7 +96,12 @@ void CEXIETHERNET::NetPlayBBAInterface::Deactivate()
   INFO_LOG_FMT(SP1, "NetPlay BBA Interface deactivated");
   
   // Unregister the injector callback
-  RegisterBBAPacketInjector(nullptr);
+  if (m_injector_id != 0)
+  {
+    UnregisterBBAPacketInjector(m_injector_id);
+    m_injector_id = 0;
+    m_injector_callback = nullptr;
+  }
   
   {
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
@@ -194,15 +222,19 @@ void InjectBBAPacketFromNetPlay(const u8* data, u32 size)
   
   INFO_LOG_FMT(SP1, "Injecting BBA packet from NetPlay: {} bytes", size);
   
-  // Use the registered injector callback if available
-  if (g_bba_packet_injector)
+  // Inject the packet into all registered BBA interfaces
+  std::lock_guard<std::mutex> lock(g_bba_injectors_mutex);
+  if (!g_bba_packet_injectors.empty())
   {
-    g_bba_packet_injector(data, size);
-    INFO_LOG_FMT(SP1, "Packet injected via callback");
+    for (const auto& entry : g_bba_packet_injectors)
+    {
+      entry.fn(data, size);
+    }
+    INFO_LOG_FMT(SP1, "Packet injected into {} BBA interfaces", g_bba_packet_injectors.size());
   }
   else
   {
-    WARN_LOG_FMT(SP1, "No BBA packet injector registered, packet not injected");
+    WARN_LOG_FMT(SP1, "No BBA packet injectors registered, packet not injected");
   }
 }
 
