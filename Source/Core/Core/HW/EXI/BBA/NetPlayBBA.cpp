@@ -160,6 +160,29 @@ void CEXIETHERNET::NetPlayBBAInterface::RecvStart()
   
   INFO_LOG_FMT(SP1, "NetPlay BBA RecvStart");
   m_receiving = true;
+
+  // Flush any buffered packets that arrived before receive was started
+  std::deque<std::vector<u8>> pending;
+  {
+    std::lock_guard<std::mutex> lock(m_buffer_mutex);
+    pending.swap(m_packet_buffer);
+  }
+  for (const auto& pkt : pending)
+  {
+    const u32 size = static_cast<u32>(pkt.size());
+    const u32 min_frame = 64;
+    const u32 copy_size = std::max(size, min_frame);
+    if (copy_size > BBA_RECV_SIZE)
+    {
+      WARN_LOG_FMT(SP1, "Buffered frame too large ({}), dropping", copy_size);
+      continue;
+    }
+    std::memcpy(m_eth_ref->mRecvBuffer.get(), pkt.data(), size);
+    if (size < min_frame)
+      std::memset(m_eth_ref->mRecvBuffer.get() + size, 0, min_frame - size);
+    m_eth_ref->mRecvBufferLength = copy_size;
+    (void)m_eth_ref->RecvHandlePacket();
+  }
 }
 
 void CEXIETHERNET::NetPlayBBAInterface::RecvStop()

@@ -812,7 +812,20 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 
 void NetPlayDialog::AppendChat(const std::string& msg)
 {
-  DisplayMessage(QString::fromStdString(msg), "");
+  // Special-case BBA mode messages
+  if (msg == "BBA mode enabled: Input synchronization disabled")
+  {
+    DisplayMessage(QString::fromStdString(msg), "#ffa500");  // Orange
+  }
+  else if (msg == "BBA mode disabled: Input synchronization enabled")
+  {
+    // Hide the disabled message
+    return;
+  }
+  else
+  {
+    DisplayMessage(QString::fromStdString(msg), "");
+  }
   QApplication::alert(this);
 }
 
@@ -968,9 +981,12 @@ void NetPlayDialog::OnHostInputAuthorityChanged(bool enabled)
 
 void NetPlayDialog::OnDesync(u32 frame, const std::string& player)
 {
-  DisplayMessage(tr("Possible desync detected: %1 might have desynced at frame %2")
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (client && !client->GetNetSettings().bba_mode) {
+    DisplayMessage(tr("Possible desync detected: %1 might have desynced at frame %2")
                      .arg(QString::fromStdString(player), QString::number(frame)),
                  "red", OSD::Duration::VERY_LONG);
+  }
 }
 
 void NetPlayDialog::OnConnectionLost()

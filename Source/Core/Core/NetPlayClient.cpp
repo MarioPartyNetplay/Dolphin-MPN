@@ -2834,6 +2834,7 @@ void NetPlayClient::OnBBAMode(sf::Packet& packet)
   
   if (bba_mode)
   {
+    // Show BBA mode enabled; UI may color this message
     m_dialog->AppendChat(Common::GetStringT("BBA mode enabled: Input synchronization disabled"));
     // Register the BBA packet sender callback for this client
     ExpansionInterface::RegisterBBAPacketSenderForClient(
@@ -2845,7 +2846,6 @@ void NetPlayClient::OnBBAMode(sf::Packet& packet)
   }
   else
   {
-    m_dialog->AppendChat(Common::GetStringT("BBA mode disabled: Input synchronization enabled"));
     // Revert SP1 back to None when BBA mode is disabled (clients)
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::None);
