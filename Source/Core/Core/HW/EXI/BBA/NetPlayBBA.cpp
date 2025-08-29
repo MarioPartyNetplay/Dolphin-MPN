@@ -128,6 +128,8 @@ bool CEXIETHERNET::NetPlayBBAInterface::SendFrame(const u8* frame, u32 size)
   if (g_bba_packet_sender)
   {
     g_bba_packet_sender(frame, size);
+    // Signal DMA/transfer completion to the emulated BBA
+    m_eth_ref->SendComplete();
     return true;
   }
   
@@ -136,6 +138,8 @@ bool CEXIETHERNET::NetPlayBBAInterface::SendFrame(const u8* frame, u32 size)
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
     m_packet_buffer.push_back({frame, frame + size});
   }
+  // Signal DMA/transfer completion to the emulated BBA even if we buffered locally
+  m_eth_ref->SendComplete();
   
   return true;
 }
@@ -202,13 +206,32 @@ void CEXIETHERNET::NetPlayBBAInterface::InjectPacket(const u8* data, u32 size)
   
   INFO_LOG_FMT(SP1, "NetPlay BBA injecting packet: {} bytes", size);
   
+  // If receive is running, deliver immediately into the BBA buffer like the BuiltIn path
+  if (m_receiving)
+  {
+    const u32 min_frame = 64;
+    const u32 copy_size = std::max(size, min_frame);
+    if (copy_size > BBA_RECV_SIZE)
+    {
+      WARN_LOG_FMT(SP1, "Injected frame too large ({}), dropping", copy_size);
+      return;
+    }
+
+    // Copy and pad to minimum Ethernet frame size
+    std::memcpy(m_eth_ref->mRecvBuffer.get(), data, size);
+    if (size < min_frame)
+      std::memset(m_eth_ref->mRecvBuffer.get() + size, 0, min_frame - size);
+
+    m_eth_ref->mRecvBufferLength = copy_size;
+    (void)m_eth_ref->RecvHandlePacket();
+    return;
+  }
+
+  // Otherwise buffer it for later consumption
   {
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
     m_packet_buffer.push_back({data, data + size});
   }
-  
-  // Notify that we have data available
-  m_buffer_cv.notify_one();
 }
 
 // Function to inject BBA packets from NetPlay
