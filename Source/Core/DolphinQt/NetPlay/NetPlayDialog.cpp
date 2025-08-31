@@ -813,7 +813,7 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 void NetPlayDialog::AppendChat(const std::string& msg)
 {
   // Special-case BBA mode messages
-  if (msg == "BBA mode enabled: Input synchronization disabled")
+  if (msg == "BBA mode enabled")
   {
     DisplayMessage(QString::fromStdString(msg), "#ffa500");  // Orange
   }
