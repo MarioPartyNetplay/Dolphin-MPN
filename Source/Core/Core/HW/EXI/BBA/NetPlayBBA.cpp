@@ -23,6 +23,10 @@ namespace ExpansionInterface
 // This will be set by the NetPlay system when it initializes
 static std::function<void(const u8*, u32)> g_bba_packet_sender = nullptr;
 
+// Global flag to track if we're the first user (host)
+// First user to connect becomes the host
+std::atomic<bool> g_is_first_user{false};
+
 // Global list of active BBA interfaces for injecting packets from NetPlay
 struct InjectorEntry
 {
@@ -36,13 +40,34 @@ static std::atomic<u64> g_bba_injector_next_id{1};
 // Function to register the BBA packet sender callback
 void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender)
 {
+  INFO_LOG_FMT(SP1, "Registering BBA packet sender for NetPlay server");
   g_bba_packet_sender = sender;
+
+  // Set the first user flag to true for the server (host)
+  bool old_value = g_is_first_user.exchange(true);
+  INFO_LOG_FMT(SP1, "NetPlay BBA: Server registered as first user (host) - was {}", old_value);
 }
 
-// Function to register the BBA packet sender callback for NetPlay clients
 void RegisterBBAPacketSenderForClient(std::function<void(const u8*, u32)> sender)
 {
+  INFO_LOG_FMT(SP1, "Registering BBA packet sender for NetPlay client");
   g_bba_packet_sender = sender;
+
+  // Debug: Check current value before attempting to change
+  bool current_value = g_is_first_user.load();
+  INFO_LOG_FMT(SP1, "NetPlay BBA: Current g_is_first_user value before client reg: {}", current_value);
+
+  // Only set the first user flag to false if it's not already set to true
+  // This prevents the client from overriding the server's host status
+  if (!g_is_first_user.load())
+  {
+    g_is_first_user.store(false);
+    INFO_LOG_FMT(SP1, "NetPlay BBA: Client registered as non-first user");
+  }
+  else
+  {
+    INFO_LOG_FMT(SP1, "NetPlay BBA: Client registration ignored - server is already host");
+  }
 }
 
 // Function to register the BBA packet injector callback
@@ -136,21 +161,34 @@ bool CEXIETHERNET::NetPlayBBAInterface::SendFrame(const u8* frame, u32 size)
 
   INFO_LOG_FMT(SP1, "NetPlay BBA sending frame: {} bytes", size);
   
-  // Try to send the BBA packet through NetPlay if the callback is registered
-  if (g_bba_packet_sender)
-  {
-    g_bba_packet_sender(frame, size);
-    // Signal DMA/transfer completion to the emulated BBA
-    m_eth_ref->SendComplete();
-    return true;
-  }
+  // Debug: Check current flag value
+  bool is_first_user = g_is_first_user.load();
+  INFO_LOG_FMT(SP1, "NetPlay BBA: g_is_first_user = {}", is_first_user);
   
-  // If no callback is registered, just buffer the packet locally
+  // Buffer the packet locally first (like built-in BBA does)
+  // Only send through NetPlay if we have a proper callback and are not the host
   {
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
     m_packet_buffer.push_back({frame, frame + size});
   }
-  // Signal DMA/transfer completion to the emulated BBA even if we buffered locally
+  
+  // Try to send the BBA packet through NetPlay if the callback is registered
+  // and we're not the host (to prevent loops)
+  if (g_bba_packet_sender && !g_is_first_user.load())
+  {
+    INFO_LOG_FMT(SP1, "NetPlay BBA sending through NetPlay: {} bytes", size);
+    g_bba_packet_sender(frame, size);
+  }
+  else if (g_bba_packet_sender && g_is_first_user.load())
+  {
+    INFO_LOG_FMT(SP1, "NetPlay BBA host - buffering packet locally to prevent loop: {} bytes", size);
+  }
+  else
+  {
+    INFO_LOG_FMT(SP1, "NetPlay BBA buffering packet locally (NetPlay not ready): {} bytes", size);
+  }
+  
+  // Signal DMA/transfer completion to the emulated BBA
   m_eth_ref->SendComplete();
   
   return true;
