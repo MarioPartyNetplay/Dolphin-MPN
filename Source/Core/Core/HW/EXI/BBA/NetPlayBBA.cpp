@@ -51,22 +51,22 @@ void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender)
 void RegisterBBAPacketSenderForClient(std::function<void(const u8*, u32)> sender)
 {
   INFO_LOG_FMT(SP1, "Registering BBA packet sender for NetPlay client");
-  g_bba_packet_sender = sender;
 
-  // Debug: Check current value before attempting to change
-  bool current_value = g_is_first_user.load();
-  INFO_LOG_FMT(SP1, "NetPlay BBA: Current g_is_first_user value before client reg: {}", current_value);
-
-  // Only set the first user flag to false if it's not already set to true
-  // This prevents the client from overriding the server's host status
+  // For clients, don't overwrite the server's callback
+  // Instead, store the client callback separately if needed
+  // The server's callback should always be used for sending
   if (!g_is_first_user.load())
   {
-    g_is_first_user.store(false);
-    INFO_LOG_FMT(SP1, "NetPlay BBA: Client registered as non-first user");
+    // No server registered yet, this client becomes the "server"
+    g_bba_packet_sender = sender;
+    g_is_first_user.store(true);
+    INFO_LOG_FMT(SP1, "NetPlay BBA: Client registered as first user (acting as server)");
   }
   else
   {
-    INFO_LOG_FMT(SP1, "NetPlay BBA: Client registration ignored - server is already host");
+    // Server already registered, client callback is not needed for sending
+    // The server handles all packet distribution
+    INFO_LOG_FMT(SP1, "NetPlay BBA: Client registered - using server callback for sending");
   }
 }
 

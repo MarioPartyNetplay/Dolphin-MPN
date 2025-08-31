@@ -2669,7 +2669,7 @@ void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& p
     {
       bba_packet << byte;
     }
-    
+
     SendAsyncToClients(std::move(bba_packet), player.pid);
 
     // Inject into host's local BBA as well so the host receives client frames
@@ -2679,14 +2679,14 @@ void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& p
 
 void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
 {
-  if (size > 1518)  // Max Ethernet frame size
+  if (size == 0 || size > 1518)  // Max Ethernet frame size
   {
-    ERROR_LOG_FMT(NETPLAY, "BBA packet too large: {} bytes", size);
+    ERROR_LOG_FMT(NETPLAY, "Invalid BBA packet size: {} bytes", size);
     return;
   }
-  
-  INFO_LOG_FMT(NETPLAY, "Sending BBA packet: {} bytes", size);
-  
+
+  INFO_LOG_FMT(NETPLAY, "Host sending BBA packet: {} bytes", size);
+
   // Send BBA packet to all clients
   sf::Packet packet;
   packet << MessageID::BBAPacketData;
@@ -2695,7 +2695,7 @@ void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
   {
     packet << data[i];
   }
-  
-  SendAsyncToClients(std::move(packet));
+
+  SendAsyncToClients(std::move(packet));  // Send to ALL clients (host packet)
 }
 }  // namespace NetPlay
