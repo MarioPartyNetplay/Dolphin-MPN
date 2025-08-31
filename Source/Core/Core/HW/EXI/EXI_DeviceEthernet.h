@@ -30,6 +30,11 @@
 #include "Core/HW/EXI/BBA/TAPServerConnection.h"
 #include "Core/HW/EXI/EXI_Device.h"
 
+namespace CoreTiming
+{
+struct EventType;
+}
+
 class PointerWrap;
 
 namespace ExpansionInterface
@@ -590,6 +595,7 @@ private:
     std::atomic<bool> m_active{false};
     std::atomic<bool> m_shutdown{false};
     std::atomic<bool> m_receiving{false};
+    CoreTiming::EventType* m_event_inject = nullptr;
     
     // NetPlay integration
     void ProcessNetPlayPackets();
@@ -599,6 +605,9 @@ private:
     // Store the injector callback for proper cleanup
     std::function<void(const u8*, u32)> m_injector_callback;
     u64 m_injector_id = 0;
+
+    static void InjectCallback(Core::System& system, u64 userdata, s64 cycles_late);
+    void ProcessPendingPacketsOnCPU();
   };
 
   std::unique_ptr<NetworkInterface> m_network_interface;

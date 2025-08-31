@@ -14,6 +14,7 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/System.h"
 #include "Core/HW/EXI/EXI.h"
+#include "Core/CoreTiming.h"
 
 namespace ExpansionInterface
 {
@@ -85,6 +86,17 @@ bool CEXIETHERNET::NetPlayBBAInterface::Activate()
   // Register this interface's injector callback
   m_injector_id = RegisterBBAPacketInjector(m_injector_callback);
   
+  // Register CPU-thread event to process pending injected packets
+  if (!m_event_inject)
+  {
+    m_event_inject = m_eth_ref->m_system.GetCoreTiming().RegisterEvent(
+        "NetPlayBBAInject", [](Core::System& system, u64 userdata, s64) {
+          auto* self = reinterpret_cast<CEXIETHERNET::NetPlayBBAInterface*>(userdata);
+          if (self)
+            self->ProcessPendingPacketsOnCPU();
+        });
+  }
+
   // Log that we're ready to handle BBA packets
   INFO_LOG_FMT(SP1, "NetPlay BBA Interface ready to handle packets");
   
@@ -229,31 +241,45 @@ void CEXIETHERNET::NetPlayBBAInterface::InjectPacket(const u8* data, u32 size)
   
   INFO_LOG_FMT(SP1, "NetPlay BBA injecting packet: {} bytes", size);
   
-  // If receive is running, deliver immediately into the BBA buffer like the BuiltIn path
-  if (m_receiving)
+  // Buffer and schedule processing on CPU thread
   {
+    std::lock_guard<std::mutex> lock(m_buffer_mutex);
+    m_packet_buffer.emplace_back(data, data + size);
+  }
+  if (m_event_inject)
+  {
+    m_eth_ref->m_system.GetCoreTiming().ScheduleEvent(
+        0, m_event_inject, reinterpret_cast<u64>(this), CoreTiming::FromThread::NON_CPU);
+  }
+}
+
+void CEXIETHERNET::NetPlayBBAInterface::ProcessPendingPacketsOnCPU()
+{
+  if (!m_active || m_shutdown || !m_receiving)
+    return;
+
+  std::deque<std::vector<u8>> pending;
+  {
+    std::lock_guard<std::mutex> lock(m_buffer_mutex);
+    pending.swap(m_packet_buffer);
+  }
+
+  for (const auto& pkt : pending)
+  {
+    const u32 size = static_cast<u32>(pkt.size());
     const u32 min_frame = 64;
     const u32 copy_size = std::max(size, min_frame);
     if (copy_size > BBA_RECV_SIZE)
     {
       WARN_LOG_FMT(SP1, "Injected frame too large ({}), dropping", copy_size);
-      return;
+      continue;
     }
-
-    // Copy and pad to minimum Ethernet frame size
-    std::memcpy(m_eth_ref->mRecvBuffer.get(), data, size);
+    std::memcpy(m_eth_ref->mRecvBuffer.get(), pkt.data(), size);
     if (size < min_frame)
       std::memset(m_eth_ref->mRecvBuffer.get() + size, 0, min_frame - size);
 
     m_eth_ref->mRecvBufferLength = copy_size;
     (void)m_eth_ref->RecvHandlePacket();
-    return;
-  }
-
-  // Otherwise buffer it for later consumption
-  {
-    std::lock_guard<std::mutex> lock(m_buffer_mutex);
-    m_packet_buffer.push_back({data, data + size});
   }
 }
 
