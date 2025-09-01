@@ -2820,12 +2820,10 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
     bba_data[i] = byte;
   }
 
-  INFO_LOG_FMT(NETPLAY, "Received BBA packet from peer: {} bytes", packet_size);
+  INFO_LOG_FMT(NETPLAY, "Client received BBA packet: {} bytes", packet_size);
 
   // Inject the BBA packet into the NetPlayBBA interface
-  INFO_LOG_FMT(NETPLAY, "Injecting BBA packet into local NetPlayBBA interface");
   ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
-  INFO_LOG_FMT(NETPLAY, "BBA packet injection completed");
 }
 
 void NetPlayClient::OnBBAMode(sf::Packet& packet)
@@ -2868,7 +2866,7 @@ void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
     return;
   }
 
-  INFO_LOG_FMT(NETPLAY, "Sending BBA packet through NetPlay: {} bytes", size);
+  INFO_LOG_FMT(NETPLAY, "Client sending BBA packet to server: {} bytes", size);
 
   // Send BBA packet to the server
   sf::Packet packet;
@@ -2880,7 +2878,6 @@ void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
   }
 
   SendAsync(std::move(packet));
-  INFO_LOG_FMT(NETPLAY, "BBA packet sent through NetPlay");
 }
 }  // namespace NetPlay
 

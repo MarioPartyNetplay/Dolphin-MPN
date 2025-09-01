@@ -2685,7 +2685,7 @@ void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
     return;
   }
 
-  INFO_LOG_FMT(NETPLAY, "Server sending BBA packet: {} bytes", size);
+  INFO_LOG_FMT(NETPLAY, "Host sending BBA packet: {} bytes", size);
 
   // Send BBA packet to all clients
   sf::Packet packet;
