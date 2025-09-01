@@ -20,9 +20,128 @@
 #include "Core/HW/Memmap.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
+#include "Core/Core.h"
 
 namespace ExpansionInterface
 {
+namespace
+{
+// Utility to format MAC and IPv4 addresses and to print a concise packet summary.
+static std::string FormatMacString(const u8* mac_bytes)
+{
+  Common::MACAddress mac{};
+  std::memcpy(mac.data(), mac_bytes, mac.size());
+  return Common::MacAddressToString(mac);
+}
+
+static std::string FormatIPv4String(const u8* ip_bytes)
+{
+  return StringFromFormat("%u.%u.%u.%u", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+}
+
+static void LogPacketSummary(const char* direction, const u8* frame, u32 size)
+{
+  const Common::PacketView view(frame, size);
+  const auto ethertype_opt = view.GetEtherType();
+  if (!ethertype_opt.has_value())
+  {
+    DEBUG_LOG_FMT(SP1, "{}: invalid ethernet frame ({} bytes)", direction, size);
+    return;
+  }
+
+  const u16 ethertype = *ethertype_opt;
+  const std::string dst_mac = FormatMacString(frame);
+  const std::string src_mac = FormatMacString(frame + 6);
+
+  switch (ethertype)
+  {
+  case Common::IPV4_ETHERTYPE:
+  {
+    const auto ip_proto_opt = view.GetIPProto();
+    if (!ip_proto_opt.has_value())
+    {
+      DEBUG_LOG_FMT(SP1, "{}: IPv4 (malformed header) {} -> {} ({} bytes)", direction, src_mac,
+                    dst_mac, size);
+      return;
+    }
+
+    const u8 ip_proto = *ip_proto_opt;
+    if (ip_proto == IPPROTO_UDP)
+    {
+      const auto udp = view.GetUDPPacket();
+      if (!udp.has_value())
+      {
+        DEBUG_LOG_FMT(SP1, "{}: IPv4/UDP (malformed) {} -> {} ({} bytes)", direction, src_mac,
+                      dst_mac, size);
+        return;
+      }
+      const auto& ip = udp->ip_header;
+      const u16 src_port = Common::swap16(udp->udp_header.source_port);
+      const u16 dst_port = Common::swap16(udp->udp_header.destination_port);
+      DEBUG_LOG_FMT(SP1, "{}: IPv4/UDP {}:{} -> {}:{} len={} (eth {} -> {})", direction,
+                    FormatIPv4String(ip.source_addr.data()), src_port,
+                    FormatIPv4String(ip.destination_addr.data()), dst_port, udp->data.size(),
+                    src_mac, dst_mac);
+    }
+    else if (ip_proto == IPPROTO_TCP)
+    {
+      const auto tcp = view.GetTCPPacket();
+      if (!tcp.has_value())
+      {
+        DEBUG_LOG_FMT(SP1, "{}: IPv4/TCP (malformed) {} -> {} ({} bytes)", direction, src_mac,
+                      dst_mac, size);
+        return;
+      }
+      const auto& ip = tcp->ip_header;
+      const u16 src_port = Common::swap16(tcp->tcp_header.source_port);
+      const u16 dst_port = Common::swap16(tcp->tcp_header.destination_port);
+      const u16 flags = tcp->tcp_header.properties;
+      DEBUG_LOG_FMT(SP1, "{}: IPv4/TCP {}:{} -> {}:{} flags=0x{:04x} data={} (eth {} -> {})",
+                    direction, FormatIPv4String(ip.source_addr.data()), src_port,
+                    FormatIPv4String(ip.destination_addr.data()), dst_port, flags,
+                    tcp->data.size(), src_mac, dst_mac);
+    }
+    else if (ip_proto == IPPROTO_IGMP)
+    {
+      const Common::IPv4Header ip =
+          Common::BitCastPtr<Common::IPv4Header>(frame + Common::EthernetHeader::SIZE);
+      DEBUG_LOG_FMT(SP1, "{}: IPv4/IGMP {} -> {} (eth {} -> {})", direction,
+                    FormatIPv4String(ip.source_addr.data()),
+                    FormatIPv4String(ip.destination_addr.data()), src_mac, dst_mac);
+    }
+    else
+    {
+      DEBUG_LOG_FMT(SP1, "{}: IPv4/proto {} (eth {} -> {}) ({} bytes)", direction, ip_proto,
+                    src_mac, dst_mac, size);
+    }
+    break;
+  }
+
+  case Common::ARP_ETHERTYPE:
+  {
+    const auto arp = view.GetARPPacket();
+    if (!arp.has_value())
+    {
+      DEBUG_LOG_FMT(SP1, "{}: ARP (malformed) {} -> {} ({} bytes)", direction, src_mac, dst_mac,
+                    size);
+      return;
+    }
+    const u16 opcode = Common::swap16(arp->arp_header.opcode);
+    const u8* sip = reinterpret_cast<const u8*>(&arp->arp_header.sender_ip);
+    const u8* tip = reinterpret_cast<const u8*>(&arp->arp_header.target_ip);
+    DEBUG_LOG_FMT(SP1, "{}: ARP {} {} -> {} (eth {} -> {})", direction,
+                  opcode == 1 ? "Request" : (opcode == 2 ? "Reply" : "Opcode"),
+                  FormatIPv4String(sip), FormatIPv4String(tip), src_mac, dst_mac);
+    break;
+  }
+
+  default:
+    DEBUG_LOG_FMT(SP1, "{}: ethertype 0x{:04x} ({} bytes) {} -> {}", direction, ethertype, size,
+                  src_mac, dst_mac);
+    break;
+  }
+}
+}  // anonymous namespace
 // XXX: The BBA stores multi-byte elements as little endian.
 // Multiple parts of this implementation depend on Dolphin
 // being compiled for a little endian host.
@@ -455,6 +574,7 @@ void CEXIETHERNET::SendFromDirectFIFO()
 {
   const u8* frame = tx_fifo.get();
   const u16 size = Common::BitCastPtr<u16>(&mBbaMem[BBA_TXFIFOCNT]);
+  LogPacketSummary("TX", frame, size);
   if (m_network_interface->SendFrame(frame, size))
     m_system.GetPowerPC().GetDebugInterface().NetworkLogger()->LogBBA(frame, size);
 }
@@ -562,6 +682,8 @@ bool CEXIETHERNET::RecvHandlePacket()
   if (!RecvMACFilter())
     goto wait_for_next;
 
+  LogPacketSummary("RX", mRecvBuffer.get(), mRecvBufferLength);
+
 #ifdef BBA_TRACK_PAGE_PTRS
   INFO_LOG_FMT(SP1, "RecvHandlePacket {:x}\n{}", mRecvBufferLength,
                ArrayToString(mRecvBuffer.get(), mRecvBufferLength, 16));
@@ -646,7 +768,9 @@ bool CEXIETHERNET::RecvHandlePacket()
     mBbaMem[BBA_IR] |= INT_R;
 
     exi_status.interrupt |= exi_status.TRANSFER;
-    m_system.GetExpansionInterface().ScheduleUpdateInterrupts(CoreTiming::FromThread::NON_CPU, 0);
+    const auto from_thread = Core::IsCPUThread() ? CoreTiming::FromThread::CPU :
+                                                 CoreTiming::FromThread::NON_CPU;
+    m_system.GetExpansionInterface().ScheduleUpdateInterrupts(from_thread, 0);
   }
   else
   {

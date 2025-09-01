@@ -2805,22 +2805,27 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
   // Extract BBA packet data from the packet
   u32 packet_size;
   packet >> packet_size;
-  
-  if (packet_size > 0 && packet_size <= 1518)  // Max Ethernet frame size
+
+  if (packet_size == 0 || packet_size > 1518)  // Max Ethernet frame size
   {
-    std::vector<u8> bba_data(packet_size);
-    for (u32 i = 0; i < packet_size; ++i)
-    {
-      u8 byte;
-      packet >> byte;
-      bba_data[i] = byte;
-    }
-    
-    INFO_LOG_FMT(NETPLAY, "Received BBA packet: {} bytes", packet_size);
-    
-    // Inject the BBA packet into the NetPlayBBA interface
-    ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+    WARN_LOG_FMT(NETPLAY, "Dropping invalid BBA packet: size={} (must be 1..1518)", packet_size);
+    return;
   }
+
+  std::vector<u8> bba_data(packet_size);
+  for (u32 i = 0; i < packet_size; ++i)
+  {
+    u8 byte;
+    packet >> byte;
+    bba_data[i] = byte;
+  }
+
+  INFO_LOG_FMT(NETPLAY, "Received BBA packet from peer: {} bytes", packet_size);
+
+  // Inject the BBA packet into the NetPlayBBA interface
+  INFO_LOG_FMT(NETPLAY, "Injecting BBA packet into local NetPlayBBA interface");
+  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  INFO_LOG_FMT(NETPLAY, "BBA packet injection completed");
 }
 
 void NetPlayClient::OnBBAMode(sf::Packet& packet)
@@ -2835,7 +2840,7 @@ void NetPlayClient::OnBBAMode(sf::Packet& packet)
   if (bba_mode)
   {
     // Show BBA mode enabled; UI may color this message
-    m_dialog->AppendChat(Common::GetStringT("BBA mode enabled: Input synchronization disabled"));
+    m_dialog->AppendChat(Common::GetStringT("BBA mode enabled"));
     // Register the BBA packet sender callback for this client
     ExpansionInterface::RegisterBBAPacketSenderForClient(
         [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
@@ -2856,15 +2861,15 @@ void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
 {
   if (!m_is_connected || !m_net_settings.bba_mode)
     return;
-    
-  if (size > 1518)  // Max Ethernet frame size
+
+  if (size == 0 || size > 1518)  // Max Ethernet frame size
   {
-    ERROR_LOG_FMT(NETPLAY, "BBA packet too large: {} bytes", size);
+    ERROR_LOG_FMT(NETPLAY, "Invalid BBA packet size from client: {} bytes", size);
     return;
   }
-  
-  INFO_LOG_FMT(NETPLAY, "Sending BBA packet to server: {} bytes", size);
-  
+
+  INFO_LOG_FMT(NETPLAY, "Sending BBA packet through NetPlay: {} bytes", size);
+
   // Send BBA packet to the server
   sf::Packet packet;
   packet << MessageID::BBAPacketData;
@@ -2873,8 +2878,9 @@ void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
   {
     packet << data[i];
   }
-  
+
   SendAsync(std::move(packet));
+  INFO_LOG_FMT(NETPLAY, "BBA packet sent through NetPlay");
 }
 }  // namespace NetPlay
 
