@@ -46,6 +46,9 @@ bool operator==(const GeckoCode::Code& lhs, const GeckoCode::Code& rhs);
 constexpr u32 INSTALLER_BASE_ADDRESS = 0x80001800;
 constexpr u32 INSTALLER_END_ADDRESS = 0x80003000;
 
+constexpr u32 INSTALLER_BASE_ADDRESS_MKDD = 0x8010C4D0;
+constexpr u32 INSTALLER_END_ADDRESS_MKDD = 0x8011223B;
+
 constexpr u32 INSTALLER_BASE_ADDRESS_MP8 = 0x801D2A90;
 constexpr u32 INSTALLER_END_ADDRESS_MP8 = 0x801D9FA8;
 
