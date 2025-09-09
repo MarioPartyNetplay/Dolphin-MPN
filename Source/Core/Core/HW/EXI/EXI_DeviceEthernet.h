@@ -586,6 +586,7 @@ private:
 
 #endif
 
+  // Legacy NetPlayBBAInterface kept for linkage of helper code; not instantiated.
   class NetPlayBBAInterface : public NetworkInterface
   {
   public:
@@ -612,12 +613,12 @@ private:
     std::atomic<bool> m_shutdown{false};
     std::atomic<bool> m_receiving{false};
     CoreTiming::EventType* m_event_inject = nullptr;
-    
+
     // NetPlay integration
     void ProcessNetPlayPackets();
     void BufferPacket(const u8* frame, u32 size);
     std::optional<std::vector<u8>> GetNextPacket();
-    
+
     // Store the injector callback for proper cleanup
     std::function<void(const u8*, u32)> m_injector_callback;
     u64 m_injector_id = 0;
