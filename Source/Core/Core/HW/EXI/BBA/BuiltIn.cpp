@@ -23,6 +23,9 @@
 #include "Common/ScopeGuard.h"
 #include "Core/HW/EXI/EXI_Device.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
+#include "Core/CoreTiming.h"
+#include "Core/System.h"
 
 namespace
 {
@@ -99,6 +102,27 @@ bool CEXIETHERNET::BuiltInBBAInterface::Activate()
   (void)m_upnp_httpd.listen(Common::SSDP_PORT, sf::IpAddress(ip));
   m_upnp_httpd.setBlocking(false);
 
+  // Initialize NetPlay transport if enabled
+  if (m_use_netplay_transport)
+  {
+    m_np_shutdown = false;
+    m_np_receiving = false;
+
+    if (!m_np_event_inject)
+    {
+      m_np_event_inject = m_eth_ref->m_system.GetCoreTiming().RegisterEvent(
+          "BuiltInNPInject", [](Core::System& system, u64 userdata, s64) {
+            auto* self = reinterpret_cast<CEXIETHERNET::BuiltInBBAInterface*>(userdata);
+            if (self)
+              self->NP_ProcessPendingPacketsOnCPU();
+          });
+    }
+
+    // Subscribe for incoming BBA packets delivered by NetPlay
+    m_np_injector_id = ExpansionInterface::RegisterBBAPacketInjector(
+        [this](const u8* data, u32 size) { NP_InjectPacket(data, size); });
+  }
+
   return RecvInit();
 }
 
@@ -115,6 +139,14 @@ void CEXIETHERNET::BuiltInBBAInterface::Deactivate()
   m_network_ref.Clear();
   m_arp_table.clear();
   m_upnp_httpd.close();
+
+  // NetPlay transport cleanup
+  if (m_np_injector_id != 0)
+  {
+    ExpansionInterface::UnregisterBBAPacketInjector(m_np_injector_id);
+    m_np_injector_id = 0;
+  }
+  m_np_shutdown = true;
 
   // Wait for read thread to exit.
   if (m_read_thread.joinable())
@@ -609,6 +641,17 @@ const Common::MACAddress& CEXIETHERNET::BuiltInBBAInterface::ResolveAddress(u32 
 
 bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
 {
+  if (m_use_netplay_transport)
+  {
+    // Forward frames over NetPlay when acting as client; host buffers locally to avoid loops
+    if (!ExpansionInterface::g_is_first_user.load())
+    {
+      ExpansionInterface::SendBBAPacketViaNetPlay(frame, size);
+    }
+    m_eth_ref->SendComplete();
+    return true;
+  }
+
   std::lock_guard<std::mutex> lock(m_mtx);
   const Common::PacketView view(frame, size);
 
@@ -781,9 +824,14 @@ void CEXIETHERNET::BuiltInBBAInterface::RecvStart()
 {
   if (m_read_enabled.IsSet())
     return;
-  InitUDPPort(26502);  // Kirby Air Ride
-  InitUDPPort(26512);  // Mario Kart: Double Dash!! and 1080° Avalanche
+  if (!m_use_netplay_transport)
+  {
+    InitUDPPort(26502);  // Kirby Air Ride
+    InitUDPPort(26512);  // Mario Kart: Double Dash!! and 1080° Avalanche
+  }
   m_read_enabled.Set();
+  if (m_use_netplay_transport)
+    m_np_receiving = true;
 }
 
 void CEXIETHERNET::BuiltInBBAInterface::RecvStop()
@@ -792,6 +840,48 @@ void CEXIETHERNET::BuiltInBBAInterface::RecvStop()
   m_network_ref.Clear();
   m_queue_read = 0;
   m_queue_write = 0;
+  if (m_use_netplay_transport)
+    m_np_receiving = false;
+}
+
+// NetPlay transport: injection and CPU-thread processing
+void CEXIETHERNET::BuiltInBBAInterface::NP_InjectPacket(const u8* data, u32 size)
+{
+  if (!data || size == 0)
+    return;
+  {
+    std::lock_guard<std::mutex> lk(m_np_buffer_mutex);
+    m_np_packet_buffer.emplace_back(data, data + size);
+  }
+  if (m_np_event_inject)
+  {
+    m_eth_ref->m_system.GetCoreTiming().ScheduleEvent(
+        0, m_np_event_inject, reinterpret_cast<u64>(this), CoreTiming::FromThread::NON_CPU);
+  }
+}
+
+void CEXIETHERNET::BuiltInBBAInterface::NP_ProcessPendingPacketsOnCPU()
+{
+  if (!m_use_netplay_transport || m_np_shutdown || !m_np_receiving)
+    return;
+  std::deque<std::vector<u8>> pending;
+  {
+    std::lock_guard<std::mutex> lk(m_np_buffer_mutex);
+    pending.swap(m_np_packet_buffer);
+  }
+  for (const auto& pkt : pending)
+  {
+    const u32 size = static_cast<u32>(pkt.size());
+    const u32 min_frame = 64;
+    const u32 copy_size = std::max(size, min_frame);
+    if (copy_size > BBA_RECV_SIZE)
+      continue;
+    std::memcpy(m_eth_ref->mRecvBuffer.get(), pkt.data(), size);
+    if (size < min_frame)
+      std::memset(m_eth_ref->mRecvBuffer.get() + size, 0, min_frame - size);
+    m_eth_ref->mRecvBufferLength = copy_size;
+    (void)m_eth_ref->RecvHandlePacket();
+  }
 }
 }  // namespace ExpansionInterface
 

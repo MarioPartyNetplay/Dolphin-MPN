@@ -26,6 +26,12 @@ static std::function<void(const u8*, u32)> g_bba_packet_sender = nullptr;
 // Global flag to track if we're the first user (host)
 // First user to connect becomes the host
 std::atomic<bool> g_is_first_user{false};
+void SendBBAPacketViaNetPlay(const u8* data, u32 size)
+{
+  if (g_bba_packet_sender && data && size > 0)
+    g_bba_packet_sender(data, size);
+}
+
 
 // Global list of active BBA interfaces for injecting packets from NetPlay
 struct InjectorEntry

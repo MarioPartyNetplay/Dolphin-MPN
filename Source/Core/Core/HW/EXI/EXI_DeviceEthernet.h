@@ -446,6 +446,8 @@ private:
         : NetworkInterface(eth_ref), m_dns_ip(std::move(dns_ip)), m_local_ip(std::move(local_ip))
     {
     }
+    // When enabled, BuiltIn will route traffic over NetPlay transport instead of OS sockets
+    void SetUseNetPlayTransport(bool use) { m_use_netplay_transport = use; }
     bool Activate() override;
     void Deactivate() override;
     bool IsActivated() override;
@@ -490,6 +492,20 @@ private:
     void HandleUDPFrame(const Common::UDPPacket& packet);
     void HandleUPnPClient();
     const Common::MACAddress& ResolveAddress(u32 inet_ip);
+
+    // NetPlay transport integration
+    bool m_use_netplay_transport = false;
+    std::mutex m_np_buffer_mutex;
+    std::deque<std::vector<u8>> m_np_packet_buffer;
+    std::atomic<bool> m_np_shutdown{false};
+    std::atomic<bool> m_np_receiving{false};
+    CoreTiming::EventType* m_np_event_inject = nullptr;
+    // registration id for NetPlay injector
+    u64 m_np_injector_id = 0;
+    // Called by NetPlay when a BBA packet arrives for injection
+    void NP_InjectPacket(const u8* data, u32 size);
+    // Runs on CPU thread to deliver pending injected packets into BBA
+    void NP_ProcessPendingPacketsOnCPU();
   };
 
 #if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))

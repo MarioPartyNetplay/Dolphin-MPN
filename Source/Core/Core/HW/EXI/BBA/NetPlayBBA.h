@@ -17,6 +17,9 @@ class CEXIETHERNET;
 // Function to inject BBA packets from NetPlay
 void InjectBBAPacketFromNetPlay(const u8* data, u32 size);
 
+// Function to send BBA packets via NetPlay distribution (no-op if not available)
+void SendBBAPacketViaNetPlay(const u8* data, u32 size);
+
 // Function to inject packets into BBA interfaces (internal use)
 void InjectPacket(const u8* data, u32 size);
 
