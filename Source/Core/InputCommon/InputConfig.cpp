@@ -75,10 +75,13 @@ bool InputConfig::LoadConfig()
       !inifile.GetSections().empty())
   {
     int n = 0;
-
     std::vector<std::string> controller_names;
     for (auto& controller : m_controllers)
     {
+      if (n >= MAX_BBMOTES)  // Prevent out-of-bounds access
+        break;
+      if (!controller)
+        continue;
       Common::IniFile::Section config;
       // Load settings from ini
       if (useProfile[n])
@@ -99,8 +102,6 @@ bool InputConfig::LoadConfig()
       controller->LoadConfig(&config);
       controller->UpdateReferences(g_controller_interface);
       controller_names.push_back(controller->GetName());
-
-      // Next profile
       n++;
     }
 
@@ -111,13 +112,15 @@ bool InputConfig::LoadConfig()
   {
     // Only load the default profile for the first controller and clear the others,
     // otherwise they would all share the same mappings on the same (default) device
-    if (m_controllers.size() > 0)
+    if (m_controllers.size() > 0 && m_controllers[0])
     {
       m_controllers[0]->LoadDefaults(g_controller_interface);
       m_controllers[0]->UpdateReferences(g_controller_interface);
     }
     for (size_t i = 1; i < m_controllers.size(); ++i)
     {
+      if (!m_controllers[i])
+        continue;
       // Calling the base version just clears all settings without overwriting them with a default
       m_controllers[i]->EmulatedController::LoadDefaults(g_controller_interface);
       m_controllers[i]->UpdateReferences(g_controller_interface);
@@ -146,6 +149,8 @@ void InputConfig::SaveConfig()
 
 ControllerEmu::EmulatedController* InputConfig::GetController(int index) const
 {
+  if (index < 0 || static_cast<size_t>(index) >= m_controllers.size() || !m_controllers[index])
+    return nullptr;
   return m_controllers.at(index).get();
 }
 
