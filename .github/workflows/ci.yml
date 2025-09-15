@@ -405,8 +405,6 @@ jobs:
     #   run: ninja dolphin-mpn
     - name: Prepare Build Artifacts
       run: >
-        mv dolphin build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
-
         mkdir -p build/OUT
 
         rsync -av build/Binaries/DolphinQt.app/ build/OUT/Dolphin-MPN.app/
