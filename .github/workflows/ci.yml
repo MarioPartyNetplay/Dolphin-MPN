@@ -168,7 +168,7 @@ jobs:
           bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
 
   build_macos:
-    name: macOS Build universal
+    name: macOS Build x86_64
     runs-on: macos-14
     steps:
     - name: Checkout Repository
@@ -405,9 +405,6 @@ jobs:
     #   run: ninja dolphin-mpn
     - name: Prepare Build Artifacts
       run: >
-        lipo -create build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
-        build-arm/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt -o dolphin
-
         mv dolphin build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
 
         mkdir -p build/OUT
@@ -416,7 +413,7 @@ jobs:
 
         cd build/OUT
 
-        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
+        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-x86_64.dmg
 
         rm -rf Dolphin-MPN.app
     # - name: Codesign Executable
