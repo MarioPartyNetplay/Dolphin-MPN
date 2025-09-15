@@ -243,7 +243,7 @@ jobs:
         echo "Installing SDL..."
         tar xf "$SDL.tar.gz"
         cd "$SDL"
-        CC="clang -arch x86_64 -arch arm64" ./configure --prefix "$INSTALLDIR" --without-x
+        CC="clang -arch x86_64" ./configure --prefix "$INSTALLDIR" --without-x
         make "-j$NPROCS"
         make install
         cd ..
@@ -354,7 +354,6 @@ jobs:
       with:
         path: |
           build
-          build-arm
           ~/.cache/cmake
           ~/.cache/ninja
         key: ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-${{ github.sha }}
@@ -392,18 +391,18 @@ jobs:
               -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
               "${COMMON_ARGS[@]}" \
               -B build .
-        cmake -DCMAKE_OSX_ARCHITECTURES=arm64 \
-              -DCMAKE_SYSTEM_PROCESSOR=arm64 \
-              -DCMAKE_SYSTEM_NAME=Darwin \
-              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-              "${COMMON_ARGS[@]}" \
-              -B build-arm .
+    #    cmake -DCMAKE_OSX_ARCHITECTURES=arm64 \
+    #          -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+    #          -DCMAKE_SYSTEM_NAME=Darwin \
+    #          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+    #          "${COMMON_ARGS[@]}" \
+    #          -B build-arm .
     - name: Build Dolphin (x86_64)
       working-directory: build
       run: ninja dolphin-mpn
-    - name: Build Dolphin (arm64)
-      working-directory: build-arm
-      run: ninja dolphin-mpn
+    # - name: Build Dolphin (arm64)
+    #   working-directory: build-arm
+    #   run: ninja dolphin-mpn
     - name: Prepare Build Artifacts
       run: >
         lipo -create build/Binaries/DolphinQt.app/Contents/MacOS/DolphinQt
