@@ -3,7 +3,6 @@
 
 #include "DolphinQt/Config/GamecubeControllersWidget.h"
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -97,8 +96,6 @@ void GamecubeControllersWidget::CreateLayout()
     m_gc_layout->addWidget(gc_button, controller_row, 2);
   }
 
-
-
   m_gc_box->setLayout(m_gc_layout);
 
   auto* layout = new QVBoxLayout;
@@ -118,8 +115,6 @@ void GamecubeControllersWidget::ConnectWidgets()
     });
     connect(m_gc_buttons[i], &QPushButton::clicked, this, [this, i] { OnGCPadConfigure(i); });
   }
-
-
 }
 
 void GamecubeControllersWidget::OnGCTypeChanged(size_t index)
@@ -188,8 +183,6 @@ void GamecubeControllersWidget::LoadSettings(Core::State state)
       OnGCTypeChanged(i);
     }
   }
-
-
 }
 
 void GamecubeControllersWidget::SaveSettings()
@@ -209,14 +202,11 @@ void GamecubeControllersWidget::SaveSettings()
         system.GetSerialInterface().ChangeDevice(si_device, static_cast<s32>(i));
       }
     }
-
-
   }
-
-  SConfig::GetInstance().SaveSettings();
-
   if (GCAdapter::UseAdapter())
     GCAdapter::StartScanThread();
   else
     GCAdapter::StopScanThread();
+
+  SConfig::GetInstance().SaveSettings();
 }
