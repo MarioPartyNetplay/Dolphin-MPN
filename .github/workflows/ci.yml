@@ -445,8 +445,8 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-macOS-universal
-        path: build/OUT/DolphinMPN-macOS-universal.dmg
+        name: DolphinMPN-macOS-x86_64
+        path: build/OUT/DolphinMPN-macOS-x86_64.dmg
         
   build_windows_x86_64:
     name: Windows x86_64
