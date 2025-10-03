@@ -67,6 +67,7 @@ void GeneralPane::CreateLayout()
   m_main_layout = new QVBoxLayout;
   // Create layout here
   CreateBasic();
+  CreateAutoUpdate();
   CreateFallbackRegion();
 
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
@@ -195,6 +196,33 @@ void GeneralPane::CreateFallbackRegion()
   fallback_region_group_layout->addWidget(fallback_region_description);
 }
 
+/*void GeneralPane::CreateAutoUpdate()
+{
+  if (!AutoUpdateChecker::SystemSupportsAutoUpdates())
+    return;
+
+  auto* auto_update_group = new QGroupBox(tr("Auto Update"));
+  auto* auto_update_group_layout = new QVBoxLayout;
+  auto_update_group->setLayout(auto_update_group_layout);
+  m_main_layout->addWidget(auto_update_group);
+
+  auto* auto_update_dropdown_layout = new QFormLayout;
+  auto_update_dropdown_layout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+  auto_update_dropdown_layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  auto_update_group_layout->addLayout(auto_update_dropdown_layout);
+
+  m_combobox_update_track = new QComboBox(this);
+
+  m_combobox_update_track->addItem(tr("Don't Auto-Update"));
+  m_combobox_update_track->addItem(tr("Release Updates"));
+  m_combobox_update_track->addItem(tr("Development Updates"));
+
+  auto_update_dropdown_layout->addRow(tr("Auto Update:"), m_combobox_update_track);
+
+  connect(m_combobox_update_track, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          &GeneralPane::OnSaveConfig);
+}*/
+
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
 void GeneralPane::CreateAnalytics()
 {
@@ -256,11 +284,21 @@ void GeneralPane::LoadConfig()
   const QSignalBlocker blocker(this);
 
   if (AutoUpdateChecker::SystemSupportsAutoUpdates())
+  {
+    const QString current_track = Settings::Instance().GetAutoUpdateTrack();
+    int index = AUTO_UPDATE_DISABLE_INDEX;
+    if (current_track == QString::fromStdString(AUTO_UPDATE_BETA_STRING))
+      index = AUTO_UPDATE_BETA_INDEX;
+    else if (current_track == QString::fromStdString(AUTO_UPDATE_DEV_STRING))
+      index = AUTO_UPDATE_DEV_INDEX;
+    SignalBlocking(m_combobox_update_track)->setCurrentIndex(index);
+  }
 
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
-    SignalBlocking(m_checkbox_enable_analytics)
-        ->setChecked(Settings::Instance().IsAnalyticsEnabled());
+  SignalBlocking(m_checkbox_enable_analytics)
+      ->setChecked(Settings::Instance().IsAnalyticsEnabled());
 #endif
+
   SignalBlocking(m_checkbox_dualcore)->setChecked(Config::Get(Config::MAIN_CPU_THREAD));
   SignalBlocking(m_checkbox_cheats)->setChecked(Settings::Instance().GetCheatsEnabled());
   SignalBlocking(m_combobox_codehandler)->setCurrentIndex(Config::Get(Config::MAIN_CODE_HANDLER));
