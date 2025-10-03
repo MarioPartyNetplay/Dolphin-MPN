@@ -229,7 +229,7 @@ static void ReadThreadFunc()
         {
           consecutive_pipe_errors = 0;
           ERROR_LOG_FMT(CONTROLLERINTERFACE, "Too many pipe errors, resetting device");
-          Reset(CalledFromReadThread::No);
+          Reset();
           return;
         }
         Common::YieldCPU();
