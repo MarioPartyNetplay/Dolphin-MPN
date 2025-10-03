@@ -30,18 +30,11 @@
 #include "DolphinQt/QtUtils/SignalBlocking.h"
 #include "DolphinQt/Settings.h"
 
-#include "UICommon/AutoUpdate.h"
 #ifdef USE_DISCORD_PRESENCE
 #include "UICommon/DiscordPresence.h"
 #endif
 
-constexpr int AUTO_UPDATE_DISABLE_INDEX = 0;
-constexpr int AUTO_UPDATE_BETA_INDEX = 1;
-constexpr int AUTO_UPDATE_DEV_INDEX = 2;
-
-constexpr const char* AUTO_UPDATE_DISABLE_STRING = "";
-constexpr const char* AUTO_UPDATE_BETA_STRING = "beta";
-constexpr const char* AUTO_UPDATE_DEV_STRING = "dev";
+// Auto-update constants removed
 
 constexpr int FALLBACK_REGION_NTSCJ_INDEX = 0;
 constexpr int FALLBACK_REGION_NTSCU_INDEX = 1;
@@ -67,7 +60,6 @@ void GeneralPane::CreateLayout()
   m_main_layout = new QVBoxLayout;
   // Create layout here
   CreateBasic();
-  CreateAutoUpdate();
   CreateFallbackRegion();
 
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
@@ -283,17 +275,6 @@ void GeneralPane::LoadConfig()
 {
   const QSignalBlocker blocker(this);
 
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    const QString current_track = Settings::Instance().GetAutoUpdateTrack();
-    int index = AUTO_UPDATE_DISABLE_INDEX;
-    if (current_track == QString::fromStdString(AUTO_UPDATE_BETA_STRING))
-      index = AUTO_UPDATE_BETA_INDEX;
-    else if (current_track == QString::fromStdString(AUTO_UPDATE_DEV_STRING))
-      index = AUTO_UPDATE_DEV_INDEX;
-    SignalBlocking(m_combobox_update_track)->setCurrentIndex(index);
-  }
-
 #if defined(USE_ANALYTICS) && USE_ANALYTICS
   SignalBlocking(m_checkbox_enable_analytics)
       ->setChecked(Settings::Instance().IsAnalyticsEnabled());
@@ -328,25 +309,7 @@ void GeneralPane::LoadConfig()
     SignalBlocking(m_combobox_fallback_region)->setCurrentIndex(FALLBACK_REGION_NTSCJ_INDEX);
 }
 
-static QString UpdateTrackFromIndex(int index)
-{
-  QString value;
-
-  switch (index)
-  {
-  case AUTO_UPDATE_DISABLE_INDEX:
-    value = QString::fromStdString(AUTO_UPDATE_DISABLE_STRING);
-    break;
-  case AUTO_UPDATE_BETA_INDEX:
-    value = QString::fromStdString(AUTO_UPDATE_BETA_STRING);
-    break;
-  case AUTO_UPDATE_DEV_INDEX:
-    value = QString::fromStdString(AUTO_UPDATE_DEV_STRING);
-    break;
-  }
-
-  return value;
-}
+// UpdateTrackFromIndex function removed
 
 static DiscIO::Region UpdateFallbackRegionFromIndex(int index)
 {
@@ -378,11 +341,6 @@ void GeneralPane::OnSaveConfig()
   Config::ConfigChangeCallbackGuard config_guard;
 
   auto& settings = SConfig::GetInstance();
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    Settings::Instance().SetAutoUpdateTrack(
-        UpdateTrackFromIndex(m_combobox_update_track->currentIndex()));
-  }
 
 #ifdef USE_DISCORD_PRESENCE
   Discord::SetDiscordPresenceEnabled(m_checkbox_discord_presence->isChecked());
@@ -453,25 +411,7 @@ void GeneralPane::OnCodeHandlerChanged(int index)
                  "<br><br>This setting cannot be changed while emulation is active."
                  "<br><br><dolphin_emphasis>If unsure, leave this checked.</dolphin_emphasis>");
 #endif
-  static constexpr char TR_UPDATE_TRACK_DESCRIPTION[] = QT_TR_NOOP(
-      "Selects which update track Dolphin uses when checking for updates at startup. If a new "
-      "update is available, Dolphin will show a list of changes made since your current version "
-      "and ask you if you want to update."
-      "<br><br>The Dev track has the latest version of Dolphin which often updates multiple times "
-      "per day. Select this track if you want the newest features and fixes."
-      "<br><br>The Releases track has an update every few months. Some reasons you might prefer to "
-      "use this track:"
-      "<br>- You prefer using versions that have had additional testing."
-      "<br>- NetPlay requires players to have the same Dolphin version, and the latest Release "
-      "version will have the most players to match with."
-      "<br>- You frequently use Dolphin's savestate system, which doesn't guarantee backward "
-      "compatibility of savestates between Dolphin versions. If this applies to you, make sure you "
-      "make an in-game save before updating (i.e. save your game in the same way you would on a "
-      "physical GameCube or Wii), then load the in-game save after updating Dolphin and before "
-      "making any new savestates."
-      "<br><br>Selecting \"Don't Update\" will prevent Dolphin from automatically checking for "
-      "updates."
-      "<br><br><dolphin_emphasis>If unsure, select Releases.</dolphin_emphasis>");
+  // TR_UPDATE_TRACK_DESCRIPTION removed (auto-update functionality disabled)
   static constexpr char TR_FALLBACK_REGION_DESCRIPTION[] =
       QT_TR_NOOP("Sets the region used for titles whose region cannot be determined automatically."
                  "<br><br>This setting cannot be changed while emulation is active.");
@@ -500,12 +440,6 @@ void GeneralPane::OnCodeHandlerChanged(int index)
 #endif
 
   m_combobox_speedlimit->SetTitle(tr("Speed Limit"));
-
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    m_combobox_update_track->SetTitle(tr("Auto Update"));
-    m_combobox_update_track->SetDescription(tr(TR_UPDATE_TRACK_DESCRIPTION));
-  }
 
   m_combobox_fallback_region->SetTitle(tr("Fallback Region"));
   m_combobox_fallback_region->SetDescription(tr(TR_FALLBACK_REGION_DESCRIPTION));
