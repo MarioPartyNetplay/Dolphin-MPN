@@ -118,3 +118,7 @@
 [submodule "Externals/Cross-Compatible-FileLock-Windows-and-Linux"]
 	path = Externals/Cross-Compatible-FileLock-Windows-and-Linux
 	url = https://github.com/KaganCanSit/Cross-Compatible-FileLock-Windows-and-Linux.git
+[submodule "Externals/glslang/glslang"]
+	path = Externals/glslang/glslang
+	url = https://github.com/KhronosGroup/glslang.git
+	shallow = true

@@ -119,8 +119,8 @@ constexpr Result ExtractBits(const T src) noexcept
 template <typename T>
 constexpr bool IsValidLowMask(const T mask) noexcept
 {
-  static_assert(std::is_integral<T>::value, "Mask must be an integral type.");
-  static_assert(std::is_unsigned<T>::value, "Signed masks can introduce hard to find bugs.");
+  static_assert(std::is_integral_v<T>, "Mask must be an integral type.");
+  static_assert(std::is_unsigned_v<T>, "Signed masks can introduce hard to find bugs.");
 
   // Can be efficiently determined without looping or bit counting. It's the counterpart
   // to https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2
@@ -140,11 +140,10 @@ public:
   explicit BitCastPtrType(PtrType* ptr) : m_ptr(ptr) {}
 
   // Enable operator= only for pointers to non-const data
-  template <typename S>
-  inline typename std::enable_if<std::is_same<S, T>() && !std::is_const<PtrType>()>::type
-  operator=(const S& source)
+  auto& operator=(const T& source) requires(!std::is_const_v<PtrType>)
   {
     std::memcpy(m_ptr, &source, sizeof(source));
+    return *this;
   }
 
   inline operator T() const
@@ -154,14 +153,27 @@ public:
     return result;
   }
 
+  inline auto operator[](std::size_t index) const
+  {
+    using S = std::conditional_t<std::is_const<PtrType>::value, const std::byte, std::byte>;
+    S* const target = reinterpret_cast<S*>(m_ptr) + index * sizeof(T);
+    return BitCastPtrType<T, S>{target};
+  }
+
 private:
   PtrType* m_ptr;
 };
 
 // Provides an aliasing-safe alternative to reinterpret_cast'ing pointers to structs
 // Conversion constructor and operator= provided for a convenient syntax.
-// Usage: MyStruct s = BitCastPtr<MyStruct>(some_ptr);
+// Usage:
+// MyStruct s = BitCastPtr<MyStruct>(some_ptr);
 // BitCastPtr<MyStruct>(some_ptr) = s;
+//
+// Array example:
+// BitCastPtr<MyStruct> unaligned_array(unaligned_ptr);
+// MyStruct s = unaligned_array[2];
+// unaligned_array[2] = s;
 template <typename T, typename PtrType>
 inline auto BitCastPtr(PtrType* ptr) noexcept -> BitCastPtrType<T, PtrType>
 {

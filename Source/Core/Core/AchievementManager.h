@@ -29,6 +29,7 @@
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
 #include "Common/Event.h"
+#include "Common/HookableEvent.h"
 #include "Common/HttpRequest.h"
 #include "Common/JsonUtil.h"
 #include "Common/Lazy.h"
@@ -119,11 +120,10 @@ public:
     bool rich_presence = false;
     int failed_login_code = 0;
   };
-  using UpdateCallback = std::function<void(const UpdatedItems&)>;
+  using UpdateEvent = Common::HookableEvent<"AchievementManagerUpdate", const UpdatedItems&>;
 
   static AchievementManager& GetInstance();
   void Init(void* hwnd);
-  void SetUpdateCallback(UpdateCallback callback);
   void Login(const std::string& password);
   bool HasAPIToken() const;
   void LoadGame(const DiscIO::Volume* volume);
@@ -149,10 +149,14 @@ public:
                                 u16 revision) const;
   void FilterApprovedARCodes(std::vector<ActionReplay::ARCode>& codes, const std::string& game_id,
                              u16 revision) const;
-  bool CheckApprovedGeckoCode(const Gecko::GeckoCode& code, const std::string& game_id,
-                              u16 revision) const;
-  bool CheckApprovedARCode(const ActionReplay::ARCode& code, const std::string& game_id,
+  bool ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code, const std::string& game_id,
+                                  u16 revision) const;
+  bool ShouldARCodeBeActivated(const ActionReplay::ARCode& code, const std::string& game_id,
+                               u16 revision) const;
+  bool IsApprovedGeckoCode(const Gecko::GeckoCode& code, const std::string& game_id,
                            u16 revision) const;
+  bool IsApprovedARCode(const ActionReplay::ARCode& code, const std::string& game_id,
+                        u16 revision) const;
 
   void SetSpectatorMode();
   std::string_view GetPlayerDisplayName() const;
@@ -170,12 +174,9 @@ public:
   std::vector<std::string> GetActiveLeaderboards() const;
 
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
+  using DevMenuUpdateEvent = Common::HookableEvent<"AchievementManagerDevMenuUpdate">;
   const rc_client_raintegration_menu_t* GetDevelopmentMenu();
   u32 ActivateDevMenuItem(u32 menu_item_id);
-  void SetDevMenuUpdateCallback(std::function<void(void)> callback)
-  {
-    m_dev_menu_callback = callback;
-  }
   bool CheckForModifications() { return rc_client_raintegration_has_modifications(m_client); }
 #endif  // RC_CLIENT_SUPPORTS_RAINTEGRATION
 
@@ -223,7 +224,9 @@ private:
   template <typename T>
   void FilterApprovedIni(std::vector<T>& codes, const std::string& game_id, u16 revision) const;
   template <typename T>
-  bool CheckApprovedCode(const T& code, const std::string& game_id, u16 revision) const;
+  bool ShouldCodeBeActivated(const T& code, const std::string& game_id, u16 revision) const;
+  template <typename T>
+  bool IsApprovedCode(const T& code, const std::string& game_id, u16 revision) const;
   Common::SHA1::Digest GetCodeHash(const PatchEngine::Patch& patch) const;
   Common::SHA1::Digest GetCodeHash(const Gecko::GeckoCode& code) const;
   Common::SHA1::Digest GetCodeHash(const ActionReplay::ARCode& code) const;
@@ -267,7 +270,6 @@ private:
   rc_client_t* m_client{};
   std::atomic<Core::System*> m_system{};
   bool m_is_runtime_initialized = false;
-  UpdateCallback m_update_callback = [](const UpdatedItems&) {};
   std::unique_ptr<DiscIO::Volume> m_loading_volume;
   Config::ConfigChangedCallbackID m_config_changed_callback_id;
   Badge m_default_player_badge;
@@ -294,7 +296,6 @@ private:
 
   bool m_dll_found = false;
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
-  std::function<void(void)> m_dev_menu_callback;
   std::vector<u8> m_cloned_memory;
   std::recursive_mutex m_memory_lock;
   std::string m_title_estimate;
@@ -338,14 +339,14 @@ public:
 
   constexpr bool IsHardcoreModeActive() { return false; }
 
-  constexpr bool CheckApprovedGeckoCode(const Gecko::GeckoCode& code, const std::string& game_id,
-                                        u16 revision)
+  constexpr bool ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code,
+                                            const std::string& game_id, u16 revision)
   {
     return true;
   }
 
-  constexpr bool CheckApprovedARCode(const ActionReplay::ARCode& code, const std::string& game_id,
-                                     u16 revision)
+  constexpr bool ShouldARCodeBeActivated(const ActionReplay::ARCode& code,
+                                         const std::string& game_id, u16 revision)
   {
     return true;
   }

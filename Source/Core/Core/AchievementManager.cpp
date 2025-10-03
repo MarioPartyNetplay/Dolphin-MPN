@@ -122,16 +122,6 @@ picojson::value AchievementManager::LoadApprovedList()
   return temp;
 }
 
-void AchievementManager::SetUpdateCallback(UpdateCallback callback)
-{
-  m_update_callback = std::move(callback);
-
-  if (!m_update_callback)
-    m_update_callback = [](UpdatedItems) {};
-
-  m_update_callback(UpdatedItems{.all = true});
-}
-
 void AchievementManager::Login(const std::string& password)
 {
   if (!m_client)
@@ -354,7 +344,7 @@ void AchievementManager::DoFrame()
   {
     m_last_rp_time = current_time;
     rc_client_get_rich_presence_message(m_client, m_rich_presence.data(), RP_SIZE);
-    m_update_callback(UpdatedItems{.rich_presence = true});
+    UpdateEvent::Trigger(UpdatedItems{.rich_presence = true});
     if (Config::Get(Config::RA_DISCORD_PRESENCE_ENABLED))
       Discord::UpdateDiscordPresence();
   }
@@ -460,15 +450,18 @@ void AchievementManager::FilterApprovedIni(std::vector<T>& codes, const std::str
 
   for (auto& code : codes)
   {
-    if (code.enabled && !CheckApprovedCode(code, game_id, revision))
+    if (code.enabled && !IsApprovedCode(code, game_id, revision))
       code.enabled = false;
   }
 }
 
 template <typename T>
-bool AchievementManager::CheckApprovedCode(const T& code, const std::string& game_id,
-                                           u16 revision) const
+bool AchievementManager::ShouldCodeBeActivated(const T& code, const std::string& game_id,
+                                               u16 revision) const
 {
+  if (!code.enabled)
+    return false;
+
   if (!IsHardcoreModeActive())
     return true;
 
@@ -478,33 +471,42 @@ bool AchievementManager::CheckApprovedCode(const T& code, const std::string& gam
 
   INFO_LOG_FMT(ACHIEVEMENTS, "Verifying code {}", code.name);
 
-  bool verified = false;
+  if (IsApprovedCode(code, game_id, revision))
+    return true;
 
-  auto hash = Common::SHA1::DigestToString(GetCodeHash(code));
+  OSD::AddMessage(fmt::format("Failed to verify code {} for game ID {}.", code.name, game_id),
+                  OSD::Duration::VERY_LONG, OSD::Color::RED);
+  OSD::AddMessage("Disable hardcore mode to enable this code.", OSD::Duration::VERY_LONG,
+                  OSD::Color::RED);
+
+  return false;
+}
+
+template <typename T>
+bool AchievementManager::IsApprovedCode(const T& code, const std::string& game_id,
+                                        u16 revision) const
+{
+  // Approved codes list failed to hash
+  if (!m_ini_root->is<picojson::value::object>())
+    return false;
+
+  const auto hash = Common::SHA1::DigestToString(GetCodeHash(code));
 
   for (const std::string& filename : ConfigLoaders::GetGameIniFilenames(game_id, revision))
   {
-    auto config = filename.substr(0, filename.length() - 4);
+    const auto config = filename.substr(0, filename.length() - 4);
     if (m_ini_root->contains(config))
     {
-      auto ini_config = m_ini_root->get(config);
+      const auto ini_config = m_ini_root->get(config);
       if (ini_config.is<picojson::object>() && ini_config.contains(code.name))
       {
-        auto ini_code = ini_config.get(code.name);
-        if (ini_code.template is<std::string>())
-          verified = (ini_code.template get<std::string>() == hash);
+        const auto ini_code = ini_config.get(code.name);
+        if (ini_code.template is<std::string>() && ini_code.template get<std::string>() == hash)
+          return true;
       }
     }
   }
-
-  if (!verified)
-  {
-    OSD::AddMessage(fmt::format("Failed to verify code {} for game ID {}.", code.name, game_id),
-                    OSD::Duration::VERY_LONG, OSD::Color::RED);
-    OSD::AddMessage("Disable hardcore mode to enable this code.", OSD::Duration::VERY_LONG,
-                    OSD::Color::RED);
-  }
-  return verified;
+  return false;
 }
 
 Common::SHA1::Digest AchievementManager::GetCodeHash(const PatchEngine::Patch& patch) const
@@ -564,16 +566,27 @@ void AchievementManager::FilterApprovedARCodes(std::vector<ActionReplay::ARCode>
   FilterApprovedIni(codes, game_id, revision);
 }
 
-bool AchievementManager::CheckApprovedGeckoCode(const Gecko::GeckoCode& code,
-                                                const std::string& game_id, u16 revision) const
+bool AchievementManager::ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code,
+                                                    const std::string& game_id, u16 revision) const
 {
-  return CheckApprovedCode(code, game_id, revision);
+  return ShouldCodeBeActivated(code, game_id, revision);
 }
 
-bool AchievementManager::CheckApprovedARCode(const ActionReplay::ARCode& code,
+bool AchievementManager::ShouldARCodeBeActivated(const ActionReplay::ARCode& code,
+                                                 const std::string& game_id, u16 revision) const
+{
+  return ShouldCodeBeActivated(code, game_id, revision);
+}
+
+bool AchievementManager::IsApprovedGeckoCode(const Gecko::GeckoCode& code,
                                              const std::string& game_id, u16 revision) const
 {
-  return CheckApprovedCode(code, game_id, revision);
+  return IsApprovedCode(code, game_id, revision);
+}
+bool AchievementManager::IsApprovedARCode(const ActionReplay::ARCode& code,
+                                          const std::string& game_id, u16 revision) const
+{
+  return IsApprovedCode(code, game_id, revision);
 }
 
 void AchievementManager::SetSpectatorMode()
@@ -753,7 +766,7 @@ void AchievementManager::CloseGame()
     INFO_LOG_FMT(ACHIEVEMENTS, "Game closed.");
   }
 
-  m_update_callback(UpdatedItems{.all = true});
+  UpdateEvent::Trigger(UpdatedItems{.all = true});
 }
 
 void AchievementManager::Logout()
@@ -767,7 +780,7 @@ void AchievementManager::Logout()
     Config::SetBaseOrCurrent(Config::RA_API_TOKEN, "");
   }
 
-  m_update_callback(UpdatedItems{.all = true});
+  UpdateEvent::Trigger(UpdatedItems{.all = true});
   INFO_LOG_FMT(ACHIEVEMENTS, "Logged out from server.");
 }
 
@@ -910,7 +923,7 @@ void AchievementManager::LoginCallback(int result, const char* error_message, rc
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Failed to login {} to RetroAchievements server.",
                  Config::Get(Config::RA_USERNAME));
-    AchievementManager::GetInstance().m_update_callback({.failed_login_code = result});
+    UpdateEvent::Trigger({.failed_login_code = result});
     return;
   }
 
@@ -922,7 +935,7 @@ void AchievementManager::LoginCallback(int result, const char* error_message, rc
   if (!user)
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Failed to retrieve user information from client.");
-    AchievementManager::GetInstance().m_update_callback({.failed_login_code = RC_INVALID_STATE});
+    UpdateEvent::Trigger({.failed_login_code = RC_INVALID_STATE});
     return;
   }
 
@@ -941,7 +954,7 @@ void AchievementManager::LoginCallback(int result, const char* error_message, rc
       INFO_LOG_FMT(ACHIEVEMENTS, "Attempted to login prior user {}; current user is {}.",
                    user->username, Config::Get(Config::RA_USERNAME));
       rc_client_logout(client);
-      AchievementManager::GetInstance().m_update_callback({.failed_login_code = RC_INVALID_STATE});
+      UpdateEvent::Trigger({.failed_login_code = RC_INVALID_STATE});
       return;
     }
   }
@@ -987,7 +1000,7 @@ void AchievementManager::LeaderboardEntriesCallback(int result, const char* erro
     if (static_cast<int32_t>(ix) == list->user_index)
       leaderboard.player_index = response_entry.rank;
   }
-  AchievementManager::GetInstance().m_update_callback({.leaderboards = {*leaderboard_id}});
+  UpdateEvent::Trigger({.leaderboards = {*leaderboard_id}});
 }
 
 void AchievementManager::LoadGameCallback(int result, const char* error_message,
@@ -1033,7 +1046,7 @@ void AchievementManager::LoadGameCallback(int result, const char* error_message,
   rc_client_set_read_memory_function(instance.m_client, MemoryPeeker);
   instance.FetchGameBadges();
   instance.m_system.store(&Core::System::GetInstance(), std::memory_order_release);
-  instance.m_update_callback({.all = true});
+  UpdateEvent::Trigger({.all = true});
   // Set this to a value that will immediately trigger RP
   instance.m_last_rp_time = std::chrono::steady_clock::now() - std::chrono::minutes{2};
 
@@ -1121,8 +1134,7 @@ void AchievementManager::HandleAchievementTriggeredEvent(const rc_client_event_t
                   (rc_client_get_hardcore_enabled(instance.m_client)) ? OSD::Color::YELLOW :
                                                                         OSD::Color::CYAN,
                   &instance.GetAchievementBadge(client_event->achievement->id, false));
-  AchievementManager::GetInstance().m_update_callback(
-      UpdatedItems{.achievements = {client_event->achievement->id}});
+  UpdateEvent::Trigger(UpdatedItems{.achievements = {client_event->achievement->id}});
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
   switch (rc_client_raintegration_get_achievement_state(instance.m_client,
                                                         client_event->achievement->id))
@@ -1171,8 +1183,7 @@ void AchievementManager::HandleLeaderboardSubmittedEvent(const rc_client_event_t
                               client_event->leaderboard->title),
                   OSD::Duration::VERY_LONG, OSD::Color::YELLOW);
   AchievementManager::GetInstance().FetchBoardInfo(client_event->leaderboard->id);
-  AchievementManager::GetInstance().m_update_callback(
-      UpdatedItems{.leaderboards = {client_event->leaderboard->id}});
+  UpdateEvent::Trigger(UpdatedItems{.leaderboards = {client_event->leaderboard->id}});
 }
 
 void AchievementManager::HandleLeaderboardTrackerUpdateEvent(const rc_client_event_t* client_event)
@@ -1209,7 +1220,7 @@ void AchievementManager::HandleAchievementChallengeIndicatorShowEvent(
   const auto [iter, inserted] = instance.m_active_challenges.insert(client_event->achievement->id);
   if (inserted)
     instance.m_challenges_updated = true;
-  AchievementManager::GetInstance().m_update_callback(UpdatedItems{.rich_presence = true});
+  UpdateEvent::Trigger(UpdatedItems{.rich_presence = true});
 }
 
 void AchievementManager::HandleAchievementChallengeIndicatorHideEvent(
@@ -1219,7 +1230,7 @@ void AchievementManager::HandleAchievementChallengeIndicatorHideEvent(
   const auto removed = instance.m_active_challenges.erase(client_event->achievement->id);
   if (removed > 0)
     instance.m_challenges_updated = true;
-  AchievementManager::GetInstance().m_update_callback(UpdatedItems{.rich_presence = true});
+  UpdateEvent::Trigger(UpdatedItems{.rich_presence = true});
 }
 
 void AchievementManager::HandleAchievementProgressIndicatorShowEvent(
@@ -1235,8 +1246,7 @@ void AchievementManager::HandleAchievementProgressIndicatorShowEvent(
                   OSD::Duration::SHORT, OSD::Color::GREEN,
                   &instance.GetAchievementBadge(client_event->achievement->id, false));
   instance.m_last_progress_message = current_time;
-  AchievementManager::GetInstance().m_update_callback(
-      UpdatedItems{.achievements = {client_event->achievement->id}});
+  UpdateEvent::Trigger(UpdatedItems{.achievements = {client_event->achievement->id}});
 }
 
 void AchievementManager::HandleGameCompletedEvent(const rc_client_event_t* client_event,
@@ -1375,7 +1385,7 @@ void AchievementManager::FetchBadge(AchievementManager::Badge* badge, u32 badge_
 {
   if (!m_client || !HasAPIToken())
   {
-    m_update_callback(callback_data);
+    UpdateEvent::Trigger(callback_data);
     if (m_display_welcome_message && badge_type == RC_IMAGE_TYPE_GAME)
       DisplayWelcomeMessage();
     return;
@@ -1421,7 +1431,7 @@ void AchievementManager::FetchBadge(AchievementManager::Badge* badge, u32 badge_
                      "RetroAchievements connection failed on image request.\n URL: {}",
                      api_request.url);
         rc_api_destroy_request(&api_request);
-        m_update_callback(callback_data);
+        UpdateEvent::Trigger(callback_data);
         return;
       }
 
@@ -1454,7 +1464,7 @@ void AchievementManager::FetchBadge(AchievementManager::Badge* badge, u32 badge_
     }
 
     *badge = std::move(tmp_badge);
-    m_update_callback(callback_data);
+    UpdateEvent::Trigger(callback_data);
     if (badge_type == RC_IMAGE_TYPE_ACHIEVEMENT &&
         m_active_challenges.contains(*callback_data.achievements.begin()))
     {
@@ -1530,7 +1540,7 @@ void AchievementManager::LoadIntegrationCallback(int result, const char* error_m
     rc_client_raintegration_set_event_handler(instance.m_client, RAIntegrationEventHandler);
     rc_client_raintegration_set_write_memory_function(instance.m_client, MemoryPoker);
     rc_client_raintegration_set_get_game_name_function(instance.m_client, GameTitleEstimateHandler);
-    instance.m_dev_menu_callback();
+    DevMenuUpdateEvent::Trigger();
     // TODO: hook up menu and dll event handlers
     break;
 
@@ -1552,12 +1562,11 @@ void AchievementManager::LoadIntegrationCallback(int result, const char* error_m
 void AchievementManager::RAIntegrationEventHandler(const rc_client_raintegration_event_t* event,
                                                    rc_client_t* client)
 {
-  auto& instance = AchievementManager::GetInstance();
   switch (event->type)
   {
   case RC_CLIENT_RAINTEGRATION_EVENT_MENU_CHANGED:
   case RC_CLIENT_RAINTEGRATION_EVENT_MENUITEM_CHECKED_CHANGED:
-    instance.m_dev_menu_callback();
+    DevMenuUpdateEvent::Trigger();
     break;
   case RC_CLIENT_RAINTEGRATION_EVENT_PAUSE:
   {

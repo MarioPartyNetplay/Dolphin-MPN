@@ -374,8 +374,8 @@ add_executable(dolphin-mpn
   Settings/MarioPartyNetplayPane.h
   Settings/PathPane.cpp
   Settings/PathPane.h
-  Settings/USBDeviceAddToWhitelistDialog.cpp
-  Settings/USBDeviceAddToWhitelistDialog.h
+  Settings/USBDevicePicker.cpp
+  Settings/USBDevicePicker.h
   Settings/WiiPane.cpp
   Settings/WiiPane.h
   SkylanderPortal/SkylanderModifyDialog.cpp

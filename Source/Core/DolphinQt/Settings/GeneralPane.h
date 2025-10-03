@@ -35,6 +35,7 @@ private:
   void OnEmulationStateChanged(Core::State state);
   void CreateCheats();
   void OnCodeHandlerChanged(int index);
+  void UpdateDescriptionsUsingHardcoreStatus();
 
   // Widgets
   QVBoxLayout* m_main_layout;

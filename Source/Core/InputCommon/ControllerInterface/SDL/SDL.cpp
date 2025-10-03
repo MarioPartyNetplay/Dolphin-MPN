@@ -16,6 +16,7 @@
 #include "Common/Event.h"
 #include "Common/Logging/Log.h"
 #include "Common/ScopeGuard.h"
+#include "Common/Thread.h"
 
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/ControllerInterface/SDL/SDLGamepad.h"
@@ -130,9 +131,6 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
 {
   EnableSDLLogging();
 
-  // This is required on windows so that SDL's joystick code properly pumps window messages
-  SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
-
   SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
 
   // We have our own WGI backend. Enabling SDL's WGI handling creates even more redundant devices.
@@ -141,7 +139,15 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
   // Disable DualSense Player LEDs; We already colorize the Primary LED
   SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED, "0");
 
+  // Disabling DirectInput support apparently solves hangs on shutdown for users with
+  //  "8BitDo Ultimate 2" controllers.
+  // It also works around a possibly related random hang on a IDirectInputDevice8_Acquire
+  //  call within SDL.
+  SDL_SetHint(SDL_HINT_JOYSTICK_DIRECTINPUT, "0");
+
   m_hotplug_thread = std::thread([this] {
+    Common::SetCurrentThreadName("SDL Hotplug Thread");
+
     Common::ScopeGuard quit_guard([] {
       // TODO: there seems to be some sort of memory leak with SDL, quit isn't freeing everything up
       SDL_Quit();
@@ -177,34 +183,11 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
       }
     }
 
-#ifdef _WIN32
-    // This is a hack to workaround SDL_hidapi using window messages to detect device
-    // removal/arrival, yet no part of SDL pumps messages for it. It can hopefully be removed in the
-    // future when SDL fixes the issue. Note this is a separate issue from SDL_HINT_JOYSTICK_THREAD.
-    // Also note that SDL_WaitEvent may block while device detection window messages get queued up,
-    // causing some noticible stutter. This is just another reason it should be fixed properly by
-    // SDL...
-    const auto window_handle =
-        FindWindowEx(HWND_MESSAGE, nullptr, TEXT("SDL_HIDAPI_DEVICE_DETECTION"), nullptr);
-#endif
-
     SDL_Event e;
     while (SDL_WaitEvent(&e))
     {
       if (!HandleEventAndContinue(e))
         return;
-
-#ifdef _WIN32
-      MSG msg;
-      while (window_handle && PeekMessage(&msg, window_handle, 0, 0, PM_NOREMOVE))
-      {
-        if (GetMessageA(&msg, window_handle, 0, 0) != 0)
-        {
-          TranslateMessage(&msg);
-          DispatchMessage(&msg);
-        }
-      }
-#endif
     }
   });
 
