@@ -487,12 +487,11 @@
     <ClCompile Include="SDL\src\video\SDL_video_unsupported.c" />
     <ClCompile Include="SDL\src\video\SDL_vulkan_utils.c" />
     <ClCompile Include="SDL\src\video\SDL_yuv.c" />
-    <ClCompile Include="SDL\src\video\windows\SDL_surface_utils.c" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowsclipboard.c" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowsevents.c" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowsframebuffer.c" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowskeyboard.c" />
-    <ClCompile Include="SDL\src\video\windows\SDL_windowsgameinput.c" />
+    <ClCompile Include="SDL\src\video\windows\SDL_windowsgameinput.cpp" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowsmessagebox.c" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowsmodes.c" />
     <ClCompile Include="SDL\src\video\windows\SDL_windowsmouse.c" />
