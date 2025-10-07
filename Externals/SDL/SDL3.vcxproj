@@ -313,7 +313,7 @@
     <ClCompile Include="SDL\src\audio\SDL_wave.c" />
     <ClCompile Include="SDL\src\audio\wasapi\SDL_wasapi.c" />
     <ClCompile Include="SDL\src\core\SDL_core_unsupported.c" />
-    <ClCompile Include="SDL\src\core\windows\SDL_gameinput.c" />
+    <ClCompile Include="SDL\src\core\windows\SDL_gameinput.cpp" />
     <ClCompile Include="SDL\src\core\windows\SDL_hid.c" />
     <ClCompile Include="SDL\src\core\windows\SDL_immdevice.c" />
     <ClCompile Include="SDL\src\core\windows\SDL_windows.c" />
@@ -348,7 +348,7 @@
     <ClCompile Include="SDL\src\hidapi\SDL_hidapi.c" />
     <ClCompile Include="SDL\src\joystick\controller_type.c" />
     <ClCompile Include="SDL\src\joystick\dummy\SDL_sysjoystick.c" />
-    <ClCompile Include="SDL\src\joystick\gdk\SDL_gameinputjoystick.c" />
+    <ClCompile Include="SDL\src\joystick\gdk\SDL_gameinputjoystick.cpp" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapijoystick.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_combined.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_gamecube.c" />
