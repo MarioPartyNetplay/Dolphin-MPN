@@ -169,7 +169,7 @@ void GeneralPane::CreateFallbackRegion()
   fallback_region_dropdown_layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
   fallback_region_group_layout->addLayout(fallback_region_dropdown_layout);
 
-  m_combobox_fallback_region = new ToolTipComboBox(this);
+  m_combobox_fallback_region = new ToolTipComboBox();
   fallback_region_dropdown_layout->addRow(tr("Fallback Region:"), m_combobox_fallback_region);
 
   for (const QString& option : {tr("NTSC-J"), tr("NTSC-U"), tr("PAL"), tr("NTSC-K")})
@@ -197,7 +197,7 @@ void GeneralPane::CreateFallbackRegion()
   auto_update_dropdown_layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
   auto_update_group_layout->addLayout(auto_update_dropdown_layout);
 
-  m_combobox_update_track = new ToolTipComboBox(this);
+  m_combobox_update_track = new ToolTipComboBox();
 
   m_combobox_update_track->addItem(tr("Don't Auto-Update"));
   m_combobox_update_track->addItem(tr("Release Updates"));
