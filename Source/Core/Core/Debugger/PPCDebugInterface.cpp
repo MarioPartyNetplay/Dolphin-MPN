@@ -46,15 +46,13 @@ void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, Common::Debug::MemoryPa
   auto& power_pc = guard.GetSystem().GetPowerPC();
   for (u32 offset = 0; offset < size; ++offset)
   {
-    if (store_existing_value)
+    u8 old_value = PowerPC::MMU::HostRead_U8(guard, address + offset);
+    PowerPC::MMU::HostWrite_U8(guard, value[offset], address + offset);
+    if (old_value != value[offset])
     {
-      const u8 value = PowerPC::MMU::HostRead_U8(guard, address + offset);
-      PowerPC::MMU::HostWrite_U8(guard, patch.value[offset], address + offset);
-      patch.value[offset] = value;
-    }
-    else
-    {
-      PowerPC::MMU::HostWrite_U8(guard, patch.value[offset], address + offset);
+      should_invalidate_cache = true;
+      if (store_existing_value)
+        value[offset] = old_value;
     }
 
     if (((address + offset) % 4) == 3)
