@@ -350,14 +350,19 @@
     <ClCompile Include="SDL\src\joystick\dummy\SDL_sysjoystick.c" />
     <ClCompile Include="SDL\src\joystick\gdk\SDL_gameinputjoystick.cpp" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapijoystick.c" />
+    <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_8bitdo.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_combined.c" />
+    <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_flydigi.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_gamecube.c" />
+    <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_gip.c" />
+    <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_lg4ff.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_luna.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_ps3.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_ps4.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_ps5.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_rumble.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_shield.c" />
+    <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_sinput.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_stadia.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_steam.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_steam_hori.c" />
@@ -367,6 +372,7 @@
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_xbox360.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_xbox360w.c" />
     <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_xboxone.c" />
+    <ClCompile Include="SDL\src\joystick\hidapi\SDL_hidapi_zuiki.c" />
     <ClCompile Include="SDL\src\joystick\SDL_gamepad.c" />
     <ClCompile Include="SDL\src\joystick\SDL_joystick.c" />
     <ClCompile Include="SDL\src\joystick\SDL_steam_virtual_gamepad.c" />
