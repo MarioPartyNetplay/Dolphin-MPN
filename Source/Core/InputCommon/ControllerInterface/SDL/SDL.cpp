@@ -155,7 +155,7 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
     {
       Common::ScopeGuard init_guard([this] { m_init_event.Set(); });
 
-      if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC | SDL_INIT_GAMEPAD))
+      if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD))
       {
         ERROR_LOG_FMT(CONTROLLERINTERFACE, "SDL failed to initialize");
         return;

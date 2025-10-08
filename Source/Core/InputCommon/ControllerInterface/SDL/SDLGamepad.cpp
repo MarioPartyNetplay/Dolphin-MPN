@@ -186,7 +186,8 @@ Gamepad::Gamepad(SDL_Gamepad* const gamepad, SDL_Joystick* const joystick)
       AddInput(new LegacyHat(m_joystick, i, d));
   }
 
-  // Haptics
+  // Haptics (disabled on Windows due to HIDAPI linking issues)
+#ifndef _WIN32
   if (SDL_IsJoystickHaptic(m_joystick))
   {
     m_haptic = SDL_OpenHapticFromJoystick(m_joystick);
@@ -222,6 +223,7 @@ Gamepad::Gamepad(SDL_Gamepad* const gamepad, SDL_Joystick* const joystick)
       }
     }
   }
+#endif
 
   // Battery
   if (UpdateBatteryLevel())
@@ -240,6 +242,7 @@ bool Gamepad::UpdateBatteryLevel()
 
 Gamepad::~Gamepad()
 {
+#ifndef _WIN32
   if (m_haptic)
   {
     // stop/destroy all effects
@@ -248,6 +251,7 @@ Gamepad::~Gamepad()
     SDL_CloseHaptic(m_haptic);
     m_haptic = nullptr;
   }
+#endif
   if (m_gamepad)
   {
     // stop all rumble

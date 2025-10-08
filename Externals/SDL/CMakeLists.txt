@@ -7,6 +7,11 @@ set(SDL_DISABLE_INSTALL_DOCS ON)
 set(SDL_INSTALL_TESTS OFF)
 set(SDL_UNIX_CONSOLE_BUILD ON)
 
+# Disable HIDAPI on Windows to avoid linking issues
+if(WIN32)
+  set(SDL_HIDAPI OFF)
+endif()
+
 add_subdirectory(SDL)
 
 if (TARGET SDL3)
