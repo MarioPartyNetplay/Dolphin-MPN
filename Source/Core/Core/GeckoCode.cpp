@@ -215,7 +215,7 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
 
   if (is_mpn_handler_and_game_id_rm8e01 || is_mpn_handler_and_game_id_gp7e01 ||
       is_mpn_handler_and_game_id_gp6e01 || is_mpn_handler_and_game_id_gp5e01 ||
-      is_mpn_handler_and_game_id_gmpe01)
+      is_mpn_handler_and_game_id_gmpe01 || is_mpn_handler_and_game_id_gm4e01)
   {
     // Move Gecko code handler to the free mem region
     for (u32 addr = codelist_base_address; addr < codelist_end_address; addr += 4)
