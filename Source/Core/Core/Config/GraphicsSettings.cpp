@@ -55,6 +55,7 @@ const Info<bool> GFX_LOG_RENDER_TIME_TO_FILE{{System::GFX, "Settings", "LogRende
                                              false};
 const Info<bool> GFX_LOG_TURN_COUNT_TO_FILE{{System::GFX, "Settings", "LogTurnCountToFile"},
                                             false};
+const Info<bool> GFX_MPN_TASKMASTER_MODE{{System::GFX, "Settings", "MPNTaskMasterMode"}, false};
 const Info<bool> GFX_OVERLAY_STATS{{System::GFX, "Settings", "OverlayStats"}, false};
 const Info<bool> GFX_OVERLAY_PROJ_STATS{{System::GFX, "Settings", "OverlayProjStats"}, false};
 const Info<bool> GFX_OVERLAY_SCISSOR_STATS{{System::GFX, "Settings", "OverlayScissorStats"}, false};

@@ -33,6 +33,7 @@ private:
   QCheckBox* m_checkbox_show_turn_count;
   QCheckBox* m_checkbox_show_buttons_new;
   QCheckBox* m_checkbox_log_turn_count_to_file;
+  QCheckBox* m_checkbox_taskmaster_mode;
   QSlider* m_slider_hud_scale;
   QLabel* m_label_hud_scale;
   QLabel* m_label_hud_scale_value;

@@ -4,6 +4,10 @@
 #include "VideoCommon/PerformanceMetrics.h"
 
 #include <algorithm>
+#include <random>
+#include <vector>
+#include <string>
+#include <chrono>
 
 #include <imgui.h>
 #include <implot.h>
@@ -11,6 +15,8 @@
 #include "Core/Config/GraphicsSettings.h"
 #include "VideoCommon/VideoConfig.h"
 #include "Core/MarioPartyNetplay/Gamestate.h"
+#include "Core/ConfigManager.h"
+#include "Common/Logging/Log.h"
 
 PerformanceMetrics g_perf_metrics;
 
@@ -364,6 +370,438 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
           ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
         }
       }
+      ImGui::End();
+    }
+  }
+
+  // Task Master Mode HUD Display - Single draggable widget in bottom-left
+  if (g_ActiveConfig.bMPNTaskMasterMode && CurrentState.IsMarioParty && 
+      (SConfig::GetInstance().GetGameID() == "GMPE01" || SConfig::GetInstance().GetGameID() == "GMPEDX"))
+  {
+    // Apply HUD scale to the Task Master widget
+    float window_height = (30.f * 4 + 20.f) * backbuffer_scale * hud_scale;  // 4 players + padding
+    float scaled_window_width = window_width * hud_scale;
+    
+    // Define bottom-left position
+    const ImVec2& display_size = ImGui::GetIO().DisplaySize;
+    const float corner_padding = 20.f * backbuffer_scale * hud_scale;
+    
+    // Player colors for each player
+    const ImVec4 player_colors[4] = {
+      ImVec4(1.0f, 0.2f, 0.2f, 1.0f),  // Red - Player 1
+      ImVec4(0.2f, 0.2f, 1.0f, 1.0f),  // Blue - Player 2
+      ImVec4(0.2f, 1.0f, 0.2f, 1.0f),  // Green - Player 3
+      ImVec4(1.0f, 1.0f, 0.2f, 1.0f)   // Yellow - Player 4
+    };
+    
+    const char* player_names[4] = {"P1", "P2", "P3", "P4"};
+    
+    // Static player scores (starting at 0)
+    static int player_scores[4] = {0, 0, 0, 0};
+    
+    // Task management
+    static std::string current_task = "Not started";
+    static int last_board_scene_id = -1;
+    static bool task_generated = false;
+    static auto task_completion_time = std::chrono::steady_clock::now();
+    static bool task_completed = false;
+    
+    // Task checking variables
+    static int last_coin_counts[4] = {0, 0, 0, 0};
+    static auto last_coin_check_time = std::chrono::steady_clock::now();
+    static bool coin_task_active = false;
+    static int coin_gains_this_window[4] = {0, 0, 0, 0}; // Track cumulative gains in 2-second window
+    
+    // Check if we're on a board (scene IDs 0x59-0x61 for MP4 boards)
+    bool on_board = false;
+    if (CurrentState.CurrentSceneId >= 0x59 && CurrentState.CurrentSceneId <= 0x61)
+    {
+      on_board = true;
+    }
+    
+    // Generate new task when entering a board OR after task completion
+    bool should_generate_task = false;
+    
+    if (on_board && CurrentState.CurrentSceneId != last_board_scene_id)
+    {
+      should_generate_task = true;
+      last_board_scene_id = CurrentState.CurrentSceneId;
+    }
+    else if (task_completed && on_board)
+    {
+      // Check if 3 seconds have passed since task completion
+      auto current_time = std::chrono::steady_clock::now();
+      auto time_since_completion = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - task_completion_time);
+      if (time_since_completion.count() >= 3000) // 3 seconds
+      {
+        should_generate_task = true;
+      }
+    }
+    
+    if (should_generate_task)
+    {      
+      // Use the correct coin addresses for Mario Party 4
+      static const uint32_t coin_addresses[4] = {0x0018FC54, 0x0018FC84, 0x0018FCB4, 0x0018FCE4};
+      
+      // Random task list for Mario Party 4
+      static const std::vector<std::string> tasks = {
+        "Collect 3 coins",
+        "Collect 5 coins",
+        "Collect 10 coins",
+        "Collect 15 coins",
+        "Collect 20 coins",
+        "Collect 25 coins",
+        "Collect 30 coins",
+        "Collect 35 coins",
+        "Collect 40 coins",
+        "Collect 50 coins",
+        "Collect 69 coins",
+        "Lose 3 coins",
+        "Lose 5 coins",
+        "Lose 10 coins",
+        "Lose 15 coins",
+        "Lose 20 coins",
+        "Lose 25 coins",
+        "Lose 30 coins",
+        "Lose 35 coins",
+        "Lose 40 coins",
+        "Lose 50 coins",
+        "Lose 69 coins"
+      };
+      
+      // Read current coin counts to validate task achievability
+      int current_coin_counts[4];
+      for (int i = 0; i < 4; i++)
+      {
+        current_coin_counts[i] = mpn_read_value(coin_addresses[i], 2);
+      }
+      
+      // Filter tasks to only include achievable ones
+      std::vector<std::string> achievable_tasks;
+      for (const auto& task : tasks)
+      {
+        bool is_achievable = true;
+        
+        // Extract target amount from task
+        int target_amount = 3; // Default
+        size_t coins_pos = task.find(" coins");
+        if (coins_pos != std::string::npos) {
+          size_t num_start = coins_pos;
+          while (num_start > 0 && std::isdigit(task[num_start - 1])) {
+            num_start--;
+          }
+          if (num_start < coins_pos) {
+            std::string num_str = task.substr(num_start, coins_pos - num_start);
+            target_amount = std::atoi(num_str.c_str());
+          }
+        }
+        
+        if (task.find("Lose") != std::string::npos)
+        {
+          // For lose tasks, check if any player has enough coins to lose
+          bool any_player_can_lose = false;
+          for (int i = 0; i < 4; i++)
+          {
+            if (current_coin_counts[i] >= target_amount)
+            {
+              any_player_can_lose = true;
+              break;
+            }
+          }
+          is_achievable = any_player_can_lose;
+        }
+        else if (task.find("Collect") != std::string::npos)
+        {
+          // For collect tasks, check if any player can gain that many coins (not at 999 limit)
+          bool any_player_can_gain = false;
+          for (int i = 0; i < 4; i++)
+          {
+            if (current_coin_counts[i] <= (999 - target_amount))
+            {
+              any_player_can_gain = true;
+              break;
+            }
+          }
+          is_achievable = any_player_can_gain;
+        }
+        
+        if (is_achievable)
+        {
+          achievable_tasks.push_back(task);
+        }
+      }
+      
+      // Generate random task from achievable tasks only
+      if (!achievable_tasks.empty())
+      {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, achievable_tasks.size() - 1);
+        current_task = achievable_tasks[dis(gen)];
+        INFO_LOG_FMT(VIDEO, "Generated achievable task: {} (from {} possible tasks)", current_task.c_str(), achievable_tasks.size());
+      }
+      else
+      {
+        // Fallback: all players are at extremes (0 coins or 999 coins), use a safe task
+        current_task = "Collect 1 coin"; // Always achievable
+        INFO_LOG_FMT(VIDEO, "No achievable tasks found, using fallback: {}", current_task.c_str());
+      }
+      
+      task_generated = true;
+      task_completed = false;
+      
+      // Reset coin gains for new task and set proper baseline
+      for (int i = 0; i < 4; i++)
+      {
+        coin_gains_this_window[i] = 0;
+        // Set baseline to current coin counts so we only track gains from this point forward
+        last_coin_counts[i] = current_coin_counts[i];
+      }
+      
+    }
+    
+    // Reset task when not on board
+    if (!on_board)
+    {
+      current_task = "Not started";
+      task_generated = false;
+      task_completed = false;
+      coin_task_active = false;
+      // Reset cumulative gains
+      for (int i = 0; i < 4; i++)
+      {
+        coin_gains_this_window[i] = 0;
+      }
+    }
+    
+    // Check if current task involves coin collection or loss
+    bool is_coin_task = (current_task.find("Collect") != std::string::npos || 
+                        current_task.find("Lose") != std::string::npos) && 
+                       current_task.find("coins") != std::string::npos;
+    bool is_lose_task = current_task.find("Lose") != std::string::npos;
+    
+    // Extract target amount from task string using robust parsing
+    int target_amount = 3; // Default
+    if (is_coin_task) {
+      // Try to extract number before "coins"
+      size_t coins_pos = current_task.find(" coins");
+      if (coins_pos != std::string::npos) {
+        // Find the start of the number
+        size_t num_start = coins_pos;
+        while (num_start > 0 && std::isdigit(current_task[num_start - 1])) {
+          num_start--;
+        }
+        if (num_start < coins_pos) {
+          std::string num_str = current_task.substr(num_start, coins_pos - num_start);
+          // Simple conversion without exceptions
+          target_amount = std::atoi(num_str.c_str());
+          if (target_amount <= 0) {
+            target_amount = 3; // Fallback to default if invalid
+          }
+        }
+      }
+    }
+    
+    INFO_LOG_FMT(VIDEO, "Current task: '{}', target_amount: {}, is_lose_task: {}", current_task.c_str(), target_amount, is_lose_task);
+    
+    
+    // Task checking logic - simplified to prevent lockups
+    if (on_board && task_generated)
+    {
+      auto current_time = std::chrono::steady_clock::now();
+      auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_coin_check_time);
+      
+      // Check every 2 seconds for more responsive coin tracking
+      if (time_diff.count() >= 2000)
+      {
+        // Use the correct coin addresses for Mario Party 4
+        static const uint32_t coin_addresses[4] = {0x0018FC54, 0x0018FC84, 0x0018FCB4, 0x0018FCE4};
+        
+        // Read current coin counts
+        int current_coin_counts[4];
+        for (int i = 0; i < 4; i++)
+        {
+          current_coin_counts[i] = mpn_read_value(coin_addresses[i], 2);
+        }
+        
+        // Track which players completed the task this round
+        bool task_completed_this_round = false;
+        std::vector<int> players_who_completed;
+        
+        // Calculate coin changes by comparing with previous counts
+        for (int i = 0; i < 4; i++)
+        {
+          int coin_change = current_coin_counts[i] - last_coin_counts[i];
+          
+          // Handle both gain and loss tasks
+          if (is_lose_task && coin_change < 0)
+          {
+            // For "Lose X coins" tasks, track losses (negative changes)
+            coin_gains_this_window[i] += (-coin_change); // Convert negative to positive for tracking
+          }
+          else if (!is_lose_task && coin_change > 0)
+          {
+            // For "Collect X coins" tasks, track gains (positive changes)
+            coin_gains_this_window[i] += coin_change;
+          }
+          
+          // Check for task completion
+          if (coin_gains_this_window[i] >= target_amount)
+          {
+            // Validate that the task was actually achievable
+            bool task_was_achievable = false;
+            
+            if (is_lose_task)
+            {
+              // For lose tasks, check if player had enough coins to lose
+              // We need to check the baseline coin count at task start
+              int baseline_coins = last_coin_counts[i] - coin_gains_this_window[i]; // Reconstruct baseline
+              if (baseline_coins >= target_amount)
+              {
+                task_was_achievable = true;
+              }
+            }
+            else
+            {
+              // For collect tasks, check if player could actually gain that many coins
+              // Check if current coins + target_amount would exceed 999 limit
+              if (current_coin_counts[i] <= (999 - target_amount))
+              {
+                task_was_achievable = true;
+              }
+            }
+            
+            // Only award points if the task was actually achievable
+            if (task_was_achievable)
+            {
+              // Award points to the player who completed the task
+              player_scores[i] += 1; // Award 1 point for completing a task
+              players_who_completed.push_back(i);
+              task_completed_this_round = true;
+            }
+            else
+            {
+              // Task was impossible, reset progress and continue
+              coin_gains_this_window[i] = 0;
+            }
+          }
+          // Update the last coin counts for next comparison
+          last_coin_counts[i] = current_coin_counts[i];
+        }
+        
+        // If any players completed the task, mark it as completed and reset
+        if (task_completed_this_round)
+        {
+          // Mark task as completed and set timer for new task
+          current_task = "COMPLETED! New task in 3 seconds...";
+          task_completed = true;
+          task_completion_time = std::chrono::steady_clock::now();
+          
+          // Reset all coin gains for new task and update baseline to current coin counts
+          for (int j = 0; j < 4; j++)
+          {
+            coin_gains_this_window[j] = 0;
+            last_coin_counts[j] = current_coin_counts[j]; // Update baseline to current coin count
+          }
+        }
+        
+        coin_task_active = true;
+        last_coin_check_time = current_time;
+      }
+    }
+    
+    // Position in bottom-left corner, draggable
+    ImGui::SetNextWindowPos(ImVec2(corner_padding, display_size.y - corner_padding), ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowBgAlpha(bg_alpha);
+    
+    // Make it draggable and resizable
+    const auto taskmaster_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings |
+                                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav |
+                                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing;
+    
+    if (ImGui::Begin("TaskMasterWidget", nullptr, taskmaster_flags))
+    {
+      ImGui::SetWindowFontScale(hud_scale);
+      
+      // Header
+      ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Task Master");
+      ImGui::Separator();
+      
+      // Current Task
+      if (current_task.find("COMPLETED") != std::string::npos)
+      {
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Current Task: %s", current_task.c_str());
+      }
+      else
+      {
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Current Task: %s", current_task.c_str());
+      }
+      ImGui::Separator();
+      
+      
+      if (is_coin_task && coin_task_active)
+      {
+        // Grid layout for coin progress
+        if (is_lose_task)
+        {
+          ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Coin Loss Progress:");
+        }
+        else
+        {
+          ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Coin Progress:");
+        }
+        
+        // Create a 2x2 grid for the 4 players
+        if (ImGui::BeginTable("CoinProgress", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+        {
+          // Top row: P1 and P2
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[0], "P1: %d/%d", coin_gains_this_window[0], target_amount);
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[1], "P2: %d/%d", coin_gains_this_window[1], target_amount);
+          
+          // Bottom row: P3 and P4
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[2], "P3: %d/%d", coin_gains_this_window[2], target_amount);
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[3], "P4: %d/%d", coin_gains_this_window[3], target_amount);
+          
+          ImGui::EndTable();
+        }
+        ImGui::Separator();
+      }
+      
+      // Display scores only when on a board
+      if (on_board)
+      {
+        // Display all 4 players stacked vertically with scores
+        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Scores:");
+        
+        // Create a 2x2 grid for the scores
+        if (ImGui::BeginTable("Scores", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+        {
+          // Top row: P1 and P2
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[0], "P1: %d pts", player_scores[0]);
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[1], "P2: %d pts", player_scores[1]);
+          
+          // Bottom row: P3 and P4
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[2], "P3: %d pts", player_scores[2]);
+          ImGui::TableNextColumn();
+          ImGui::TextColored(player_colors[3], "P4: %d pts", player_scores[3]);
+          
+          ImGui::EndTable();
+        }
+      }
+      
+      ImGui::SetWindowFontScale(1.0f);
       ImGui::End();
     }
   }

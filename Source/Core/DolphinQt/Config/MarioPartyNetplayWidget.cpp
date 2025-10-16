@@ -31,11 +31,13 @@ void MarioPartyNetplayWidget::CreateWidgets()
   m_show_turn_count = new ConfigBool(tr("Show Turn Count"), Config::GFX_SHOW_MP_TURN, m_game_layer);
   m_show_buttons_new = new ConfigBool(tr("Per-controller Buttons"), Config::PER_CTRL_BUTTONS, m_game_layer);
   m_log_turn_count_to_file = new ConfigBool(tr("Log Turn Count to File"), Config::GFX_LOG_TURN_COUNT_TO_FILE, m_game_layer);
+  m_taskmaster_mode = new ConfigBool(tr("Task Master Mode"), Config::GFX_MPN_TASKMASTER_MODE, m_game_layer);
 
   mpn_box->setLayout(mpn_layout);
   mpn_layout->addWidget(m_show_turn_count, 0, 0);
   mpn_layout->addWidget(m_show_buttons_new, 0, 1);
   mpn_layout->addWidget(m_log_turn_count_to_file, 1, 0, 1, 2);
+  mpn_layout->addWidget(m_taskmaster_mode, 2, 0, 1, 2);
 
   main_layout->addWidget(mpn_box);
   main_layout->addStretch();
@@ -60,7 +62,11 @@ void MarioPartyNetplayWidget::AddDescriptions()
   static const char TR_LOG_TURN_COUNT_DESCRIPTION[] =
       QT_TR_NOOP("Logs the current turn count to a file for tracking purposes.");
 
+  static const char TR_TASKMASTER_DESCRIPTION[] =
+      QT_TR_NOOP("Enable Task Master mode for Mario Party games.");
+
   m_show_turn_count->SetDescription(tr(TR_TURN_DESCRIPTION));
   m_show_buttons_new->SetDescription(tr(TR_BUTTON_DESCRIPTION));
   m_log_turn_count_to_file->SetDescription(tr(TR_LOG_TURN_COUNT_DESCRIPTION));
+  m_taskmaster_mode->SetDescription(tr(TR_TASKMASTER_DESCRIPTION));
 } 

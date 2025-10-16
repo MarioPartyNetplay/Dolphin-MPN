@@ -107,6 +107,7 @@ void VideoConfig::Refresh()
   iPerfSampleUSec = Config::Get(Config::GFX_PERF_SAMP_WINDOW) * 1000;
   bShowNetPlayPing = Config::Get(Config::GFX_SHOW_NETPLAY_PING);
   bShowMPTurn = Config::Get(Config::GFX_SHOW_MP_TURN);
+  bMPNTaskMasterMode = Config::Get(Config::GFX_MPN_TASKMASTER_MODE);
   bShowNetPlayMessages = Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES);
   bLogRenderTimeToFile = Config::Get(Config::GFX_LOG_RENDER_TIME_TO_FILE);
   bLogTurnCountToFile = Config::Get(Config::GFX_LOG_TURN_COUNT_TO_FILE);

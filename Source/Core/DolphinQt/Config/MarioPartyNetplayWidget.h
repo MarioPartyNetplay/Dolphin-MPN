@@ -28,5 +28,6 @@ private:
   ConfigBool* m_show_turn_count;
   ConfigBool* m_show_buttons_new;
   ConfigBool* m_log_turn_count_to_file;
+  ConfigBool* m_taskmaster_mode;
   Config::Layer* m_game_layer = nullptr;
 }; 

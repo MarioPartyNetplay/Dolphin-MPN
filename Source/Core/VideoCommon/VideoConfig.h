@@ -253,6 +253,7 @@ struct VideoConfig final
   int iPerfSampleUSec = 0;
   bool bShowNetPlayPing = false;
   bool bShowMPTurn = true;
+  bool bMPNTaskMasterMode = false;
   bool bShowNetPlayMessages = false;
   bool bOverlayStats = false;
   bool bOverlayProjStats = false;

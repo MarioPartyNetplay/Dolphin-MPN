@@ -52,6 +52,10 @@ void MarioPartyNetplayPane::CreateLayout()
   m_checkbox_log_turn_count_to_file->setToolTip(tr("Logs the current turn count to a file for tracking purposes."));
   mpn_group_layout->addWidget(m_checkbox_log_turn_count_to_file);
 
+  m_checkbox_taskmaster_mode = new QCheckBox(tr("Task Master Mode"));
+  m_checkbox_taskmaster_mode->setToolTip(tr("Enable Task Master mode for Mario Party games (GMPE01/GMPEDX). Shows 'Task Master enabled' on HUD when active."));
+  mpn_group_layout->addWidget(m_checkbox_taskmaster_mode);
+
   // HUD Scale setting
   auto* hud_scale_layout = new QHBoxLayout;
   m_label_hud_scale = new QLabel(tr("HUD Scale:"));
@@ -78,6 +82,7 @@ void MarioPartyNetplayPane::ConnectLayout()
   connect(m_checkbox_show_turn_count, &QCheckBox::toggled, this, &MarioPartyNetplayPane::OnSaveConfig);
   connect(m_checkbox_show_buttons_new, &QCheckBox::toggled, this, &MarioPartyNetplayPane::OnSaveConfig);
   connect(m_checkbox_log_turn_count_to_file, &QCheckBox::toggled, this, &MarioPartyNetplayPane::OnSaveConfig);
+  connect(m_checkbox_taskmaster_mode, &QCheckBox::toggled, this, &MarioPartyNetplayPane::OnSaveConfig);
   connect(m_slider_hud_scale, &QSlider::valueChanged, this, [this](int value) {
     // Update the value label
     m_label_hud_scale_value->setText(QString::number(value) + QStringLiteral("%"));
@@ -94,6 +99,7 @@ void MarioPartyNetplayPane::LoadConfig()
   m_checkbox_show_turn_count->setChecked(Config::Get(Config::GFX_SHOW_MP_TURN));
   m_checkbox_show_buttons_new->setChecked(Config::Get(Config::PER_CTRL_BUTTONS));
   m_checkbox_log_turn_count_to_file->setChecked(Config::Get(Config::GFX_LOG_TURN_COUNT_TO_FILE));
+  m_checkbox_taskmaster_mode->setChecked(Config::Get(Config::GFX_MPN_TASKMASTER_MODE));
   
   // Load HUD scale value (convert from float 0.1-5.0 to slider 10-500)
   const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
@@ -104,6 +110,7 @@ void MarioPartyNetplayPane::LoadConfig()
   m_checkbox_show_turn_count->setEnabled(!running);
   m_checkbox_show_buttons_new->setEnabled(!running);
   m_checkbox_log_turn_count_to_file->setEnabled(!running);
+  m_checkbox_taskmaster_mode->setEnabled(!running);
   m_slider_hud_scale->setEnabled(!running);
 
 
@@ -114,6 +121,7 @@ void MarioPartyNetplayPane::OnSaveConfig()
   Config::SetBaseOrCurrent(Config::GFX_SHOW_MP_TURN, m_checkbox_show_turn_count->isChecked());
   Config::SetBaseOrCurrent(Config::PER_CTRL_BUTTONS, m_checkbox_show_buttons_new->isChecked());
   Config::SetBaseOrCurrent(Config::GFX_LOG_TURN_COUNT_TO_FILE, m_checkbox_log_turn_count_to_file->isChecked());
+  Config::SetBaseOrCurrent(Config::GFX_MPN_TASKMASTER_MODE, m_checkbox_taskmaster_mode->isChecked());
   
   // Save HUD scale value (convert from slider 10-500 to float 0.1-5.0)
   const float hud_scale = m_slider_hud_scale->value() / 100.0f;
@@ -129,5 +137,6 @@ void MarioPartyNetplayPane::OnEmulationStateChanged(Core::State state)
   m_checkbox_show_turn_count->setEnabled(!running);
   m_checkbox_show_buttons_new->setEnabled(!running);
   m_checkbox_log_turn_count_to_file->setEnabled(!running);
+  m_checkbox_taskmaster_mode->setEnabled(!running);
   m_slider_hud_scale->setEnabled(!running);
 } 

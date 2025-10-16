@@ -55,6 +55,7 @@ extern const Info<bool> GFX_SHOW_MP_TURN;
 extern const Info<bool> GFX_SHOW_NETPLAY_MESSAGES;
 extern const Info<bool> GFX_LOG_RENDER_TIME_TO_FILE;
 extern const Info<bool> GFX_LOG_TURN_COUNT_TO_FILE;
+extern const Info<bool> GFX_MPN_TASKMASTER_MODE;
 extern const Info<bool> GFX_OVERLAY_STATS;
 extern const Info<bool> GFX_OVERLAY_PROJ_STATS;
 extern const Info<bool> GFX_OVERLAY_SCISSOR_STATS;
