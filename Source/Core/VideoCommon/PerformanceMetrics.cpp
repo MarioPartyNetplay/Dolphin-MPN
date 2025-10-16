@@ -412,12 +412,24 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     static bool coin_task_active = false;
     static int coin_gains_this_window[4] = {0, 0, 0, 0}; // Track cumulative gains in 2-second window
     
-    // Check if we're on a board (scene IDs 0x59-0x61 for MP4 boards)
+    // Check if we're in an active game session using total turns
+    // TotalTurns = 0xFF means no active game, anything else means we're in a game
+    bool in_active_game = false;
+    if (CurrentState.Addresses && CurrentState.Addresses->TotalTurns != 0)
+    {
+      int total_turns = mpn_read_value(CurrentState.Addresses->TotalTurns, 1);
+      in_active_game = (total_turns != 0xFF);
+    }
+    
+    // Also check if we're on a board (scene IDs 0x59-0x61 for MP4 boards) for additional safety
     bool on_board = false;
     if (CurrentState.CurrentSceneId >= 0x59 && CurrentState.CurrentSceneId <= 0x61)
     {
       on_board = true;
     }
+    
+    // Use active game status as the primary indicator
+    bool game_active = in_active_game || on_board;
     
     // Generate new task when entering a board OR after task completion
     bool should_generate_task = false;
@@ -562,7 +574,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     
     // Only reset task when completely leaving the game (main menu, etc.)
     // Keep task active during minigames and other board-related scenes
-    if (!on_board && CurrentState.CurrentSceneId < 0x50) // Reset only for main menu scenes
+    if (!game_active) // Reset only when not in an active game
     {
       current_task = "Not started";
       task_generated = false;
@@ -606,7 +618,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     
     
     // Task checking logic - simplified to prevent lockups
-    if (on_board && task_generated)
+    if (game_active && task_generated)
     {
       auto current_time = std::chrono::steady_clock::now();
       auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_coin_check_time);
@@ -774,8 +786,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         ImGui::Separator();
       }
       
-      // Display scores only when on a board
-      if (on_board)
+      // Display scores when there's an active task (always show scores during tasks)
+      if (task_generated)
       {
         // Display all 4 players stacked vertically with scores
         ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Scores:");
