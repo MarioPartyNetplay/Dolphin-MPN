@@ -510,7 +510,6 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
             }
           }
           is_achievable = any_player_can_lose;
-          INFO_LOG_FMT(VIDEO, "Lose {} coins task: {} achievable (any player can lose)", target_amount, is_achievable ? "IS" : "NOT");
         }
         else if (task.find("Collect") != std::string::npos)
         {
@@ -526,7 +525,6 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
             }
           }
           is_achievable = any_player_can_gain;
-          INFO_LOG_FMT(VIDEO, "Collect {} coins task: {} achievable (any player can gain)", target_amount, is_achievable ? "IS" : "NOT");
         }
         
         if (is_achievable)
@@ -542,13 +540,11 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         static std::mt19937 gen(rd());
         std::uniform_int_distribution<> dis(0, achievable_tasks.size() - 1);
         current_task = achievable_tasks[dis(gen)];
-        INFO_LOG_FMT(VIDEO, "Generated achievable task: {} (from {} possible tasks)", current_task.c_str(), achievable_tasks.size());
       }
       else
       {
         // Fallback: all players are at extremes (0 coins or 999 coins), use a safe task
         current_task = "Collect 1 coin"; // Always achievable
-        INFO_LOG_FMT(VIDEO, "No achievable tasks found, using fallback: {}", current_task.c_str());
       }
       
       task_generated = true;
@@ -606,7 +602,6 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       }
     }
     
-    INFO_LOG_FMT(VIDEO, "Current task: '{}', target_amount: {}, is_lose_task: {}", current_task.c_str(), target_amount, is_lose_task);
     
     
     // Task checking logic - simplified to prevent lockups
