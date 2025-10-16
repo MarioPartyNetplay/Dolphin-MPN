@@ -560,8 +560,9 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       
     }
     
-    // Reset task when not on board
-    if (!on_board)
+    // Only reset task when completely leaving the game (main menu, etc.)
+    // Keep task active during minigames and other board-related scenes
+    if (!on_board && CurrentState.CurrentSceneId < 0x50) // Reset only for main menu scenes
     {
       current_task = "Not started";
       task_generated = false;
