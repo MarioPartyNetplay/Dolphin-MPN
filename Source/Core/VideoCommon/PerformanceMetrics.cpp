@@ -498,7 +498,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         
         if (task.find("Lose") != std::string::npos)
         {
-          // For lose tasks, check if any player has enough coins to lose
+          // For lose tasks, check if ANY player has enough coins to lose
+          // Since everyone gets the same task, only one player needs to be able to complete it
           bool any_player_can_lose = false;
           for (int i = 0; i < 4; i++)
           {
@@ -509,10 +510,12 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
             }
           }
           is_achievable = any_player_can_lose;
+          INFO_LOG_FMT(VIDEO, "Lose {} coins task: {} achievable (any player can lose)", target_amount, is_achievable ? "IS" : "NOT");
         }
         else if (task.find("Collect") != std::string::npos)
         {
-          // For collect tasks, check if any player can gain that many coins (not at 999 limit)
+          // For collect tasks, check if ANY player can gain that many coins (not at 999 limit)
+          // Since everyone gets the same task, only one player needs to be able to complete it
           bool any_player_can_gain = false;
           for (int i = 0; i < 4; i++)
           {
@@ -523,6 +526,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
             }
           }
           is_achievable = any_player_can_gain;
+          INFO_LOG_FMT(VIDEO, "Collect {} coins task: {} achievable (any player can gain)", target_amount, is_achievable ? "IS" : "NOT");
         }
         
         if (is_achievable)
