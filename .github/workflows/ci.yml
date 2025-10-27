@@ -481,17 +481,17 @@ jobs:
       run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal
         /property:Configuration=Release /property:Platform=x64
 
-    #- name: Trusted Signing
-    #  uses: azure/trusted-signing-action@v0.5.1
-    #  with:
-    #    azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-    #    azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-    #    azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-    #    endpoint: https://eus.codesigning.azure.net/
-    #    trusted-signing-account-name: TabithaHanegan
-    #    certificate-profile-name: vscx-certificate-profile
-    #    files-folder: Binary/x64/
-    #    files-folder-filter: exe,dll
+    - name: Trusted Signing
+      uses: azure/trusted-signing-action@v0.5.1
+      with:
+        azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+        endpoint: https://eus.codesigning.azure.net/
+        trusted-signing-account-name: TabithaHanegan
+        certificate-profile-name: vscx-certificate-profile
+        files-folder: Binary/x64/
+        files-folder-filter: exe,dll
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
