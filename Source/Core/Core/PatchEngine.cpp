@@ -233,19 +233,19 @@ static void ApplyPatches(const Core::CPUThreadGuard& guard, const std::vector<Pa
           if (!entry.conditional ||
               PowerPC::MMU::HostRead<u8>(guard, addr) == static_cast<u8>(comparand))
           {
-            PowerPC::MMU::HostWrite_U8(guard, static_cast<u8>(value), addr);
+            PowerPC::MMU::HostWrite<u8>(guard, static_cast<u8>(value), addr);
           }
           break;
         case PatchType::Patch16Bit:
           if (!entry.conditional ||
               PowerPC::MMU::HostRead<u16>(guard, addr) == static_cast<u16>(comparand))
           {
-            PowerPC::MMU::HostWrite_U16(guard, static_cast<u16>(value), addr);
+            PowerPC::MMU::HostWrite<u16>(guard, static_cast<u16>(value), addr);
           }
           break;
         case PatchType::Patch32Bit:
           if (!entry.conditional || PowerPC::MMU::HostRead<u32>(guard, addr) == comparand)
-            ApplyMemoryPatch<u32>(guard, value, addr);
+            PowerPC::MMU::HostWrite<u32>(guard, value, addr);
           break;
         default:
           // unknown patchtype
