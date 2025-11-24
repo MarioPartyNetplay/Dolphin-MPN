@@ -3,9 +3,13 @@
 
 #include "DolphinQt/Config/SettingsWindow.h"
 
+#include <QApplication>
+#include <QColor>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QListWidget>
+#include <QPalette>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -17,12 +21,14 @@
 #include "DolphinQt/MainWindow.h"
 #include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
+#include "DolphinQt/Settings.h"
 #include "DolphinQt/Settings/AdvancedPane.h"
 #include "DolphinQt/Settings/AudioPane.h"
 #include "DolphinQt/Settings/GameCubePane.h"
 #include "DolphinQt/Settings/GeneralPane.h"
 #include "DolphinQt/Settings/InterfacePane.h"
 #include "DolphinQt/Settings/MarioPartyNetplayPane.h"
+#include "DolphinQt/Settings/OnScreenDisplayPane.h"
 #include "DolphinQt/Settings/PathPane.h"
 #include "DolphinQt/Settings/WiiPane.h"
 
@@ -63,16 +69,15 @@ StackedSettingsWindow::StackedSettingsWindow(QWidget* parent) : QDialog{parent}
           "QListWidget::item { padding-top: %2px; padding-bottom: %2px; } "
           // Maintain selected item color when unfocused.
           "QListWidget::item:selected { background: palette(highlight); "
-#if !defined(__APPLE__)
           // Prevent text color change on focus loss.
-          // This seems to breaks the nice white text on macOS.
           "color: palette(highlighted-text); "
-#endif
           "} "
           // Remove ugly dotted outline on selected row (Windows and GNOME).
           "* { outline: none; } ")
           .arg(QString::fromUtf8(list_background))
           .arg(list_item_padding));
+
+  UpdateNavigationListStyle();
 
   layout->addWidget(m_navigation_list);
 
@@ -104,6 +109,66 @@ void StackedSettingsWindow::OnDoneCreatingPanes()
   QtUtils::AdjustSizeWithinScreen(this);
 }
 
+void StackedSettingsWindow::changeEvent(QEvent* event)
+{
+  QDialog::changeEvent(event);
+
+  const auto type = event->type();
+
+  const bool palette_changed = type == QEvent::PaletteChange;
+  const bool application_palette_changed = type == QEvent::ApplicationPaletteChange;
+  const bool style_changed = type == QEvent::StyleChange;
+  const bool theme_event = type == QEvent::ThemeChange;
+
+  const bool theme_changed = application_palette_changed || theme_event;
+
+  if (theme_changed && !m_handling_theme_change)
+  {
+    m_handling_theme_change = true;
+    Settings::Instance().ApplyStyle();
+    // Ensure the dialog and its children adopt the new system palette.
+    setPalette(qApp->palette());
+    Settings::Instance().TriggerThemeChanged();
+    m_handling_theme_change = false;
+  }
+
+  if (palette_changed || application_palette_changed || style_changed || theme_event)
+    UpdateNavigationListStyle();
+}
+
+void StackedSettingsWindow::UpdateNavigationListStyle()
+{
+  if (!m_navigation_list)
+    return;
+
+  QPalette list_palette = m_navigation_list->palette();
+  const QPalette app_palette = qApp->palette();
+
+  QColor highlight_color = app_palette.color(QPalette::Active, QPalette::Highlight);
+  QColor highlighted_text = app_palette.color(QPalette::Active, QPalette::HighlightedText);
+
+#if defined(__APPLE__)
+  const bool is_dark_theme = Settings::Instance().IsThemeDark();
+  // The default macOS accent is quite light in our list; darken it for readability in light mode.
+  if (!is_dark_theme)
+  {
+    highlight_color = highlight_color.darker(130);
+    highlighted_text = QColor(Qt::white);
+  }
+#endif
+
+  for (const QPalette::ColorGroup group : {QPalette::Active, QPalette::Inactive})
+  {
+    list_palette.setColor(group, QPalette::Base, app_palette.color(group, QPalette::Base));
+    list_palette.setColor(group, QPalette::AlternateBase,
+                          app_palette.color(group, QPalette::AlternateBase));
+    list_palette.setColor(group, QPalette::Highlight, highlight_color);
+    list_palette.setColor(group, QPalette::HighlightedText, highlighted_text);
+  }
+
+  m_navigation_list->setPalette(list_palette);
+}
+
 void StackedSettingsWindow::AddPane(QWidget* widget, const QString& name)
 {
   m_stacked_panes->addWidget(widget);
@@ -131,6 +196,7 @@ SettingsWindow::SettingsWindow(MainWindow* parent) : StackedSettingsWindow{paren
   AddWrappedPane(new ControllersPane, tr("Controllers"));
   AddWrappedPane(new InterfacePane, tr("Interface"));
   AddWrappedPane(new MarioPartyNetplayPane, tr("Mario Party Netplay"));
+  AddWrappedPane(new OnScreenDisplayPane, tr("On-Screen Display"));
   AddWrappedPane(new AudioPane, tr("Audio"));
   AddWrappedPane(new PathPane, tr("Paths"));
   AddWrappedPane(new GameCubePane, tr("GameCube"));

@@ -290,6 +290,8 @@ public:
   u64 ReadFullTimeBaseValue() const;
   void WriteFullTimeBaseValue(u64 value);
 
+  void MSRUpdated();
+
   PowerPCState& GetPPCState() { return m_ppc_state; }
   const PowerPCState& GetPPCState() const { return m_ppc_state; }
   BreakPoints& GetBreakPoints() { return m_breakpoints; }
@@ -357,7 +359,6 @@ void CheckAndHandleBreakPointsFromJIT(PowerPCManager& power_pc);
 #define TU(ppc_state) (ppc_state).spr[SPR_TU]
 
 void RoundingModeUpdated(PowerPCState& ppc_state);
-void MSRUpdated(PowerPCState& ppc_state);
 void MMCRUpdated(PowerPCState& ppc_state);
 void RecalculateAllFeatureFlags(PowerPCState& ppc_state);
 
