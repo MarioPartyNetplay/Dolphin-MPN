@@ -115,6 +115,8 @@ struct SConfig
   // Load settings
   void LoadSettings();
 
+  static void ResetAllSettings();
+
   // Return the permanent and somewhat globally used instance of this struct
   static SConfig& GetInstance() { return (*m_Instance); }
   static void Init();

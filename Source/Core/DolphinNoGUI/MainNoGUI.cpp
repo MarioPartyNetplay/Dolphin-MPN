@@ -189,8 +189,6 @@ static std::unique_ptr<Platform> GetPlatform(const optparse::Values& options)
 
 int main(const int argc, char* argv[])
 {
-  Core::DeclareAsHostThread();
-
   const auto parser =
       CommandLineParse::CreateParser(CommandLineParse::ParserOptions::OmitGUIOptions);
   parser->add_option("-p", "--platform")
@@ -288,7 +286,7 @@ int main(const int argc, char* argv[])
     return 1;
   }
 
-  Core::AddOnStateChangedCallback([](const Core::State state) {
+  auto core_state_changed_hook = Core::AddOnStateChangedCallback([](const Core::State state) {
     if (state == Core::State::Uninitialized)
       s_platform->Stop();
   });
@@ -301,7 +299,7 @@ int main(const int argc, char* argv[])
   struct sigaction sa;
   sa.sa_handler = signal_handler;
   sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESETHAND;
+  sa.sa_flags = SA_RESTART | SA_RESETHAND;
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
 #endif

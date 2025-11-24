@@ -168,11 +168,6 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
     result = std::make_unique<CEXIETHERNET>(system, BBADeviceType::IPC);
     break;
 
-  case EXIDeviceType::EthernetNetPlay:
-    INFO_LOG_FMT(SP1, "Creating BuiltIn BBA device for NetPlay (EthernetNetPlay) on channel {}", channel_num);
-    result = std::make_unique<CEXIETHERNET>(system, BBADeviceType::BuiltIn);
-    break;
-
   case EXIDeviceType::ModemTapServer:
     result = std::make_unique<CEXIModem>(system, ModemDeviceType::TAPSERVER);
     break;

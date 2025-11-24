@@ -2,12 +2,14 @@
 
 package org.dolphinemu.dolphinemu.activities
 
-import android.annotation.SuppressLint
 import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.SparseIntArray
 import android.view.KeyEvent
 import android.view.MenuItem
@@ -16,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.ViewCompat
@@ -91,6 +94,96 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
     private lateinit var infinityBinding: DialogNfcFiguresManagerBinding
 
     private lateinit var binding: ActivityEmulationBinding
+
+    private val refreshInputOverlayRateLimiter = RateLimiter(Handler(Looper.getMainLooper()), 100) {
+        emulationFragment?.refreshInputOverlay()
+    }
+
+    private val requestChangeDisc = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            NativeLibrary.ChangeDisc(uri.toString())
+        }
+    }
+
+    val requestSkylanderFile = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val slot = SkylanderConfig.loadSkylander(
+                skylanderSlots[skylanderSlot].portalSlot,
+                uri.toString()
+            )!!
+            clearSkylander(skylanderSlot)
+            skylanderSlots[skylanderSlot].portalSlot = slot.first!!
+            skylanderSlots[skylanderSlot].label = slot.second!!
+            skylandersBinding.figureManager.adapter!!.notifyItemChanged(skylanderSlot)
+            skylanderSlot = -1
+            skylanderData = Skylander.BLANK_SKYLANDER
+        }
+    }
+
+    val requestCreateSkylander = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            if (skylanderData.id != -1 && skylanderData.variant != -1) {
+                val slot = SkylanderConfig.createSkylander(
+                    skylanderData.id,
+                    skylanderData.variant,
+                    uri.toString(),
+                    skylanderSlots[skylanderSlot].portalSlot
+                )
+                clearSkylander(skylanderSlot)
+                skylanderSlots[skylanderSlot].portalSlot = slot.first
+                skylanderSlots[skylanderSlot].label = slot.second
+                skylandersBinding.figureManager.adapter?.notifyItemChanged(skylanderSlot)
+                skylanderSlot = -1
+                skylanderData = Skylander.BLANK_SKYLANDER
+            }
+        }
+    }
+
+    val requestInfinityFigureFile = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val label = InfinityConfig.loadFigure(infinityPosition, uri.toString())
+            if (label != null && label != "Unknown Figure") {
+                clearInfinityFigure(infinityPosition)
+                infinityFigures[infinityPosition].label = label
+                infinityBinding.figureManager.adapter?.notifyItemChanged(infinityPosition)
+                infinityPosition = -1
+                infinityFigureData = Figure.BLANK_FIGURE
+            } else {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.incompatible_figure_selected)
+                    .setMessage(R.string.select_compatible_figure)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
+    }
+
+    val requestCreateInfinityFigure = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            if (infinityFigureData.number != -1L) {
+                val label = InfinityConfig.createFigure(
+                    infinityFigureData.number,
+                    uri.toString(),
+                    infinityPosition
+                )
+                clearInfinityFigure(infinityPosition)
+                infinityFigures[infinityPosition].label = label!!
+                infinityBinding.figureManager.adapter?.notifyItemChanged(infinityPosition)
+                infinityPosition = -1
+                infinityFigureData = Figure.BLANK_FIGURE
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeHelper.setTheme(this)
@@ -227,7 +320,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
 
     override fun onStop() {
         super.onStop()
-        settings.saveSettings(null)
+        settings.saveSettings()
     }
 
     fun onTitleChanged() {
@@ -266,70 +359,6 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
             return true
         }
         return super.onKeyLongPress(keyCode, event)
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, result: Intent?) {
-        super.onActivityResult(requestCode, resultCode, result)
-        // If the user picked a file, as opposed to just backing out.
-        if (resultCode == RESULT_OK) {
-            if (requestCode == REQUEST_CHANGE_DISC) {
-                NativeLibrary.ChangeDisc(result!!.data.toString())
-            } else if (requestCode == REQUEST_SKYLANDER_FILE) {
-                val slot = SkylanderConfig.loadSkylander(
-                    skylanderSlots[skylanderSlot].portalSlot,
-                    result!!.data.toString()
-                )!!
-                clearSkylander(skylanderSlot)
-                skylanderSlots[skylanderSlot].portalSlot = slot.first!!
-                skylanderSlots[skylanderSlot].label = slot.second!!
-                skylandersBinding.figureManager.adapter!!.notifyItemChanged(skylanderSlot)
-                skylanderSlot = -1
-                skylanderData = Skylander.BLANK_SKYLANDER
-            } else if (requestCode == REQUEST_CREATE_SKYLANDER) {
-                if (skylanderData.id != -1 && skylanderData.variant != -1) {
-                    val slot = SkylanderConfig.createSkylander(
-                        skylanderData.id,
-                        skylanderData.variant,
-                        result!!.data.toString(),
-                        skylanderSlots[skylanderSlot].portalSlot
-                    )
-                    clearSkylander(skylanderSlot)
-                    skylanderSlots[skylanderSlot].portalSlot = slot.first
-                    skylanderSlots[skylanderSlot].label = slot.second
-                    skylandersBinding.figureManager.adapter?.notifyItemChanged(skylanderSlot)
-                    skylanderSlot = -1
-                    skylanderData = Skylander.BLANK_SKYLANDER
-                }
-            } else if (requestCode == REQUEST_INFINITY_FIGURE_FILE) {
-                val label = InfinityConfig.loadFigure(infinityPosition, result!!.data.toString())
-                if (label != null && label != "Unknown Figure") {
-                    clearInfinityFigure(infinityPosition)
-                    infinityFigures[infinityPosition].label = label
-                    infinityBinding.figureManager.adapter?.notifyItemChanged(infinityPosition)
-                    infinityPosition = -1
-                    infinityFigureData = Figure.BLANK_FIGURE
-                } else {
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle(R.string.incompatible_figure_selected)
-                        .setMessage(R.string.select_compatible_figure)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                }
-            } else if (requestCode == REQUEST_CREATE_INFINITY_FIGURE) {
-                if (infinityFigureData.number != -1L) {
-                    val label = InfinityConfig.createFigure(
-                        infinityFigureData.number,
-                        result!!.data.toString(),
-                        infinityPosition
-                    )
-                    clearInfinityFigure(infinityPosition)
-                    infinityFigures[infinityPosition].label = label!!
-                    infinityBinding.figureManager.adapter?.notifyItemChanged(infinityPosition)
-                    infinityPosition = -1
-                    infinityFigureData = Figure.BLANK_FIGURE
-                }
-            }
-        }
     }
 
     private fun enableFullscreenImmersive() {
@@ -491,12 +520,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
             MENU_ACTION_LOAD_SLOT4 -> NativeLibrary.LoadState(3)
             MENU_ACTION_LOAD_SLOT5 -> NativeLibrary.LoadState(4)
             MENU_ACTION_LOAD_SLOT6 -> NativeLibrary.LoadState(5)
-            MENU_ACTION_CHANGE_DISC -> {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
-                intent.addCategory(Intent.CATEGORY_OPENABLE)
-                intent.type = "*/*"
-                startActivityForResult(intent, REQUEST_CHANGE_DISC)
-            }
+            MENU_ACTION_CHANGE_DISC -> requestChangeDisc.launch("*/*")
 
             MENU_SET_IR_MODE -> setIRMode()
             MENU_ACTION_CHOOSE_DOUBLETAP -> chooseDoubleTapButton()
@@ -555,6 +579,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                     BooleanSetting.valueOf(gcSettingBase + indexSelected)
                         .setBoolean(settings, isChecked)
+                    emulationFragment?.refreshInputOverlay()
                 }
             }
             InputOverlay.OVERLAY_WIIMOTE_CLASSIC -> {
@@ -569,6 +594,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                     BooleanSetting.valueOf(classicSettingBase + indexSelected)
                         .setBoolean(settings, isChecked)
+                    emulationFragment?.refreshInputOverlay()
                 }
             }
             InputOverlay.OVERLAY_WIIMOTE_NUNCHUK -> {
@@ -590,6 +616,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                     BooleanSetting.valueOf(nunchukSettingBase + translateToSettingsIndex(indexSelected))
                         .setBoolean(settings, isChecked)
+                    emulationFragment?.refreshInputOverlay()
                 }
             }
             else -> {
@@ -605,14 +632,13 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                     BooleanSetting.valueOf(wiimoteSettingBase + indexSelected)
                         .setBoolean(settings, isChecked)
+                    emulationFragment?.refreshInputOverlay()
                 }
             }
         }
 
         builder
-            .setPositiveButton(R.string.ok) { _: DialogInterface?, _: Int ->
-                emulationFragment?.refreshInputOverlay()
-            }
+            .setPositiveButton(R.string.ok, null)
             .show()
     }
 
@@ -634,6 +660,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
             ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                 BooleanSetting
                     .valueOf(gcSettingBase + indexSelected).setBoolean(settings, isChecked)
+                emulationFragment?.refreshInputOverlay()
             }
         } else if (currentController == InputOverlay.OVERLAY_WIIMOTE_CLASSIC) {
             val wiiClassicEnabledButtons = BooleanArray(14)
@@ -647,6 +674,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
             ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                 BooleanSetting.valueOf(classicSettingBase + indexSelected)
                     .setBoolean(settings, isChecked)
+                emulationFragment?.refreshInputOverlay()
             }
         } else {
             val wiiEnabledButtons = BooleanArray(11)
@@ -661,6 +689,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                     BooleanSetting
                         .valueOf(wiiSettingBase + indexSelected).setBoolean(settings, isChecked)
+                    emulationFragment?.refreshInputOverlay()
                 }
             } else {
                 builder.setMultiChoiceItems(
@@ -668,6 +697,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 ) { _: DialogInterface?, indexSelected: Int, isChecked: Boolean ->
                     BooleanSetting
                         .valueOf(wiiSettingBase + indexSelected).setBoolean(settings, isChecked)
+                    emulationFragment?.refreshInputOverlay()
                 }
             }
         }
@@ -676,7 +706,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
             .setNeutralButton(R.string.emulation_toggle_all) { _: DialogInterface?, _: Int ->
                 emulationFragment!!.toggleInputOverlayVisibility(settings)
             }
-            .setPositiveButton(R.string.ok) { _: DialogInterface?, _: Int -> emulationFragment?.refreshInputOverlay() }
+            .setPositiveButton(R.string.ok, null)
             .show()
     }
 
@@ -757,10 +787,9 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                     settings,
                     InputOverlayPointer.DOUBLE_TAP_OPTIONS[which]
                 )
-            }
-            .setPositiveButton(R.string.ok) { _: DialogInterface?, _: Int ->
                 emulationFragment?.initInputPointer()
             }
+            .setPositiveButton(R.string.ok, null)
             .show()
     }
 
@@ -771,9 +800,11 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 valueTo = 150f
                 value = IntSetting.MAIN_CONTROL_SCALE.int.toFloat()
                 stepSize = 1f
-                addOnChangeListener(Slider.OnChangeListener { _: Slider?, progress: Float, _: Boolean ->
-                    dialogBinding.inputScaleValue.text = "${(progress.toInt() + 50)}%"
-                })
+                addOnChangeListener { _: Slider?, value: Float, _: Boolean ->
+                    dialogBinding.inputScaleValue.text = "${(value.toInt() + 50)}%"
+                    IntSetting.MAIN_CONTROL_SCALE.setInt(settings, value.toInt())
+                    refreshInputOverlayRateLimiter.run()
+                }
             }
             inputScaleValue.text =
                 "${(dialogBinding.inputScaleSlider.value.toInt() + 50)}%"
@@ -782,9 +813,11 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 valueTo = 100f
                 value = IntSetting.MAIN_CONTROL_OPACITY.int.toFloat()
                 stepSize = 1f
-                addOnChangeListener(Slider.OnChangeListener { _: Slider?, progress: Float, _: Boolean ->
-                    inputOpacityValue.text = progress.toInt().toString() + "%"
-                })
+                addOnChangeListener { _: Slider?, value: Float, _: Boolean ->
+                    inputOpacityValue.text = value.toInt().toString() + "%"
+                    IntSetting.MAIN_CONTROL_OPACITY.setInt(settings, value.toInt())
+                    refreshInputOverlayRateLimiter.run()
+                }
             }
             inputOpacityValue.text = inputOpacitySlider.value.toInt().toString() + "%"
         }
@@ -792,17 +825,7 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.emulation_control_adjustments)
             .setView(dialogBinding.root)
-            .setPositiveButton(R.string.ok) { _: DialogInterface?, _: Int ->
-                IntSetting.MAIN_CONTROL_SCALE.setInt(
-                    settings,
-                    dialogBinding.inputScaleSlider.value.toInt()
-                )
-                IntSetting.MAIN_CONTROL_OPACITY.setInt(
-                    settings,
-                    dialogBinding.inputOpacitySlider.value.toInt()
-                )
-                emulationFragment?.refreshInputOverlay()
-            }
+            .setPositiveButton(R.string.ok, null)
             .setNeutralButton(R.string.default_values) { _: DialogInterface?, _: Int ->
                 IntSetting.MAIN_CONTROL_SCALE.delete(settings)
                 IntSetting.MAIN_CONTROL_OPACITY.delete(settings)
@@ -908,10 +931,9 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 entries.toArray(arrayOf<CharSequence>()), checkedItem
             ) { _: DialogInterface?, indexSelected: Int ->
                 controllerSetting.setInt(settings, values[indexSelected])
-            }
-            .setPositiveButton(R.string.ok) { _: DialogInterface?, _: Int ->
                 emulationFragment?.refreshInputOverlay()
             }
+            .setPositiveButton(R.string.ok, null)
             .setNeutralButton(
                 R.string.emulation_more_controller_settings
             ) { _: DialogInterface?, _: Int -> SettingsActivity.launch(this, MenuTag.SETTINGS) }
@@ -926,10 +948,9 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
                 IntSetting.MAIN_IR_MODE.int
             ) { _: DialogInterface?, indexSelected: Int ->
                 IntSetting.MAIN_IR_MODE.setInt(settings, indexSelected)
-            }
-            .setPositiveButton(R.string.ok) { _: DialogInterface?, _: Int ->
                 emulationFragment?.refreshOverlayPointer()
             }
+            .setPositiveButton(R.string.ok, null)
             .show()
     }
 
@@ -1065,11 +1086,6 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
     companion object {
         private const val BACKSTACK_NAME_MENU = "menu"
         private const val BACKSTACK_NAME_SUBMENU = "submenu"
-        const val REQUEST_CHANGE_DISC = 1
-        const val REQUEST_SKYLANDER_FILE = 2
-        const val REQUEST_CREATE_SKYLANDER = 3
-        const val REQUEST_INFINITY_FIGURE_FILE = 4
-        const val REQUEST_CREATE_INFINITY_FIGURE = 5
 
         private var ignoreLaunchRequests = false
 

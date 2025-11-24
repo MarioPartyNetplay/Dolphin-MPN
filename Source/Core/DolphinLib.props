@@ -51,6 +51,7 @@
     <ClInclude Include="Common\Debug\MemoryPatches.h" />
     <ClInclude Include="Common\Debug\Threads.h" />
     <ClInclude Include="Common\Debug\Watches.h" />
+    <ClInclude Include="Common\DirectIOFile.h" />
     <ClInclude Include="Common\DynamicLibrary.h" />
     <ClInclude Include="Common\ENet.h" />
     <ClInclude Include="Common\EnumFormatter.h" />
@@ -145,8 +146,10 @@
     <ClInclude Include="Common\MemoryUtil.h" />
     <ClInclude Include="Common\MinizipUtil.h" />
     <ClInclude Include="Common\MsgHandler.h" />
+    <ClInclude Include="Common\Mutex.h" />
     <ClInclude Include="Common\NandPaths.h" />
     <ClInclude Include="Common\Network.h" />
+    <ClInclude Include="Common\OneShotEvent.h" />
     <ClInclude Include="Common\PcapFile.h" />
     <ClInclude Include="Common\Profiler.h" />
     <ClInclude Include="Common\Projection.h" />
@@ -455,6 +458,7 @@
     <ClInclude Include="Core\PowerPC\Interpreter\ExceptionUtils.h" />
     <ClInclude Include="Core\PowerPC\Interpreter\Interpreter_FPUtils.h" />
     <ClInclude Include="Core\PowerPC\Interpreter\Interpreter.h" />
+    <ClInclude Include="Core\PowerPC\JitCommon\ConstantPropagation.h" />
     <ClInclude Include="Core\PowerPC\JitCommon\DivUtils.h" />
     <ClInclude Include="Core\PowerPC\JitCommon\JitAsmCommon.h" />
     <ClInclude Include="Core\PowerPC\JitCommon\JitBase.h" />
@@ -751,6 +755,7 @@
     <ClInclude Include="VideoCommon\Present.h" />
     <ClInclude Include="VideoCommon\RenderState.h" />
     <ClInclude Include="VideoCommon\ShaderCache.h" />
+    <ClInclude Include="VideoCommon\ShaderCompileUtils.h" />
     <ClInclude Include="VideoCommon\ShaderGenCommon.h" />
     <ClInclude Include="VideoCommon\Spirv.h" />
     <ClInclude Include="VideoCommon\Statistics.h" />
@@ -820,6 +825,7 @@
     <ClCompile Include="Common\Crypto\SHA1.cpp" />
     <ClCompile Include="Common\Debug\MemoryPatches.cpp" />
     <ClCompile Include="Common\Debug\Watches.cpp" />
+    <ClCompile Include="Common\DirectIOFile.cpp" />
     <ClCompile Include="Common\DynamicLibrary.cpp" />
     <ClCompile Include="Common\ENet.cpp" />
     <ClCompile Include="Common\FatFsUtil.cpp" />
@@ -965,7 +971,6 @@
     <ClCompile Include="Core\HW\DVD\FileMonitor.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\BuiltIn.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\IPC.cpp" />
-    <ClCompile Include="Core\HW\EXI\BBA\NetPlayBBA.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\TAP_Win32.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\TAPServerConnection.cpp" />
     <ClCompile Include="Core\HW\EXI\BBA\TAPServerBBA.cpp" />
@@ -1138,6 +1143,7 @@
     <ClCompile Include="Core\PowerPC\Interpreter\Interpreter_SystemRegisters.cpp" />
     <ClCompile Include="Core\PowerPC\Interpreter\Interpreter_Tables.cpp" />
     <ClCompile Include="Core\PowerPC\Interpreter\Interpreter.cpp" />
+    <ClCompile Include="Core\PowerPC\JitCommon\ConstantPropagation.cpp" />
     <ClCompile Include="Core\PowerPC\JitCommon\DivUtils.cpp" />
     <ClCompile Include="Core\PowerPC\JitCommon\JitAsmCommon.cpp" />
     <ClCompile Include="Core\PowerPC\JitCommon\JitBase.cpp" />
@@ -1399,6 +1405,7 @@
     <ClCompile Include="VideoCommon\Present.cpp" />
     <ClCompile Include="VideoCommon\RenderState.cpp" />
     <ClCompile Include="VideoCommon\ShaderCache.cpp" />
+    <ClCompile Include="VideoCommon\ShaderCompileUtils.cpp" />
     <ClCompile Include="VideoCommon\ShaderGenCommon.cpp" />
     <ClCompile Include="VideoCommon\Spirv.cpp" />
     <ClCompile Include="VideoCommon\Statistics.cpp" />

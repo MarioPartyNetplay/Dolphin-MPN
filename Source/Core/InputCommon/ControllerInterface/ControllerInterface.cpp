@@ -535,8 +535,8 @@ ControllerInterface::RegisterDevicesChangedCallback(std::function<void()> callba
   return std::prev(m_devices_changed_callbacks.end());
 }
 
-// Unregister a device callback.
-void ControllerInterface::UnregisterDevicesChangedCallback(const HotplugCallbackHandle& handle)
+Common::EventHook
+ControllerInterface::RegisterDevicesChangedCallback(Common::HookableEvent<>::CallbackType callback)
 {
   std::lock_guard lk(m_callbacks_mutex);
   m_devices_changed_callbacks.erase(handle);
@@ -546,7 +546,7 @@ void ControllerInterface::UnregisterDevicesChangedCallback(const HotplugCallback
 }
 
 // Invoke all callbacks that were registered
-void ControllerInterface::InvokeDevicesChangedCallbacks() const
+void ControllerInterface::InvokeDevicesChangedCallbacks()
 {
   m_callbacks_mutex.lock();
   const auto devices_changed_callbacks = m_devices_changed_callbacks;

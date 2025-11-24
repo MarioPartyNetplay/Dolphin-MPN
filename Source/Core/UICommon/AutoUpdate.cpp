@@ -75,6 +75,23 @@ std::string MakeUpdaterCommandLine(const std::map<std::string, std::string>& fla
   return cmdline;
 }
 
+void CleanupFromPreviousUpdate()
+{
+#ifdef __APPLE__
+  // Remove the relocated updater file.
+  File::DeleteDirRecursively(UpdaterPath(true));
+
+  // Remove the old (non-embedded) updater app bundle.
+  // While the update process will delete the files within the old bundle after updating to a
+  // version with an embedded updater, it won't delete the folder structure of the bundle, so
+  // we should clean those leftovers up.
+  File::DeleteDirRecursively(File::GetExeDirectory() + DIR_SEP + "Dolphin Updater.app");
+#endif
+
+  // Updater.log was moved from GetExeDirectory() to GetUserPath(D_LOGS_IDX) in 5.0-14529.
+  File::Delete(File::GetExeDirectory() + DIR_SEP + "Updater.log",
+               File::IfAbsentBehavior::NoConsoleWarning);
+}
 #endif
 
 // This ignores i18n because most of the text in there (change descriptions) is only going to be
@@ -162,6 +179,10 @@ void AutoUpdateChecker::CheckForUpdate(std::string_view update_track,
   // Don't bother checking if updates are not supported or not enabled.
   if (!SystemSupportsAutoUpdates() || update_track.empty())
     return;
+
+#ifdef OS_SUPPORTS_UPDATER
+  CleanupFromPreviousUpdate();
+#endif
 
   std::string_view version_hash = hash_override.empty() ? Common::GetScmRevGitStr() : hash_override;
   std::string url = fmt::format("{}/update/check/v1/{}/{}/{}", GetUpdateServerUrl(), update_track,

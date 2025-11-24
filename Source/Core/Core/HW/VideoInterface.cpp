@@ -886,15 +886,15 @@ void VideoInterfaceManager::EndField(FieldType field, u64 ticks)
 
   // Note: OutputField above doesn't present when using GPU-on-Thread or Early/Immediate XFB,
   //  giving "VBlank" measurements here poor pacing without a Throttle call.
-  // If the user actually wants the data, we'll Throttle to make the numbers nice.
-  const bool is_vblank_data_wanted = g_ActiveConfig.bShowVPS || g_ActiveConfig.bShowVTimes ||
-                                     g_ActiveConfig.bLogRenderTimeToFile ||
-                                     g_ActiveConfig.bShowGraphs;
+  // We'll throttle so long as Immediate XFB isn't enabled.
+  // That setting intends to minimize input latency and throttling would be counterproductive.
+  // The Rush Frame Presentation setting is handled by Throttle itself.
+  const bool is_vblank_data_wanted = !g_ActiveConfig.bImmediateXFB;
   if (is_vblank_data_wanted)
     m_system.GetCoreTiming().Throttle(ticks);
 
   g_perf_metrics.CountVBlank();
-  VIEndFieldEvent::Trigger();
+  m_system.GetVideoEvents().vi_end_field_event.Trigger();
   Core::OnFrameEnd(m_system);
 }
 
@@ -949,9 +949,6 @@ void VideoInterfaceManager::Update(u64 ticks)
   {
     // Throttle before SI poll so user input is taken just before needed. (lower input latency)
     core_timing.Throttle(ticks);
-
-    // This is a nice place to measure performance so we don't have to Throttle elsewhere.
-    g_perf_metrics.CountPerformanceMarker(ticks, m_system.GetSystemTimers().GetTicksPerSecond());
 
     Core::UpdateInputGate(!Config::Get(Config::MAIN_INPUT_BACKGROUND_INPUT),
                           Config::Get(Config::MAIN_LOCK_CURSOR));

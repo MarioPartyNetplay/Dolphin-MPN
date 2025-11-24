@@ -227,7 +227,6 @@ enum class BBADeviceType
   TAPSERVER,
   BuiltIn,
   IPC,
-  NetPlay,
 };
 
 class CEXIETHERNET : public IEXIDevice
@@ -625,6 +624,43 @@ private:
 
     static void InjectCallback(Core::System& system, u64 userdata, s64 cycles_late);
     void ProcessPendingPacketsOnCPU();
+  };
+
+  class IPCBBAInterface : public NetworkInterface
+  {
+  public:
+    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
+
+#if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+
+    bool Activate() override;
+    void Deactivate() override;
+    bool IsActivated() override;
+    bool SendFrame(const u8* frame, u32 size) override;
+    bool RecvInit() override;
+    void RecvStart() override;
+    void RecvStop() override;
+
+  private:
+    void ReadThreadHandler();
+
+    bool m_active{};
+    ipc::channel m_channel;
+    std::thread m_read_thread;
+    Common::Flag m_read_enabled;
+    Common::Flag m_read_thread_shutdown;
+
+#else
+
+    bool Activate() override { return false; }
+    void Deactivate() override {}
+    bool IsActivated() override { return false; }
+    bool SendFrame(const u8* const frame, const u32 size) override { return false; }
+    bool RecvInit() override { return false; }
+    void RecvStart() override {}
+    void RecvStop() override {}
+
+#endif
   };
 
   std::unique_ptr<NetworkInterface> m_network_interface;

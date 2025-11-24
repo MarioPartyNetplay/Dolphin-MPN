@@ -147,6 +147,8 @@ add_library(videocommon
   RenderState.h
   ShaderCache.cpp
   ShaderCache.h
+  ShaderCompileUtils.cpp
+  ShaderCompileUtils.h
   ShaderGenCommon.cpp
   ShaderGenCommon.h
   Spirv.cpp
@@ -218,13 +220,14 @@ add_library(videocommon
 target_link_libraries(videocommon
 PUBLIC
   core
+  glslang::glslang
 PRIVATE
   fmt::fmt
   spng::spng
   xxhash::xxhash
   imgui
   implot
-  glslang::glslang
+  glslang::SPIRV
   tinygltf
 )
 
