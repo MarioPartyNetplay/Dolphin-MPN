@@ -198,8 +198,7 @@ enum class GameName : u8 {
   MarioParty5   = 2,
   MarioParty6   = 3,
   MarioParty7   = 4,
-  MarioParty8   = 5,
-  MarioParty4DX = 6
+  MarioParty8   = 5
 };
 
 }  // namespace Core

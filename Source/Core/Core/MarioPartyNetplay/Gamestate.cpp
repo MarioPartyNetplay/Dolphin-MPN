@@ -167,7 +167,8 @@ void mpn_per_frame()
       SConfig::GetInstance().GetGameID() == "GP6E01" ||
       SConfig::GetInstance().GetGameID() == "GP7E01" ||
       SConfig::GetInstance().GetGameID() == "RM8E01" ||
-      SConfig::GetInstance().GetGameID() == "GMPEDX")
+      SConfig::GetInstance().GetGameID() == "GMPEDX" ||
+      SConfig::GetInstance().GetGameID() == "GMPDX2")
   {
     uint8_t Needs = 0;
 

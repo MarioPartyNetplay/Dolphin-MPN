@@ -1077,10 +1077,11 @@ Core::CPUThreadGuard::~CPUThreadGuard()
 }
 
 static GameName mGameBeingPlayed = GameName::UnknownGame;
-const std::map<std::string, GameName> mGameMap = {{"GMPE01", GameName::MarioParty4DX},
+const std::map<std::string, GameName> mGameMap = {{"GMPE01", GameName::MarioParty4},
                                                   {"GP5E01", GameName::MarioParty5},
                                                   {"GP6E01", GameName::MarioParty6},
                                                   {"GP7E01", GameName::MarioParty7},
                                                   {"RM8E01", GameName::MarioParty8},
-                                                  {"GMPEDX", GameName::MarioParty4}};
+                                                  {"GMPEDX", GameName::MarioParty4},
+                                                  {"GMPDX2", GameName::MarioParty4}};
 }  // namespace Core

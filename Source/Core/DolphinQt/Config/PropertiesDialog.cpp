@@ -110,7 +110,7 @@ GeckoDialog::GeckoDialog(QWidget* parent) : StackedSettingsWindow(parent)
 
   // Create Gecko code widgets for each Mario Party game
   GeckoCodeWidget* mp4_gecko = new GeckoCodeWidget("GMPE01", "GMPE01", 0);
-  GeckoCodeWidget* mp4dx_gecko = new GeckoCodeWidget("GMPEDX", "GMPEDX", 0);
+  GeckoCodeWidget* mp4dx_gecko = new GeckoCodeWidget("GMPDX2", "GMPDX2", 0);
   GeckoCodeWidget* mp5_gecko = new GeckoCodeWidget("GP5E01", "GP5E01", 0);
   GeckoCodeWidget* mp6_gecko = new GeckoCodeWidget("GP6E01", "GP6E01", 0);
   GeckoCodeWidget* mp7_gecko = new GeckoCodeWidget("GP7E01", "GP7E01", 0);
