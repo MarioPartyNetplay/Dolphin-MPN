@@ -32,10 +32,7 @@
 void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, Common::Debug::MemoryPatch& patch,
                       bool store_existing_value)
 {
-  if (AchievementManager::GetInstance().IsHardcoreModeActive())
-    return;
-
-  if (patch.value.empty())
+  if (value.empty())
     return;
 
   const u32 address = patch.address;
