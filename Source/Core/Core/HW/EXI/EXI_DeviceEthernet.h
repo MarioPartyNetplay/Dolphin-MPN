@@ -40,9 +40,6 @@ class PointerWrap;
 namespace ExpansionInterface
 {
 
-// Function to register BBA packet sender callback
-void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender);
-
 // Network Control Register A
 enum NCRA
 {
@@ -227,6 +224,7 @@ enum class BBADeviceType
   TAPSERVER,
   BuiltIn,
   IPC,
+  NetPlay,
 };
 
 class CEXIETHERNET : public IEXIDevice
@@ -445,8 +443,6 @@ private:
         : NetworkInterface(eth_ref), m_dns_ip(std::move(dns_ip)), m_local_ip(std::move(local_ip))
     {
     }
-    // When enabled, BuiltIn will route traffic over NetPlay transport instead of OS sockets
-    void SetUseNetPlayTransport(bool use) { m_use_netplay_transport = use; }
     bool Activate() override;
     void Deactivate() override;
     bool IsActivated() override;
@@ -491,20 +487,6 @@ private:
     void HandleUDPFrame(const Common::UDPPacket& packet);
     void HandleUPnPClient();
     const Common::MACAddress& ResolveAddress(u32 inet_ip);
-
-    // NetPlay transport integration
-    bool m_use_netplay_transport = false;
-    std::mutex m_np_buffer_mutex;
-    std::deque<std::vector<u8>> m_np_packet_buffer;
-    std::atomic<bool> m_np_shutdown{false};
-    std::atomic<bool> m_np_receiving{false};
-    CoreTiming::EventType* m_np_event_inject = nullptr;
-    // registration id for NetPlay injector
-    u64 m_np_injector_id = 0;
-    // Called by NetPlay when a BBA packet arrives for injection
-    void NP_InjectPacket(const u8* data, u32 size);
-    // Runs on CPU thread to deliver pending injected packets into BBA
-    void NP_ProcessPendingPacketsOnCPU();
   };
 
 #if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
@@ -584,84 +566,6 @@ private:
   };
 
 #endif
-
-  // Legacy NetPlayBBAInterface kept for linkage of helper code; not instantiated.
-  class NetPlayBBAInterface : public NetworkInterface
-  {
-  public:
-    explicit NetPlayBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
-
-    bool Activate() override;
-    void Deactivate() override;
-    bool IsActivated() override;
-    bool SendFrame(const u8* frame, u32 size) override;
-    bool RecvInit() override;
-    void RecvStart() override;
-    void RecvStop() override;
-    void RecvRead(u8* dest, u32 size);
-    void RecvReadDone();
-
-    // Called from NetPlay to inject received BBA packets
-    void InjectPacket(const u8* data, u32 size);
-
-  private:
-    std::mutex m_buffer_mutex;
-    std::condition_variable m_buffer_cv;
-    std::deque<std::vector<u8>> m_packet_buffer;
-    std::atomic<bool> m_active{false};
-    std::atomic<bool> m_shutdown{false};
-    std::atomic<bool> m_receiving{false};
-    CoreTiming::EventType* m_event_inject = nullptr;
-
-    // NetPlay integration
-    void ProcessNetPlayPackets();
-    void BufferPacket(const u8* frame, u32 size);
-    std::optional<std::vector<u8>> GetNextPacket();
-
-    // Store the injector callback for proper cleanup
-    std::function<void(const u8*, u32)> m_injector_callback;
-    u64 m_injector_id = 0;
-
-    static void InjectCallback(Core::System& system, u64 userdata, s64 cycles_late);
-    void ProcessPendingPacketsOnCPU();
-  };
-
-  class IPCBBAInterface : public NetworkInterface
-  {
-  public:
-    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
-
-#if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
-
-    bool Activate() override;
-    void Deactivate() override;
-    bool IsActivated() override;
-    bool SendFrame(const u8* frame, u32 size) override;
-    bool RecvInit() override;
-    void RecvStart() override;
-    void RecvStop() override;
-
-  private:
-    void ReadThreadHandler();
-
-    bool m_active{};
-    ipc::channel m_channel;
-    std::thread m_read_thread;
-    Common::Flag m_read_enabled;
-    Common::Flag m_read_thread_shutdown;
-
-#else
-
-    bool Activate() override { return false; }
-    void Deactivate() override {}
-    bool IsActivated() override { return false; }
-    bool SendFrame(const u8* const frame, const u32 size) override { return false; }
-    bool RecvInit() override { return false; }
-    void RecvStart() override {}
-    void RecvStop() override {}
-
-#endif
-  };
 
   std::unique_ptr<NetworkInterface> m_network_interface;
 

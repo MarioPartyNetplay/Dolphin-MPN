@@ -349,9 +349,6 @@ private:
   void OnSyncCodesDataGecko(sf::Packet& packet);
   void OnSyncCodesNotifyAR(sf::Packet& packet);
   void OnSyncCodesDataAR(sf::Packet& packet);
-  void OnBBAPacketData(sf::Packet& packet);
-  void OnBBAMode(sf::Packet& packet);
-  void SendBBAPacket(const u8* data, u32 size);
   void OnComputeGameDigest(sf::Packet& packet);
   void OnGameDigestProgress(sf::Packet& packet);
   void OnGameDigestResult(sf::Packet& packet);

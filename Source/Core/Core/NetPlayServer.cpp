@@ -66,7 +66,6 @@
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
-#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/RiivolutionPatcher.h"
@@ -177,10 +176,6 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
     m_thread = std::thread(&NetPlayServer::ThreadFunc, this);
     m_target_buffer_size = 5;
     m_chunked_data_thread = std::thread(&NetPlayServer::ChunkedDataThreadFunc, this);
-
-    // Register the BBA packet sender callback
-    ExpansionInterface::RegisterBBAPacketSender(
-        [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
 
 #ifdef USE_UPNP
     if (forward_port && !traversal_config.use_traversal)
@@ -498,8 +493,6 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
   SendResponseToPlayer(new_player, MessageID::HostInputAuthority, m_host_input_authority);
 
-  // Send BBA mode setting to new client
-  SendResponseToPlayer(new_player, MessageID::BBAMode, m_bba_mode);
 
   for (const auto& existing_player : std::views::values(m_players))
   {
@@ -718,24 +711,6 @@ void NetPlayServer::SetHostInputAuthority(const bool enable)
     AdjustPadBufferSize(m_target_buffer_size);
 }
 
-void NetPlayServer::SetBBAMode(const bool enable)
-{
-  std::lock_guard lkg(m_crit.game);
-
-  m_bba_mode = enable;
-
-  INFO_LOG_FMT(NETPLAY, "BBA mode {}: input synchronization will be {}", 
-               enable ? "enabled" : "disabled",
-               enable ? "disabled (BBA-only)" : "enabled");
-
-  // Notify all clients about the BBA mode change
-  sf::Packet spac;
-  spac << MessageID::BBAMode;
-  spac << m_bba_mode;
-
-  SendAsyncToClients(std::move(spac));
-}
-
 void NetPlayServer::SendAsync(sf::Packet&& packet, const PlayerId pid, const u8 channel_id)
 {
   {
@@ -833,7 +808,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::PadData:
   {
     // Skip input synchronization if BBA mode is enabled
-    if (m_bba_mode)
+    if (false)  // BBA mode removed
       break;
 
     // if this is pad data from the last game still being received, ignore it
@@ -887,7 +862,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::PadHostData:
   {
     // Skip input synchronization if BBA mode is enabled
-    if (m_bba_mode)
+    if (false)  // BBA mode removed
       break;
 
     // Kick player if they're not the golfer.
@@ -922,7 +897,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::WiimoteData:
   {
     // Skip input synchronization if BBA mode is enabled
-    if (m_bba_mode)
+    if (false)  // BBA mode removed
       break;
 
     // if this is Wiimote data from the last game still being received, ignore it
@@ -1293,11 +1268,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   }
   break;
 
-  case MessageID::BBAPacketData:
-  {
-    OnBBAPacketData(packet, player);
-  }
-  break;
 
   default:
     PanicAlertFmtT("Unknown message with id:{0} received from player:{1} Kicking player!",
@@ -1431,16 +1401,7 @@ bool NetPlayServer::SetupNetSettings()
   for (ExpansionInterface::Slot slot : ExpansionInterface::SLOTS)
   {
     ExpansionInterface::EXIDeviceType device;
-    if (slot == ExpansionInterface::Slot::SP1)
-    {
-      // In BBA mode, use the NetPlay Ethernet BBA so clients bring up SP1
-      device = m_bba_mode ? ExpansionInterface::EXIDeviceType::EthernetNetPlay
-                          : ExpansionInterface::EXIDeviceType::None;
-    }
-    else
-    {
-      device = Config::Get(Config::GetInfoForEXIDevice(slot));
-    }
+    device = Config::Get(Config::GetInfoForEXIDevice(slot));
     settings.exi_device[slot] = device;
   }
 
@@ -2641,61 +2602,5 @@ void NetPlayServer::ChunkedDataAbort()
   m_abort_chunked_data = true;
   m_chunked_data_event.Set();
   m_chunked_data_complete_event.Set();
-}
-
-void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& player)
-{
-  // Extract BBA packet data from the packet
-  u32 packet_size;
-  packet >> packet_size;
-  
-  if (packet_size > 0 && packet_size <= 1518)  // Max Ethernet frame size
-  {
-    std::vector<u8> bba_data(packet_size);
-    for (u32 i = 0; i < packet_size; ++i)
-    {
-      u8 byte;
-      packet >> byte;
-      bba_data[i] = byte;
-    }
-    
-    INFO_LOG_FMT(NETPLAY, "Received BBA packet from player {}: {} bytes", player.pid, packet_size);
-    
-    // Broadcast the BBA packet to all other clients
-    sf::Packet bba_packet;
-    bba_packet << MessageID::BBAPacketData;
-    bba_packet << packet_size;
-    for (u8 byte : bba_data)
-    {
-      bba_packet << byte;
-    }
-
-    SendAsyncToClients(std::move(bba_packet), player.pid);
-
-    // Inject into host's local BBA as well so the host receives client frames
-    ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
-  }
-}
-
-void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
-{
-  if (size == 0 || size > 1518)  // Max Ethernet frame size
-  {
-    ERROR_LOG_FMT(NETPLAY, "Invalid BBA packet size: {} bytes", size);
-    return;
-  }
-
-  INFO_LOG_FMT(NETPLAY, "Host sending BBA packet: {} bytes", size);
-
-  // Send BBA packet to all clients
-  sf::Packet packet;
-  packet << MessageID::BBAPacketData;
-  packet << size;
-  for (u32 i = 0; i < size; ++i)
-  {
-    packet << data[i];
-  }
-
-  SendAsyncToClients(std::move(packet));  // Send to ALL clients (host packet)
 }
 }  // namespace NetPlay

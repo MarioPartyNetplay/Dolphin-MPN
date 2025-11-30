@@ -27,15 +27,7 @@ GCPadWiiUConfigDialog::GCPadWiiUConfigDialog(int port, QWidget* parent)
 GCPadWiiUConfigDialog::~GCPadWiiUConfigDialog()
 {
   // Clean up ControllerInterface callback if we registered one
-  if (m_devices_changed_handle.has_value())
-  {
-    g_controller_interface.UnregisterDevicesChangedCallback(*m_devices_changed_handle);
-  }
-  else
-  {
-    // Fallback to old API cleanup
-    GCAdapter::SetAdapterCallback(nullptr);
-  }
+  m_devices_changed_handle.reset();
 }
 
 void GCPadWiiUConfigDialog::CreateLayout()

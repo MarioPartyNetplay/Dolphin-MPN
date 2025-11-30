@@ -46,7 +46,6 @@
 #include "Core/GeckoCode.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
-#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #ifdef HAS_LIBMGBA
 #include "Core/HW/GBACore.h"
 #endif
@@ -461,13 +460,6 @@ void NetPlayClient::OnData(sf::Packet& packet)
     OnSyncCodes(packet);
     break;
 
-  case MessageID::BBAPacketData:
-    OnBBAPacketData(packet);
-    break;
-
-  case MessageID::BBAMode:
-    OnBBAMode(packet);
-    break;
 
   case MessageID::ComputeGameDigest:
     OnComputeGameDigest(packet);
@@ -2798,86 +2790,6 @@ void NetPlay_Disable()
 {
   std::lock_guard lk(crit_netplay_client);
   netplay_client = nullptr;
-}
-
-void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
-{
-  // Extract BBA packet data from the packet
-  u32 packet_size;
-  packet >> packet_size;
-
-  if (packet_size == 0 || packet_size > 1518)  // Max Ethernet frame size
-  {
-    WARN_LOG_FMT(NETPLAY, "Dropping invalid BBA packet: size={} (must be 1..1518)", packet_size);
-    return;
-  }
-
-  std::vector<u8> bba_data(packet_size);
-  for (u32 i = 0; i < packet_size; ++i)
-  {
-    u8 byte;
-    packet >> byte;
-    bba_data[i] = byte;
-  }
-
-  INFO_LOG_FMT(NETPLAY, "Client received BBA packet: {} bytes", packet_size);
-
-  // Inject the BBA packet into the NetPlayBBA interface
-  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
-}
-
-void NetPlayClient::OnBBAMode(sf::Packet& packet)
-{
-  bool bba_mode;
-  packet >> bba_mode;
-  
-  m_net_settings.bba_mode = bba_mode;
-  
-  INFO_LOG_FMT(NETPLAY, "BBA mode {} by host", bba_mode ? "enabled" : "disabled");
-  
-  if (bba_mode)
-  {
-    // Show BBA mode enabled; UI may color this message
-    m_dialog->AppendChat(Common::GetStringT("BBA mode enabled"));
-    // Register the BBA packet sender callback for this client
-    ExpansionInterface::RegisterBBAPacketSenderForClient(
-        [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
-
-    // Ensure SP1 is configured to NetPlay Ethernet on clients as soon as BBA mode is enabled
-    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
-                       ExpansionInterface::EXIDeviceType::EthernetNetPlay);
-  }
-  else
-  {
-    // Revert SP1 back to None when BBA mode is disabled (clients)
-    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
-                       ExpansionInterface::EXIDeviceType::None);
-  }
-}
-
-void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
-{
-  if (!m_is_connected || !m_net_settings.bba_mode)
-    return;
-
-  if (size == 0 || size > 1518)  // Max Ethernet frame size
-  {
-    ERROR_LOG_FMT(NETPLAY, "Invalid BBA packet size from client: {} bytes", size);
-    return;
-  }
-
-  INFO_LOG_FMT(NETPLAY, "Client sending BBA packet to server: {} bytes", size);
-
-  // Send BBA packet to the server
-  sf::Packet packet;
-  packet << MessageID::BBAPacketData;
-  packet << size;
-  for (u32 i = 0; i < size; ++i)
-  {
-    packet << data[i];
-  }
-
-  SendAsync(std::move(packet));
 }
 }  // namespace NetPlay
 

@@ -4,13 +4,13 @@
 #pragma once
 
 #include <QDialog>
-#include <optional>
 
 class QCheckBox;
 class QLabel;
 class QDialogButtonBox;
 class QVBoxLayout;
 
+#include "Common/HookableEvent.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 
 namespace ciface
@@ -47,5 +47,5 @@ private:
   QCheckBox* m_simulate_bongos;
 
   // ControllerInterface callback handle
-  std::optional<ControllerInterface::HotplugCallbackHandle> m_devices_changed_handle;
+  Common::EventHook m_devices_changed_handle;
 };

@@ -184,6 +184,7 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
     m_network_interface = std::make_unique<IPCBBAInterface>(this);
     INFO_LOG_FMT(SP1, "Created IPC-based network interface.");
     break;
+
   case BBADeviceType::XLINK:
     // TODO start BBA with network link down, bring it up after "connected" response from XLink
 

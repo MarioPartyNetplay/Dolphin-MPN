@@ -8,6 +8,8 @@
 #define PYCPARSE  // Remove static functions from the header
 #include <mgba/core/interface.h>
 #undef PYCPARSE
+#include <mgba/gba/interface.h>
+#include <mgba-util/audio-buffer.h>
 #include <mgba-util/vfs.h>
 #include <mgba/core/log.h>
 #include <mgba/core/timing.h>
@@ -448,8 +450,10 @@ void Core::SetAVStream()
   };
   m_stream.postAudioBuffer = [](mAVStream* stream, mAudioBuffer* audio_buffer) {
     size_t sample_count = mAudioBufferAvailable(audio_buffer);
-    const size_t required_buffer_size = sample_count * audio_buffer->channels;
+    if (sample_count == 0)
+      return;
 
+    const size_t required_buffer_size = sample_count * audio_buffer->channels;
     auto* const av_stream = static_cast<AVStream*>(stream);
     if (required_buffer_size > av_stream->sample_buffer.size())
       av_stream->sample_buffer.reset(required_buffer_size);

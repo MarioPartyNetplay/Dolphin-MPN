@@ -287,7 +287,6 @@
     <ClInclude Include="Core\HW\DVD\DVDThread.h" />
     <ClInclude Include="Core\HW\DVD\FileMonitor.h" />
     <ClInclude Include="Core\HW\EXI\BBA\BuiltIn.h" />
-    <ClInclude Include="Core\HW\EXI\BBA\NetPlayBBA.h" />
     <ClInclude Include="Core\HW\EXI\BBA\TAPServerConnection.h" />
     <ClInclude Include="Core\HW\EXI\BBA\TAP_Win32.h" />
     <ClInclude Include="Core\HW\EXI\EXI_Channel.h" />

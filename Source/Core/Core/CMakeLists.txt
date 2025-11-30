@@ -194,8 +194,6 @@ add_library(core
   HW/EXI/BBA/XLINK_KAI_BBA.cpp
   HW/EXI/BBA/BuiltIn.cpp
   HW/EXI/BBA/BuiltIn.h
-  HW/EXI/BBA/NetPlayBBA.cpp
-  HW/EXI/BBA/NetPlayBBA.h
   HW/EXI/Modem/TAPServerModem.cpp
   HW/EXI/EXI_Channel.cpp
   HW/EXI/EXI_Channel.h

@@ -710,18 +710,17 @@ void SetState(Core::System& system, State state, bool report_state_change,
       if (!override_achievement_restrictions && !AchievementManager::GetInstance().CanPause())
         return;
 #endif  // USE_RETRO_ACHIEVEMENTS
-    break;
-  case State::Running:
-  {
-    system.GetCPU().SetStepping(false);
-    Wiimote::Resume();
-  
-
-    break;
-  }
-  default:
-    PanicAlertFmt("Invalid state");
-    break;
+      break;
+    case State::Running:
+    {
+      system.GetCPU().SetStepping(false);
+      Wiimote::Resume();
+      break;
+    }
+    default:
+      PanicAlertFmt("Invalid state");
+      break;
+    }
   }
 
   // Certain callers only change the state momentarily. Sending a callback for them causes
@@ -1064,14 +1063,14 @@ void UpdateInputGate(bool require_focus, bool require_full_focus)
   ControlReference::SetInputGate(focus_passes && full_focus_passes);
 }
 
-CPUThreadGuard::CPUThreadGuard(Core::System& system)
+Core::CPUThreadGuard::CPUThreadGuard(Core::System& system)
     : m_system(system), m_was_cpu_thread(IsCPUThread())
 {
   if (!m_was_cpu_thread)
     m_was_unpaused = PauseAndLock(system);
 }
 
-CPUThreadGuard::~CPUThreadGuard()
+Core::CPUThreadGuard::~CPUThreadGuard()
 {
   if (!m_was_cpu_thread)
     RestoreStateAndUnlock(m_system, m_was_unpaused);
