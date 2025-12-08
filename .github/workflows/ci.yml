@@ -154,7 +154,7 @@ jobs:
         with:
           submodules: recursive
       - name: Perserve Space
-        run: rm -rf .git/
+        run: rm -rf .git/ && rm -rf Externals/Qt
       - name: Setup Packages
         run: >
           flatpak remote-add --if-not-exists flathub
