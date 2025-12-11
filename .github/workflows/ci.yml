@@ -3,75 +3,6 @@ on:
   push: null
   pull_request: null
 jobs:
-          
-  build_android:
-    name: Android arm64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-      
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-
-            ${{ runner.os }}-gradle-
-      
-      - name: Cache Android SDK
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.android
-            ~/.local/share/android
-          key: ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-
-            ${{ runner.os }}-android-
-      
-      - name: Setup Android SDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      
-      - name: Setup Android SDK
-        run: |
-          # Use the existing Android SDK from the runner
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          
-          # Accept licenses and install required components if not already present
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" || true
-          
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-      
-      - name: Build APK
-        run: |
-          cd Source/Android
-          ./gradlew assembleRelease
-          
-          # Rename the APK to DolphinMPN-android.apk
-          find . -name "*.apk" -path "*/release/*" | head -1 | xargs -I {} cp {} DolphinMPN-android.apk
-          
-          # Create OUT directory and move APK
-          mkdir -p OUT
-          mv DolphinMPN-android.apk OUT/
-      
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: DolphinMPN-android
-          path: Source/Android/OUT/
-
   build_archlinux:
     name: Arch Linux x86_64
     runs-on: ubuntu-latest
@@ -288,7 +219,7 @@ jobs:
         echo "Installing Qt Base..."
         tar xf "qtbase-everywhere$QT_SUFFIX-src-$QT.tar.xz"
         cd "qtbase-everywhere-src-$QT"
-        cmake -B build -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_PREFIX_PATH="$INSTALLDIR" -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" -DCMAKE_BUILD_TYPE=Release -DFEATURE_optimize_size=ON -DFEATURE_dbus=OFF -DFEATURE_framework=OFF -DFEATURE_icu=OFF -DFEATURE_opengl=OFF -DFEATURE_printsupport=OFF -DFEATURE_sql=OFF -DFEATURE_gssapi=OFF -DFEATURE_system_png=OFF -DFEATURE_system_jpeg=OFF -DCMAKE_MESSAGE_LOG_LEVEL=STATUS
+        cmake -B build -DCMAKE_OSX_ARCHITECTURES="x86_64" -DCMAKE_PREFIX_PATH="$INSTALLDIR" -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" -DCMAKE_BUILD_TYPE=Release -DFEATURE_optimize_size=ON -DFEATURE_dbus=OFF -DFEATURE_framework=OFF -DFEATURE_icu=OFF -DFEATURE_opengl=OFF -DFEATURE_printsupport=OFF -DFEATURE_sql=OFF -DFEATURE_gssapi=OFF -DFEATURE_system_png=OFF -DFEATURE_system_jpeg=OFF -DCMAKE_MESSAGE_LOG_LEVEL=STATUS
         make -C build "-j$NPROCS"
         make -C build install
         cd ..
@@ -593,7 +524,7 @@ jobs:
           path: build/OUT/
 
   build_appimage:
-    name: AppImage Build
+    name: AppImage Linux x86_64
     runs-on: ubuntu-24.04
     env:
       yaqti: 6.7.3
