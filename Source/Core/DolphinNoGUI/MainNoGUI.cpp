@@ -180,10 +180,10 @@ static std::unique_ptr<Platform> GetPlatform(const optparse::Values& options)
   if (platform_name == "headless" || platform_name.empty())
     return Platform::CreateHeadlessPlatform();
 
+#ifdef __EMSCRIPTEN__
   if (platform_name == "web")
     return Platform::CreateWebPlatform();
 
-#ifdef __EMSCRIPTEN__
   return Platform::CreateWebPlatform();
 #endif
 

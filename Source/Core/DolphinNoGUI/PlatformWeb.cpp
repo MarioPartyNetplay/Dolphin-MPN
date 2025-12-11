@@ -76,9 +76,7 @@ void PlatformWeb::EmscriptenMainLoop(void* arg)
 WindowSystemInfo PlatformWeb::GetWindowSystemInfo() const
 {
   WindowSystemInfo wsi;
-  // Using Headless type for now as we don't have a dedicated Web type yet
-  // Ideally we would add WindowSystemType::Web
-  wsi.type = WindowSystemType::Headless;
+  wsi.type = WindowSystemType::Web;
   wsi.display_connection = nullptr;
   wsi.render_window = nullptr;
   wsi.render_surface = nullptr;

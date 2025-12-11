@@ -16,7 +16,11 @@
         <div id="emulator-screen">
             <canvas id="canvas" width="640" height="480"></canvas>
             <div id="overlay">
-                <button id="start-btn">Start Emulation</button>
+                <div id="controls-overlay">
+                    <input type="file" id="file-input" accept=".iso,.gcm,.rvz,.elf,.dol">
+                    <br><br>
+                    <button id="start-btn" disabled>Boot Game</button>
+                </div>
             </div>
         </div>
 
