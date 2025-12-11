@@ -47,6 +47,8 @@ public:
   static std::unique_ptr<Platform> CreateMacOSPlatform();
 #endif
 
+  static std::unique_ptr<Platform> CreateWebPlatform();
+
 protected:
   void UpdateRunningFlag();
 

@@ -180,6 +180,13 @@ static std::unique_ptr<Platform> GetPlatform(const optparse::Values& options)
   if (platform_name == "headless" || platform_name.empty())
     return Platform::CreateHeadlessPlatform();
 
+  if (platform_name == "web")
+    return Platform::CreateWebPlatform();
+
+#ifdef __EMSCRIPTEN__
+  return Platform::CreateWebPlatform();
+#endif
+
   return nullptr;
 }
 
@@ -211,6 +218,8 @@ int main(const int argc, char* argv[])
                 ,
                 "macos"
 #endif
+                ,
+                "web"
       });
 
   optparse::Values& options = CommandLineParse::ParseArguments(parser.get(), argc, argv);

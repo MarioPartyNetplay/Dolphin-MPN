@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dolphin Web (PoC)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="container">
+        <header>
+            <h1>Dolphin Web</h1>
+            <p>Proof of Concept - GameCube Emulation in Browser</p>
+        </header>
+
+        <div id="emulator-screen">
+            <canvas id="canvas" width="640" height="480"></canvas>
+            <div id="overlay">
+                <button id="start-btn">Start Emulation</button>
+            </div>
+        </div>
+
+        <div id="controls">
+            <div id="log-container">
+                <h3>System Log</h3>
+                <div id="log"></div>
+            </div>
+            <div id="stats">
+                <h3>Stats</h3>
+                <p>FPS: <span id="fps">0</span></p>
+                <p>State: <span id="status">Stopped</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>
