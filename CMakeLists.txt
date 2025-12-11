@@ -133,7 +133,7 @@ if(WIN32)
 endif()
 
 # Enable SDL by default on operating systems that aren't Android.
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT EMSCRIPTEN)
   option(ENABLE_SDL "Enables SDL as a generic controller backend" ON)
 else()
   option(ENABLE_SDL "Enables SDL as a generic controller backend" OFF)
@@ -724,14 +724,16 @@ if(ENABLE_CUBEB)
   add_definitions(-DHAVE_CUBEB)
 endif()
 
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT EMSCRIPTEN)
   dolphin_find_optional_system_library_pkgconfig(
     LibUSB libusb-1.0 LibUSB::LibUSB Externals/libusb
   )
   add_definitions(-D__LIBUSB__)
 endif()
 
+if(NOT EMSCRIPTEN)
 dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
+endif()
 
 if(USE_UPNP)
   dolphin_find_optional_system_library(MINIUPNPC Externals/miniupnpc 1.6)
@@ -751,7 +753,7 @@ if(NOT WIN32)
   endif()
 endif()
 
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT EMSCRIPTEN)
   dolphin_find_optional_system_library(HIDAPI Externals/hidapi)
 endif()
 
