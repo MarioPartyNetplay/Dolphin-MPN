@@ -45,5 +45,3 @@ CMakeLists.txt.user
 /.vscode/
 # Ignore flatpak-builder's cache dir
 .flatpak-builder
-emsdk/
-build_wasm/

@@ -227,4 +227,6 @@ class DolphinWeb {
 }
 
 // Initialize
-window.dolphinApp = new DolphinWeb();
+window.addEventListener('load', () => {
+    window.dolphinApp = new DolphinWeb();
+});
