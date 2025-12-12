@@ -28,9 +28,13 @@ It includes a C++ backend (`PlatformWeb`), a web frontend (`index.html`, `main.j
 **Note:** Compiling Dolphin requires a powerful machine (16GB+ RAM recommended) and Emscripten SDK.
 
 1. Run the build script:
-   ```bash
-   bash build_dolphin_wasm.sh
-   ```
+   - **Linux/macOS**:
+     ```bash
+     bash build_dolphin_wasm.sh
+     ```
+   - **Windows**:
+     Double-click `build_dolphin_wasm.bat` or run it from Command Prompt.
+
    This script will:
    - Install Emscripten SDK.
    - Configure CMake with Pthreads and WebAssembly flags.
