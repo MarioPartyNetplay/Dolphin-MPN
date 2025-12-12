@@ -29,7 +29,7 @@ It includes a C++ backend (`PlatformWeb`), a web frontend (`index.html`, `main.j
 
 1. Run the build script:
    ```bash
-   ./build_dolphin_wasm.sh
+   bash build_dolphin_wasm.sh
    ```
    This script will:
    - Install Emscripten SDK.
