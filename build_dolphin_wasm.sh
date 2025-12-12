@@ -14,18 +14,30 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
-# 1. Install Emscripten
+# 1. Install/Update Emscripten
+echo "Checking Emscripten SDK..."
+
 if [ ! -d "emsdk" ]; then
-    echo "Installing Emscripten SDK..."
+    echo "Cloning Emscripten SDK..."
     git clone https://github.com/emscripten-core/emsdk.git
+fi
+
+# Ensure emsdk_env.sh exists or try to fix it
+if [ ! -f "emsdk/emsdk_env.sh" ]; then
+    echo "emsdk_env.sh not found. Attempting to install/activate latest..."
     cd emsdk
     ./emsdk install latest
     ./emsdk activate latest
     cd ..
-else
-    echo "Emscripten SDK found."
 fi
 
+if [ ! -f "emsdk/emsdk_env.sh" ]; then
+    echo "Error: emsdk/emsdk_env.sh still not found after installation attempts."
+    echo "Please delete the 'emsdk' directory and try again."
+    exit 1
+fi
+
+echo "Sourcing Emscripten environment..."
 source emsdk/emsdk_env.sh
 
 # 2. Configure
