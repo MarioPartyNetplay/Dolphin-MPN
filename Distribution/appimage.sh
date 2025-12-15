@@ -110,15 +110,28 @@ chmod a+x linuxdeploy-plugin-qt-${ARCH}.AppImage
 chmod a+x appimagetool-${ARCH}.AppImage
 
 # Build the AppImage
-# Ensure the executable exists
-if [ ! -f ./AppDir/usr/bin/dolphin-mpn ]; then
-    echo "ERROR: Executable not found at ./AppDir/usr/bin/dolphin-mpn"
+# Find the executable - it might be in different locations depending on CMAKE_INSTALL_PREFIX
+EXECUTABLE_PATH=$(find ./AppDir -type f -name "dolphin-mpn" -executable 2>/dev/null | head -1)
+
+if [ -z "$EXECUTABLE_PATH" ]; then
+    echo "ERROR: Executable not found in AppDir"
+    echo "Searching for dolphin-mpn in AppDir:"
+    find ./AppDir -type f -name "*dolphin*" 2>/dev/null
     exit 1
+fi
+
+# Ensure it's in the expected location for AppImage
+EXPECTED_PATH="./AppDir/usr/bin/dolphin-mpn"
+if [ "$EXECUTABLE_PATH" != "$EXPECTED_PATH" ]; then
+    echo "Moving executable from $EXECUTABLE_PATH to $EXPECTED_PATH"
+    mkdir -p ./AppDir/usr/bin
+    cp "$EXECUTABLE_PATH" "$EXPECTED_PATH"
+    EXECUTABLE_PATH="$EXPECTED_PATH"
 fi
 
 ./linuxdeploy-${ARCH}.AppImage \
   --appdir AppDir \
-  --executable ./AppDir/usr/bin/dolphin-mpn \
+  --executable "$EXECUTABLE_PATH" \
   --plugin qt
 
 # Check if linuxdeploy succeeded

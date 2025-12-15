@@ -3,6 +3,8 @@ set -e
 
 echo "Starting Dolphin WebAssembly Build..."
 
+cd ..
+
 # Check dependencies
 if ! command -v cmake &> /dev/null; then
     echo "Error: cmake is not installed."
@@ -14,12 +16,16 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
+# 0. Initialize and update submodules (including emsdk)
+echo "Initializing and updating submodules..."
+git submodule update --init --recursive
+
 # 1. Install/Update Emscripten
 echo "Checking Emscripten SDK..."
 
 if [ ! -d "emsdk" ]; then
-    echo "Cloning Emscripten SDK..."
-    git clone https://github.com/emscripten-core/emsdk.git
+    echo "Error: emsdk submodule not found. Please run: git submodule update --init --recursive"
+    exit 1
 fi
 
 # Ensure emsdk_env.sh exists or try to fix it
@@ -33,7 +39,7 @@ fi
 
 if [ ! -f "emsdk/emsdk_env.sh" ]; then
     echo "Error: emsdk/emsdk_env.sh still not found after installation attempts."
-    echo "Please delete the 'emsdk' directory and try again."
+    echo "Please ensure the emsdk submodule is properly initialized."
     exit 1
 fi
 
@@ -75,8 +81,9 @@ emmake make dolphin-nogui -j$(nproc)
 
 # 4. Deploy
 echo "Deploying to Source/Web..."
-cp dolphin-emu-nogui.js ../Source/Web/
-cp dolphin-emu-nogui.wasm ../Source/Web/
+mkdir -p ../Source/Web
+cp dolphin-emu-nogui.js ../Source/Web/ 2>/dev/null || echo "Warning: dolphin-emu-nogui.js not found"
+cp dolphin-emu-nogui.wasm ../Source/Web/ 2>/dev/null || echo "Warning: dolphin-emu-nogui.wasm not found"
 if [ -f dolphin-emu-nogui.worker.js ]; then
     cp dolphin-emu-nogui.worker.js ../Source/Web/
 fi
