@@ -41,23 +41,64 @@ fi
 
 # Prepare the AppDir
 DESTDIR=./AppDir ninja install
+
+# Debug: Show what was installed
+echo "Checking installed files..."
+find ./AppDir -type f -name "dolphin-mpn*" 2>/dev/null | head -20
+find ./AppDir -type d -name "sys" 2>/dev/null
+find ./AppDir -name "*.desktop" 2>/dev/null
+
 mkdir -p ./AppDir/usr/Source/Core
 cp -r ./Source/Core/DolphinQt ./AppDir/usr/Source/Core
 rm -rf ./AppDir/usr/Source/Core/DolphinQt/CMakeFiles
 rm -rf ./AppDir/usr/Source/Core/DolphinQt/dolphin-mpn_autogen
-rm ./AppDir/usr/Source/Core/DolphinQt/cmake_install.cmake
-rm ./AppDir/usr/bin/dolphin-mpn-nogui
-rm ./AppDir/usr/bin/dolphin-tool
-mv ./AppDir/usr/share/dolphin-mpn/sys ./AppDir/usr/bin/Sys
+rm -f ./AppDir/usr/Source/Core/DolphinQt/cmake_install.cmake
+
+# Remove optional binaries if they exist
+[ -f ./AppDir/usr/bin/dolphin-mpn-nogui ] && rm ./AppDir/usr/bin/dolphin-mpn-nogui
+[ -f ./AppDir/usr/bin/dolphin-tool ] && rm ./AppDir/usr/bin/dolphin-tool
+
+# Move sys directory if it exists
+if [ -d ./AppDir/usr/share/dolphin-mpn/sys ]; then
+    mv ./AppDir/usr/share/dolphin-mpn/sys ./AppDir/usr/bin/Sys
+elif [ -d ./AppDir/usr/share/sys ]; then
+    mv ./AppDir/usr/share/sys ./AppDir/usr/bin/Sys
+else
+    echo "WARNING: sys directory not found in expected locations"
+    # Try to find it
+    SYS_DIR=$(find ./AppDir -type d -name "sys" 2>/dev/null | head -1)
+    if [ -n "$SYS_DIR" ]; then
+        echo "Found sys directory at: $SYS_DIR"
+        mv "$SYS_DIR" ./AppDir/usr/bin/Sys
+    else
+        echo "ERROR: Could not find sys directory"
+        exit 1
+    fi
+fi
+
+# Clean up share directory
 rm -rf ./AppDir/usr/share/dolphin-mpn
 
 # Ensure desktop file exists and fix it
-if [ -f ./AppDir/usr/share/applications/dolphin-mpn.desktop ]; then
-    sed -i 's/env QT_QPA_PLATFORM=xcb dolphin-mpn/dolphin-mpn/g' ./AppDir/usr/share/applications/dolphin-mpn.desktop
-else
-    echo "ERROR: Desktop file not found at ./AppDir/usr/share/applications/dolphin-mpn.desktop"
-    exit 1
+DESKTOP_FILE="./AppDir/usr/share/applications/dolphin-mpn.desktop"
+if [ ! -f "$DESKTOP_FILE" ]; then
+    # Try to find it
+    DESKTOP_FILE=$(find ./AppDir -name "dolphin-mpn.desktop" 2>/dev/null | head -1)
+    if [ -z "$DESKTOP_FILE" ]; then
+        echo "ERROR: Desktop file not found"
+        echo "Contents of ./AppDir/usr/share/applications:"
+        ls -la ./AppDir/usr/share/applications/ 2>/dev/null || echo "Directory does not exist"
+        exit 1
+    fi
+    # Copy to expected location if found elsewhere
+    if [ "$DESKTOP_FILE" != "./AppDir/usr/share/applications/dolphin-mpn.desktop" ]; then
+        mkdir -p ./AppDir/usr/share/applications
+        cp "$DESKTOP_FILE" ./AppDir/usr/share/applications/dolphin-mpn.desktop
+        DESKTOP_FILE="./AppDir/usr/share/applications/dolphin-mpn.desktop"
+    fi
 fi
+
+sed -i 's/env QT_QPA_PLATFORM=xcb dolphin-mpn/dolphin-mpn/g' "$DESKTOP_FILE"
 
 # Prepare Tools for building the AppImage
 wget -N https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage
@@ -99,7 +140,12 @@ fi
 
 # Ensure desktop file is accessible to appimagetool (copy to AppDir root as fallback)
 if [ ! -f ./AppDir/dolphin-mpn.desktop ]; then
-    cp ./AppDir/usr/share/applications/dolphin-mpn.desktop ./AppDir/
+    if [ -f ./AppDir/usr/share/applications/dolphin-mpn.desktop ]; then
+        cp ./AppDir/usr/share/applications/dolphin-mpn.desktop ./AppDir/
+    else
+        echo "ERROR: Desktop file not found for appimagetool"
+        exit 1
+    fi
 fi
 
 ./appimagetool-${ARCH}.AppImage ./AppDir
