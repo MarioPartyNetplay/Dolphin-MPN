@@ -34,6 +34,15 @@ bool mpn_init_state()
     CurrentState.Scenes = MP4_GAMESTATES;
     CurrentState.Title = "Mario Party 4";
     break;
+  case MPN_GAMEID_MP4DX:
+    CurrentState.Addresses = &MP4_ADDRESSES;
+    CurrentState.Boards = MP4_BOARDS;
+    CurrentState.Image = "box-mp4dx";
+    CurrentState.IsMarioParty = true;
+    CurrentState.Scenes = MP4_GAMESTATES;
+    CurrentState.Title = "Mario Party 4";
+    break;
+
   case MPN_GAMEID_MP5:
     CurrentState.Addresses = &MP5_ADDRESSES;
     CurrentState.Boards = MP5_BOARDS;
