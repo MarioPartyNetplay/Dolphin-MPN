@@ -153,12 +153,13 @@ bool Configuration::GenerateTexture(const Common::IniFile& file,
       }
       else
       {
-        const auto host_key_image = LoadImage(m_base_path + input_image_iter->second);
-        
-        // Check if the image loaded successfully before proceeding
-        if (!host_key_image.has_value())
+        const std::string full_image_path = m_base_path + input_image_iter->second;
+        const auto host_key_image = LoadImage(full_image_path);
+        if (!host_key_image)
         {
-          dirty = true;
+          ERROR_LOG_FMT(VIDEO,
+                        "Failed to load image '{}' needed for dynamic input texture generation",
+                        full_image_path);
           continue;
         }
 
