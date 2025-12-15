@@ -98,6 +98,12 @@ modules:
 
   - name: dolphin-mpn
     buildsystem: cmake-ninja
+    build-options:
+      cflags: -Os
+      cxxflags: -Os
+      ldflags: -Wl,--as-needed
+      env:
+        CMAKE_BUILD_PARALLEL_LEVEL: 2
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DENABLE_ALSA=OFF
@@ -105,8 +111,15 @@ modules:
       - -DENABLE_EVDEV=ON
       - -DDISTRIBUTOR=Mario Party Netplay
       - -DCPACK_PACKAGE_CONTACT=Mario Party Netplay
+      - -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+      - -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
     cleanup:
       - /share/man
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+      - /lib/*.a
+      - /lib/*.la
     post-install:
       - install -D -t ${FLATPAK_DEST}/bin/ dolphin-mpn-wrapper
       - desktop-file-edit --set-key=Exec --set-value='/app/bin/dolphin-mpn-wrapper'

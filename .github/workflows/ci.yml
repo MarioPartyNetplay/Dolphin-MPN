@@ -86,6 +86,9 @@ jobs:
           submodules: recursive
       - name: Preserve Space
         run: |
+          # Show initial disk space
+          df -h
+          
           # Remove git history (saves significant space)
           rm -rf .git/
           
@@ -101,21 +104,43 @@ jobs:
           rm -rf Externals/mGBA/mgba/res || true
           rm -rf Externals/gtest/docs || true
           
+          # Remove more unnecessary files
+          find . -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.pyc" -delete 2>/dev/null || true
+          find . -type f -name "*.o" -delete 2>/dev/null || true
+          find . -type f -name "*.a" -delete 2>/dev/null || true
+          
           # Clean package manager caches
           dnf clean all || true
           
+          # Clean Flatpak caches
+          flatpak uninstall --unused -y || true
+          rm -rf ~/.cache/flatpak/* || true
+          rm -rf /var/tmp/flatpak-* || true
+          
+          # Show disk space after cleanup
+          df -h
+          
       - name: Setup Packages
-        run: >
-          flatpak remote-add --if-not-exists flathub
-          https://flathub.org/repo/flathub.flatpakrepo && \
-  
-          flatpak install org.kde.Sdk//5.15 org.kde.Platform//5.15 -y && \
-  
-          dnf install libusb1-devel cmake git gcc-c++ libXext-devel libgudev qt6-qtbase-devel systemd-devel openal-soft-devel libevdev-devel libao-devel SOIL-devel libXrandr-devel pulseaudio-libs-devel bluez-libs-devel p7zip SDL2-devel make automake gcc gcc-c++ kernel-devel -y && \
+        run: |
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           
-          dnf clean all && \
+          # Install only what we need, clean as we go
+          flatpak install org.kde.Sdk//5.15 org.kde.Platform//5.15 -y
           
+          dnf install libusb1-devel cmake git gcc-c++ libXext-devel libgudev qt6-qtbase-devel systemd-devel openal-soft-devel libevdev-devel libao-devel SOIL-devel libXrandr-devel pulseaudio-libs-devel bluez-libs-devel p7zip SDL2-devel make automake gcc gcc-c++ kernel-devel -y
+          
+          # Aggressive cleanup
+          dnf clean all
           rm -rf /var/cache/dnf/*
+          rm -rf /var/lib/dnf/*
+          rm -rf /tmp/*
+          
+          # Clean Flatpak caches again
+          flatpak uninstall --unused -y || true
+          
+          df -h
       - name: Clean up before build
         run: |
           # Show disk space before build
@@ -125,14 +150,46 @@ jobs:
           rm -rf .flatpak-builder || true
           rm -rf build || true
           
+          # Clean up temporary files
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          
+          # Clean up any leftover build artifacts
+          find . -type d -name "CMakeFiles" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.o" -delete 2>/dev/null || true
+          find . -type f -name "*.a" -delete 2>/dev/null || true
+          find . -type f -name "cmake_install.cmake" -delete 2>/dev/null || true
+          
           # Show disk space after cleanup
           df -h
           
       - name: Run Flatpak Builder
+        env:
+          # Limit parallelism to reduce peak disk usage
+          CMAKE_BUILD_PARALLEL_LEVEL: 2
+          NINJA_STATUS: "[%f/%t] "
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: Distribution/flatpak.yml
           bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
+          options: --ccache
+      - name: Clean up after build
+        if: always()
+        run: |
+          # Show disk space after build
+          df -h
+          
+          # Clean up build artifacts to save space
+          rm -rf .flatpak-builder/cache || true
+          rm -rf .flatpak-builder/checkout || true
+          find .flatpak-builder -type f -name "*.o" -delete 2>/dev/null || true
+          find .flatpak-builder -type f -name "*.a" -delete 2>/dev/null || true
+          
+          # Clean up temporary files
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          
+          df -h
 
   build_macos:
     name: macOS Build x86_64
