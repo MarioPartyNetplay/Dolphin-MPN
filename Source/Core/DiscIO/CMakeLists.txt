@@ -69,12 +69,12 @@ add_library(discio
 
 target_link_libraries(discio
 PUBLIC
-  core
   BZip2::BZip2
   LibLZMA::LibLZMA
   zstd::zstd
 
 PRIVATE
+  core
   fmt::fmt
   minizip-ng::minizip-ng
   pugixml
