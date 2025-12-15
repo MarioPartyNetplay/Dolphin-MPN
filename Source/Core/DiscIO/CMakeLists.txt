@@ -74,12 +74,15 @@ PUBLIC
   zstd::zstd
 
 PRIVATE
-  core
   fmt::fmt
   minizip-ng::minizip-ng
   pugixml
   ZLIB::ZLIB
 )
+
+# Link to core PRIVATE to avoid circular dependency propagation, but we need it for ARCUnpacker
+# The circular dependency (core <-> discio) is handled by CMake's dependency resolution
+target_link_libraries(discio PRIVATE core)
 
 if(MSVC)
   # Add precompiled header

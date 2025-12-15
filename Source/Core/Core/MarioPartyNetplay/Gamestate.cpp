@@ -142,6 +142,9 @@ bool mpn_update_state()
   if (!memory.IsInitialized())
     return false;
 
+  if (CurrentState.Addresses == NULL)
+    return false;
+
   CurrentState.PreviousSceneId = CurrentState.CurrentSceneId;
   CurrentState.CurrentSceneId = mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2);
 
@@ -213,7 +216,10 @@ void mpn_per_frame()
       }
     }
 
-    Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
+    if (CurrentState.Addresses == NULL)
+      Needs = MPN_NEEDS_NOTHING;
+    else
+      Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
     if (Needs != MPN_NEEDS_NOTHING)
     {

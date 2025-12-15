@@ -71,9 +71,7 @@ void WiiBanner::ExtractARC()
 
   std::vector<u8> bytes(m_bytes.begin() + offset, m_bytes.end());
 
-  bytes.erase(bytes.begin(), bytes.begin() + offset);
-
-  const u32 length = bytes.size();
+  const u32 length = static_cast<u32>(bytes.size());
   if (length == 0)
   {
     m_valid = false;
@@ -113,7 +111,7 @@ void WiiBanner::ExtractBin(const std::vector<u8>& data)
 
   std::vector<u8> bytes(data.begin() + offset, data.end());
 
-  const u32 length = bytes.size();
+  const u32 length = static_cast<u32>(bytes.size());
   if (length == 0)
   {
     m_valid = false;
@@ -152,6 +150,12 @@ std::vector<u8> WiiBanner::DecompressLZ77(std::vector<u8> bytes)
 {
   std::vector<u8> output;
 
+  // Need at least 8 bytes for header
+  if (bytes.size() < 8)
+  {
+    return output;
+  }
+
   u32 uncompressed_length;
   std::memcpy(&uncompressed_length, &bytes[4], sizeof(u32));
 
@@ -164,45 +168,55 @@ std::vector<u8> WiiBanner::DecompressLZ77(std::vector<u8> bytes)
     return output;
   }
 
-  output.resize(uncompressed_length);
+  // Don't pre-resize, we'll use push_back
+  output.reserve(uncompressed_length);
 
   size_t pos = 8;
   u32 written = 0;
-  while (written != uncompressed_length)
+  while (written < uncompressed_length && pos < bytes.size())
   {
     u8 flags = bytes[pos++];
     for (int f = 0; f != 8; ++f)
     {
+      if (written >= uncompressed_length)
+        break;
+        
       if (flags & 0x80)  // If the bit is set, it's a reference
       {
+        if (pos + 1 > bytes.size())
+          break;
         u16 info = (bytes[pos] << 8) | bytes[pos + 1];
         pos += 2;
 
         const u8 num = 3 + (info >> 12);
         const u16 disp = info & 0xFFF;
+        
+        // Check that displacement doesn't exceed what we've written so far
+        if (written == 0 || disp >= written)
+          break;
+        
         u32 ptr = written - disp - 1;
 
-        for (u8 p = 0; p != num; ++p)
+        for (u8 p = 0; p != num && written < uncompressed_length; ++p)
         {
+          // ptr + p must be within what we've written so far
+          if (ptr + p >= written)
+            break;
           u8 c = output[ptr + p];
           output.push_back(c);
           ++written;
-
-          if (written == uncompressed_length)
-            break;
         }
       }
       else
       {
+        if (pos >= bytes.size())
+          break;
         u8 c = bytes[pos++];
         output.push_back(c);
         ++written;
       }
 
       flags <<= 1;
-
-      if (written == uncompressed_length)
-        break;
     }
   }
 
@@ -214,6 +228,7 @@ std::string WiiBanner::GetName() const
   u8 names[10][84];  // Japanese, English, German, French, Spanish, Italian, Dutch, Simplified
                      // Chinese, Traditional Chinese, Korean
   const u32 offset = 0x005C;
+  constexpr u32 names_size = sizeof(names);  // 840 bytes
 
   if (m_bytes.size() <= offset)
   {
@@ -222,7 +237,13 @@ std::string WiiBanner::GetName() const
 
   std::vector<u8> bytes(m_bytes.begin() + offset, m_bytes.end());
 
-  std::memcpy(names, bytes.data(), sizeof(names));
+  // Check if we have enough data for the names array
+  if (bytes.size() < names_size)
+  {
+    return std::string();
+  }
+
+  std::memcpy(names, bytes.data(), names_size);
 
   // TODO: i18n. This only returns the English title for now.
   return std::string(reinterpret_cast<const char*>(names[1]));

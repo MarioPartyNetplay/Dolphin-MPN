@@ -362,9 +362,16 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         {
           // Scale the text size using ImGui's font scaling
           ImGui::SetWindowFontScale(hud_scale);
-          ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d",
-                             mpn_read_value(CurrentState.Addresses->CurrentTurn, 1),
-                             mpn_read_value(CurrentState.Addresses->TotalTurns, 1));
+          if (CurrentState.Addresses != NULL)
+          {
+            ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d",
+                               mpn_read_value(CurrentState.Addresses->CurrentTurn, 1),
+                               mpn_read_value(CurrentState.Addresses->TotalTurns, 1));
+          }
+          else
+          {
+            ImGui::TextColored(ImVec4(r, g, b, 0.7f), "Turn: Loading...");
+          }
           ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
         }
         else

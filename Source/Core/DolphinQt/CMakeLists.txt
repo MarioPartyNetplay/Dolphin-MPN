@@ -460,13 +460,21 @@ PRIVATE
 
 target_link_libraries(dolphin-mpn
 PRIVATE
-  core
   Qt6::Widgets
   uicommon
   imgui
   implot
   minizip-ng::minizip-ng
+  core
 )
+
+# Link discio with WHOLE_ARCHIVE on MSVC to ensure all symbols are included
+# This helps resolve circular dependency issues between discio and core
+if(MSVC)
+  target_link_libraries(dolphin-mpn PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,discio>)
+else()
+  target_link_libraries(dolphin-mpn PRIVATE discio)
+endif()
 
 target_include_directories(dolphin-mpn PRIVATE
   ${CMAKE_SOURCE_DIR}/Externals/minizip-ng

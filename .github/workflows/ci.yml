@@ -311,8 +311,6 @@ jobs:
         # Explicitly set architecture environment variables for x86_64
         export CMAKE_OSX_ARCHITECTURES=x86_64
         export ARCHFLAGS="-arch x86_64"
-        export CC="clang -arch x86_64"
-        export CXX="clang++ -arch x86_64"
           
         COMMON_ARGS=(
           -DCMAKE_PREFIX_PATH="$HOME/deps;$HOME/moltenvk"
@@ -331,8 +329,6 @@ jobs:
           -DCMAKE_SYSTEM_PROCESSOR=x86_64
           -DCMAKE_SYSTEM_NAME=Darwin
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
-          -DCMAKE_C_COMPILER="$CC"
-          -DCMAKE_CXX_COMPILER="$CXX"
           -DCMAKE_C_FLAGS="-arch x86_64"
           -DCMAKE_CXX_FLAGS="-arch x86_64"
 
