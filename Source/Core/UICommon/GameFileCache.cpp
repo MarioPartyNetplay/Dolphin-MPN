@@ -170,7 +170,6 @@ bool GameFileCache::UpdateAdditionalMetadata(const GameUpdatedFn& game_updated,
 bool GameFileCache::UpdateAdditionalMetadata(std::shared_ptr<GameFile>* game_file)
 {
   const bool xml_metadata_changed = (*game_file)->XMLMetadataChanged();
-  const bool wii_banner_changed = (*game_file)->WiiBannerChanged();
   const bool custom_banner_changed = (*game_file)->CustomBannerChanged();
 
   (*game_file)->DownloadDefaultCover();
@@ -178,8 +177,8 @@ bool GameFileCache::UpdateAdditionalMetadata(std::shared_ptr<GameFile>* game_fil
   const bool default_cover_changed = (*game_file)->DefaultCoverChanged();
   const bool custom_cover_changed = (*game_file)->CustomCoverChanged();
 
-  if (!xml_metadata_changed && !wii_banner_changed && !custom_banner_changed &&
-      !default_cover_changed && !custom_cover_changed)
+  if (!xml_metadata_changed && !custom_banner_changed && default_cover_changed &&
+      !custom_cover_changed)
   {
     return false;
   }
@@ -190,8 +189,6 @@ bool GameFileCache::UpdateAdditionalMetadata(std::shared_ptr<GameFile>* game_fil
   std::shared_ptr<GameFile> copy = std::make_shared<GameFile>(**game_file);
   if (xml_metadata_changed)
     copy->XMLMetadataCommit();
-  if (wii_banner_changed)
-    copy->WiiBannerCommit();
   if (custom_banner_changed)
     copy->CustomBannerCommit();
   if (default_cover_changed)

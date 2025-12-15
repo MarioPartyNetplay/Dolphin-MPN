@@ -55,7 +55,7 @@
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/NANDImporter.h"
-#include "DiscIO/WiiSaveBanner.h"
+#include "DiscIO/WiiBanner.h"
 
 #include "DolphinQt/AboutDialog.h"
 #include "DolphinQt/Host.h"

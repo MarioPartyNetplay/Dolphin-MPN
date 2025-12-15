@@ -7,36 +7,32 @@
 #include <vector>
 
 #include "Common/CommonTypes.h"
+#include "DiscIO/Volume.h"
 
 namespace DiscIO
 {
-class WiiSaveBanner
+class WiiBanner
 {
 public:
-  static constexpr u32 BANNER_WIDTH = 192;
-  static constexpr u32 BANNER_HEIGHT = 64;
+  const static int BANNER_WIDTH = 0;
+  const static int BANNER_HEIGHT = 0;
 
-  explicit WiiSaveBanner(u64 title_id);
+  WiiBanner(u64 title_id);
+  WiiBanner(const Volume& volume, Partition partition);
 
   bool IsValid() const { return m_valid; }
-  const std::string& GetPath() const { return m_path; }
   std::string GetName() const;
   std::string GetDescription() const;
 
   std::vector<u32> GetBanner(u32* width, u32* height) const;
 
 private:
-  struct Header
-  {
-    char magic[4];  // "WIBN"
-    u32 flags;
-    u16 animation_speed;
-    u8 unused[22];
-    char16_t name[32];
-    char16_t description[32];
-  } m_header;
+  std::vector<u8> DecompressLZ77(std::vector<u8> bytes);
+  void ExtractARC();
+  void ExtractBin(const std::vector<u8>& data);
 
   bool m_valid = true;
-  std::string m_path;
+  std::vector<u8> m_bytes;
 };
+
 }  // namespace DiscIO
