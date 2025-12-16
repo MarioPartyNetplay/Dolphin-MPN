@@ -129,9 +129,45 @@ if [ "$EXECUTABLE_PATH" != "$EXPECTED_PATH" ]; then
     EXECUTABLE_PATH="$EXPECTED_PATH"
 fi
 
+# Find and copy icon to expected locations for linuxdeploy
+ICON_SOURCE=""
+if [ -f "../Data/dolphin-mpn.png" ]; then
+    ICON_SOURCE="../Data/dolphin-mpn.png"
+elif [ -f "./Data/dolphin-mpn.png" ]; then
+    ICON_SOURCE="./Data/dolphin-mpn.png"
+elif [ -f "../Source/Core/DolphinQt/Resources/dolphin-mpn.png" ]; then
+    ICON_SOURCE="../Source/Core/DolphinQt/Resources/dolphin-mpn.png"
+fi
+
+if [ -n "$ICON_SOURCE" ]; then
+    echo "Found icon at: $ICON_SOURCE"
+    # Copy to standard icon locations
+    mkdir -p ./AppDir/usr/share/icons/hicolor/256x256/apps
+    mkdir -p ./AppDir/usr/share/icons/hicolor/128x128/apps
+    mkdir -p ./AppDir/usr/share/icons/hicolor/64x64/apps
+    mkdir -p ./AppDir/usr/share/icons/hicolor/48x48/apps
+    mkdir -p ./AppDir/usr/share/icons/hicolor/32x32/apps
+    mkdir -p ./AppDir/usr/share/pixmaps
+    
+    cp "$ICON_SOURCE" ./AppDir/usr/share/icons/hicolor/256x256/apps/dolphin-mpn.png
+    cp "$ICON_SOURCE" ./AppDir/usr/share/icons/hicolor/128x128/apps/dolphin-mpn.png
+    cp "$ICON_SOURCE" ./AppDir/usr/share/icons/hicolor/64x64/apps/dolphin-mpn.png
+    cp "$ICON_SOURCE" ./AppDir/usr/share/icons/hicolor/48x48/apps/dolphin-mpn.png
+    cp "$ICON_SOURCE" ./AppDir/usr/share/icons/hicolor/32x32/apps/dolphin-mpn.png
+    cp "$ICON_SOURCE" ./AppDir/usr/share/pixmaps/dolphin-mpn.png
+    echo "Icon copied to standard locations"
+    
+    # Also use --icon-file option for linuxdeploy
+    ICON_FILE_ARG="--icon-file $ICON_SOURCE"
+else
+    echo "WARNING: Icon file not found, linuxdeploy may fail"
+    ICON_FILE_ARG=""
+fi
+
 ./linuxdeploy-${ARCH}.AppImage \
   --appdir AppDir \
   --executable "$EXECUTABLE_PATH" \
+  $ICON_FILE_ARG \
   --plugin qt
 
 # Check if linuxdeploy succeeded
