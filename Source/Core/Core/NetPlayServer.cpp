@@ -780,7 +780,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       sf::Packet blocked_packet;
       blocked_packet << MessageID::ChatMessage;
       blocked_packet << PlayerId{0};  // server ID
-      blocked_packet << fmt::format("Your message was not send, because it contained contraban.");
+      blocked_packet << fmt::format("Your message was not sent, because it contained contraband.");
 
       Send(player.socket, blocked_packet);
       INFO_LOG_FMT(NETPLAY, "Blocked chat message from player {} ({}): {}", player.name, player.pid, msg);

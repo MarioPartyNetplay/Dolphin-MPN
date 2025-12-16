@@ -534,12 +534,27 @@ void NetPlayClient::OnChatMessage(sf::Packet& packet)
   packet >> msg;
 
   // don't need lock to read in this thread
-  const Player& player = m_players[pid];
-
-  INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
-
-  // add to gui
-  m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
+  // PlayerId{0} is used for system/server messages
+  if (pid == 0)
+  {
+    INFO_LOG_FMT(NETPLAY, "System message: {}", msg);
+    m_dialog->AppendChat(fmt::format("System: {}", msg));
+  }
+  else
+  {
+    const auto it = m_players.find(pid);
+    if (it != m_players.end())
+    {
+      const Player& player = it->second;
+      INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
+      m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
+    }
+    else
+    {
+      INFO_LOG_FMT(NETPLAY, "Unknown player {} wrote: {}", pid, msg);
+      m_dialog->AppendChat(fmt::format("Unknown[{}]: {}", pid, msg));
+    }
+  }
 }
 
 void NetPlayClient::OnChunkedDataStart(sf::Packet& packet)
