@@ -217,5 +217,8 @@ private:
   Common::TraversalClient* m_traversal_client = nullptr;
   NetPlayUI* m_dialog = nullptr;
   NetPlayIndex m_index;
+
+  // Chat blocklist
+  bool ContainsBlockedWord(const std::string& msg) const;
 };
 }  // namespace NetPlay

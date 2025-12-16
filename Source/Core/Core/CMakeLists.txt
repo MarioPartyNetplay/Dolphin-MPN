@@ -1,3 +1,61 @@
+# Generate blocklist header from blocklist.txt
+set(BLOCKLIST_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
+set(BLOCKLIST_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ChatBlocklist.h")
+
+# Create CMake script to generate the header
+set(BLOCKLIST_GENERATOR_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_blocklist.cmake")
+file(WRITE "${BLOCKLIST_GENERATOR_SCRIPT}" [=[
+# Read blocklist file
+file(READ "${INPUT_FILE}" BLOCKLIST_CONTENT)
+string(STRIP "${BLOCKLIST_CONTENT}" BLOCKLIST_CONTENT)
+string(REPLACE "\n" ";" BLOCKLIST_LINES "${BLOCKLIST_CONTENT}")
+
+# Generate header content
+set(BLOCKLIST_HEADER_CONTENT "// Auto-generated from blocklist.txt\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}#pragma once\n\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}#include <unordered_set>\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}#include <string>\n\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}namespace NetPlay\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}{\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}inline const std::unordered_set<std::string>& GetChatBlocklist()\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}{\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}  static const std::unordered_set<std::string> blocked_words = {\n")
+
+foreach(LINE ${BLOCKLIST_LINES})
+  string(STRIP "${LINE}" STRIPPED_LINE)
+  if(NOT "${STRIPPED_LINE}" STREQUAL "")
+    set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}    \"${STRIPPED_LINE}\",\n")
+  endif()
+endforeach()
+
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}  };\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}  return blocked_words;\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}}\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}}  // namespace NetPlay\n")
+
+# Write header file
+file(WRITE "${OUTPUT_FILE}" "${BLOCKLIST_HEADER_CONTENT}")
+]=])
+
+# Generate header at configure time (for initial generation)
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -DINPUT_FILE="${BLOCKLIST_INPUT}" -DOUTPUT_FILE="${BLOCKLIST_OUTPUT}" -P "${BLOCKLIST_GENERATOR_SCRIPT}"
+    RESULT_VARIABLE GENERATE_RESULT
+)
+
+if(GENERATE_RESULT)
+    message(WARNING "Could not generate blocklist header at configure time. It will be generated at build time.")
+endif()
+
+# Add custom command to regenerate header when blocklist.txt changes (works with all generators)
+add_custom_command(
+    OUTPUT "${BLOCKLIST_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND} -DINPUT_FILE="${BLOCKLIST_INPUT}" -DOUTPUT_FILE="${BLOCKLIST_OUTPUT}" -P "${BLOCKLIST_GENERATOR_SCRIPT}"
+    DEPENDS "${BLOCKLIST_INPUT}" "${BLOCKLIST_GENERATOR_SCRIPT}"
+    COMMENT "Generating ChatBlocklist.h from blocklist.txt"
+    VERBATIM
+)
+
 add_library(core
   AchievementManager.cpp
   AchievementManager.h
@@ -487,6 +545,7 @@ add_library(core
   NetPlayCommon.h
   NetPlayServer.cpp
   NetPlayServer.h
+  ${CMAKE_CURRENT_BINARY_DIR}/ChatBlocklist.h
   NetworkCaptureLogger.cpp
   NetworkCaptureLogger.h
   PatchEngine.cpp
@@ -647,6 +706,8 @@ elseif(_M_ARM_64)
     PowerPC/JitArmCommon/BackPatch.h
   )
 endif()
+
+target_include_directories(core PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(core
 PUBLIC

@@ -444,6 +444,9 @@
     <ClInclude Include="Core\NetPlayCommon.h" />
     <ClInclude Include="Core\NetPlayProto.h" />
     <ClInclude Include="Core\NetPlayServer.h" />
+    <ClInclude Include="$(IntDir)ChatBlocklist.h" Condition="Exists('$(IntDir)ChatBlocklist.h')">
+      <Filter>Generated</Filter>
+    </ClInclude>
     <ClInclude Include="Core\NetworkCaptureLogger.h" />
     <ClInclude Include="Core\PatchEngine.h" />
     <ClInclude Include="Core\PowerPC\BreakPoints.h" />

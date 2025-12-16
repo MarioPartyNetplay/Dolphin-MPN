@@ -8,7 +8,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <!--Dolphin includes are relative to Source\Core-->
-      <AdditionalIncludeDirectories>$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(CoreDir);$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 
       <!--For now, header-only libs don't have their own vcxproj/exports, so just supply their include paths to all Dolphin code-->
       <AdditionalIncludeDirectories>$(ExternalsDir)FFmpeg-bin\$(Platform)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

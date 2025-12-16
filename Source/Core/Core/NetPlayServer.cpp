@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/NetPlayServer.h"
+#include "ChatBlocklist.h"
 
 #include <algorithm>
 #include <chrono>
@@ -11,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <ranges>
+#include <regex>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -771,6 +773,20 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     std::string msg;
     packet >> msg;
 
+    // Check for blocked words
+    if (ContainsBlockedWord(msg))
+    {
+      // Notify the user that their message was blocked
+      sf::Packet blocked_packet;
+      blocked_packet << MessageID::ChatMessage;
+      blocked_packet << PlayerId{0};  // server ID
+      blocked_packet << fmt::format("Your message was not send, because it contained contraban.");
+
+      Send(player.socket, blocked_packet);
+      INFO_LOG_FMT(NETPLAY, "Blocked chat message from player {} ({}): {}", player.name, player.pid, msg);
+      break;
+    }
+
     // send msg to other clients
     sf::Packet spac;
     spac << MessageID::ChatMessage;
@@ -1309,6 +1325,81 @@ void NetPlayServer::SendChatMessage(const std::string& msg)
   spac << msg;
 
   SendAsyncToClients(std::move(spac));
+}
+
+namespace
+{
+// Helper function to check if a wildcard pattern matches anywhere in the text
+// Supports * wildcards (matches any sequence of characters)
+bool MatchesWildcard(const std::string& text, const std::string& pattern)
+{
+  // Convert pattern to regex: * becomes .*
+  std::string regex_pattern;
+  regex_pattern.reserve(pattern.size() * 2);
+  
+  for (char c : pattern)
+  {
+    if (c == '*')
+    {
+      regex_pattern += ".*";
+    }
+    else
+    {
+      // Escape special regex characters
+      if (c == '.' || c == '+' || c == '?' || c == '^' || c == '$' || c == '|' || c == '(' ||
+          c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == '\\')
+      {
+        regex_pattern += '\\';
+      }
+      regex_pattern += c;
+    }
+  }
+
+  try
+  {
+    std::regex regex_obj(regex_pattern, std::regex_constants::icase);
+    return std::regex_search(text, regex_obj);
+  }
+  catch (const std::regex_error&)
+  {
+    // If regex is invalid, fall back to simple substring matching
+    return text.find(pattern) != std::string::npos;
+  }
+}
+}  // namespace
+
+bool NetPlayServer::ContainsBlockedWord(const std::string& msg) const
+{
+  // Blocklist loaded from blocklist.txt at compile time
+  const auto& blocked_words = GetChatBlocklist();
+
+  // Convert message to lowercase for case-insensitive matching
+  std::string lower_msg = msg;
+  Common::ToLower(&lower_msg);
+
+  // Check if any blocked word/pattern appears in the message
+  for (const auto& blocked_word : blocked_words)
+  {
+    // Check if pattern contains wildcards
+    if (blocked_word.find('*') != std::string::npos)
+    {
+      // Use wildcard matching
+      if (MatchesWildcard(lower_msg, blocked_word))
+      {
+        return true;
+      }
+    }
+    else
+    {
+      // Simple substring matching for non-wildcard patterns
+      if (lower_msg.find(blocked_word) != std::string::npos)
+      {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // called from ---GUI--- thread
