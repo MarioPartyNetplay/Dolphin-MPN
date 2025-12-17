@@ -12,7 +12,6 @@
 #include <mutex>
 #include <optional>
 #include <ranges>
-#include <regex>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -1331,40 +1330,49 @@ namespace
 {
 // Helper function to check if a wildcard pattern matches anywhere in the text
 // Supports * wildcards (matches any sequence of characters)
+// Pattern like "*word*" matches if "word" appears anywhere in text
 bool MatchesWildcard(const std::string& text, const std::string& pattern)
 {
-  // Convert pattern to regex: * becomes .*
-  std::string regex_pattern;
-  regex_pattern.reserve(pattern.size() * 2);
+  // Handle common case: pattern surrounded by wildcards like "*word*"
+  // This means we just need to find "word" anywhere in text
+  if (pattern.size() >= 2 && pattern.front() == '*' && pattern.back() == '*')
+  {
+    // Extract the middle part (without the surrounding asterisks)
+    std::string middle = pattern.substr(1, pattern.size() - 2);
+    
+    // If middle contains no wildcards, simple substring search
+    if (middle.find('*') == std::string::npos)
+    {
+      return text.find(middle) != std::string::npos;
+    }
+  }
   
+  // For patterns starting with * (like "*word"), check if text ends with the rest
+  if (!pattern.empty() && pattern.front() == '*' && pattern.find('*', 1) == std::string::npos)
+  {
+    std::string suffix = pattern.substr(1);
+    if (text.size() >= suffix.size())
+    {
+      return text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+    return false;
+  }
+  
+  // For patterns ending with * (like "word*"), check if text starts with the rest
+  if (!pattern.empty() && pattern.back() == '*' && pattern.find('*') == pattern.size() - 1)
+  {
+    std::string prefix = pattern.substr(0, pattern.size() - 1);
+    return text.compare(0, prefix.size(), prefix) == 0;
+  }
+  
+  // Fallback: simple substring match (ignoring wildcards)
+  std::string clean_pattern;
   for (char c : pattern)
   {
-    if (c == '*')
-    {
-      regex_pattern += ".*";
-    }
-    else
-    {
-      // Escape special regex characters
-      if (c == '.' || c == '+' || c == '?' || c == '^' || c == '$' || c == '|' || c == '(' ||
-          c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == '\\')
-      {
-        regex_pattern += '\\';
-      }
-      regex_pattern += c;
-    }
+    if (c != '*')
+      clean_pattern += c;
   }
-
-  try
-  {
-    std::regex regex_obj(regex_pattern, std::regex_constants::icase);
-    return std::regex_search(text, regex_obj);
-  }
-  catch (const std::regex_error&)
-  {
-    // If regex is invalid, fall back to simple substring matching
-    return text.find(pattern) != std::string::npos;
-  }
+  return text.find(clean_pattern) != std::string::npos;
 }
 }  // namespace
 
