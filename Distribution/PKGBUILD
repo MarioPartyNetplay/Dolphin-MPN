@@ -1,25 +1,42 @@
 # Maintainer: Tabitha Hanegan <info@tabithahanegan.com>
 # Contributor: Dolphin Team <team@dolphin-emu.org>
+
 pkgname=dolphin-mpn
-pkgver=master
+pkgver=0
 pkgrel=1
 pkgdesc="A GameCube and Wii emulator optimized for Mario Party Netplay"
 arch=('x86_64' 'aarch64')
 url="https://github.com/MarioPartyNetplay/Dolphin-MPN"
 license=('GPL2')
-depends=('alsa-lib' 'bluez-libs' 'enchant' 'ffmpeg' 'fmt' 'hidapi' 'libevdev' 'libpulse' 'libx11' 'libxi' 'libxrandr' 'lzo' 'mbedtls' 'miniupnpc' 'pugixml' 'qt6-base' 'sdl2' 'sfml' 'zlib' 'zstd')
+
+depends=(
+  'alsa-lib' 'bluez-libs' 'enchant' 'ffmpeg' 'fmt' 'hidapi'
+  'libevdev' 'libpulse' 'libx11' 'libxi' 'libxrandr'
+  'lzo' 'mbedtls' 'miniupnpc' 'pugixml'
+  'qt6-base' 'sdl2' 'sfml' 'zlib' 'zstd'
+)
+
 makedepends=('cmake' 'git' 'ninja' 'qt6-tools')
 optdepends=('pulseaudio: for PulseAudio backend')
-source=("git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git)
+
+source=("$pkgname::git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git")
 sha256sums=('SKIP')
 
+pkgver() {
+  cd "$srcdir/$pkgname"
+  printf "%s.r%s.g%s" \
+    "$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')" \
+    "$(git rev-list --count HEAD)" \
+    "$(git rev-parse --short HEAD)"
+}
+
 prepare() {
-  cd Dolphin-MPN
+  cd "$srcdir/$pkgname"
   git submodule update --init --recursive
 }
 
 build() {
-  cd Dolphin-MPN
+  cd "$srcdir/$pkgname"
   cmake -B build \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_BUILD_TYPE=Release \
@@ -36,6 +53,6 @@ build() {
 }
 
 package() {
-  cd Dolphin-MPN
-  DESTDIR="${pkgdir}" cmake --install build
+  cd "$srcdir/$pkgname"
+  DESTDIR="$pkgdir" cmake --install build
 }
