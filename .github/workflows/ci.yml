@@ -324,7 +324,7 @@ jobs:
           -DUSE_SYSTEM_CURL=ON
           -DUSE_SYSTEM_ICONV=ON
           -DUSE_SYSTEM_SDL3=OFF
-          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.10
           -DCMAKE_OSX_ARCHITECTURES=x86_64
           -DCMAKE_SYSTEM_PROCESSOR=x86_64
           -DCMAKE_SYSTEM_NAME=Darwin
@@ -562,7 +562,7 @@ jobs:
             -DCMAKE_C_COMPILER=/usr/lib/ccache/gcc-13 \
             -DCMAKE_CXX_COMPILER=/usr/lib/ccache/g++-13 \
             -DCMAKE_PREFIX_PATH="${{github.workspace}}/qt/${{ env.yaqti }}/gcc_64/" \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.10 \
             -DENABLE_NOGUI=OFF
           ninja
 
