@@ -365,7 +365,8 @@ bool RenderWidget::event(QEvent* event)
 
     // The render window might flicker on some platforms because Qt tries to change focus to a new
     // element when there is none (?) Handling this event before it reaches QWidget fixes the issue.
-    if (ke->key() == Qt::Key_Tab)
+    // Only block Tab during NetPlay to allow pause/speedup hotkeys when not in NetPlay
+    if (ke->key() == Qt::Key_Tab && Settings::Instance().GetNetPlayClient())
       return true;
 
     break;

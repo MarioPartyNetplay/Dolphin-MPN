@@ -488,15 +488,22 @@ void HotkeyScheduler::Run()
       if (IsHotkey(HK_TOGGLE_TEXTURES))
         Config::SetCurrent(Config::GFX_HIRES_TEXTURES, !Config::Get(Config::GFX_HIRES_TEXTURES));
 
-      Core::SetIsThrottlerTempDisabled(IsHotkey(HK_TOGGLE_THROTTLE, true));
+      // Only allow throttle toggle (speedup) when not in NetPlay
+      const bool throttle_allowed = !Settings::Instance().GetNetPlayClient();
+      if (throttle_allowed)
+        Core::SetIsThrottlerTempDisabled(IsHotkey(HK_TOGGLE_THROTTLE, true));
+      else
+        Core::SetIsThrottlerTempDisabled(false);
 
-      if (IsHotkey(HK_TOGGLE_THROTTLE, true) && !Config::Get(Config::MAIN_AUDIO_MUTED) &&
+      if (throttle_allowed && IsHotkey(HK_TOGGLE_THROTTLE, true) &&
+          !Config::Get(Config::MAIN_AUDIO_MUTED) &&
           Config::Get(Config::MAIN_AUDIO_MUTE_ON_DISABLED_SPEED_LIMIT))
       {
         Config::SetCurrent(Config::MAIN_AUDIO_MUTED, true);
         AudioCommon::UpdateSoundStream(system);
       }
-      else if (!IsHotkey(HK_TOGGLE_THROTTLE, true) && Config::Get(Config::MAIN_AUDIO_MUTED) &&
+      else if (throttle_allowed && !IsHotkey(HK_TOGGLE_THROTTLE, true) &&
+               Config::Get(Config::MAIN_AUDIO_MUTED) &&
                Config::GetActiveLayerForConfig(Config::MAIN_AUDIO_MUTED) ==
                    Config::LayerType::CurrentRun)
       {
