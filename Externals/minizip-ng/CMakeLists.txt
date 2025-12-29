@@ -1,4 +1,9 @@
-project(minizip C)
+set(MZ_COMPAT OFF)
+set(MZ_BUILD_TESTS OFF)
+set(MZ_BUILD_UNIT_TESTS OFF)
+set(MZ_BUILD_FUZZ_TESTS OFF)
+set(MZ_CODE_COVERAGE OFF)
+set(SKIP_INSTALL_ALL ON)
 
 include(CheckFunctionExists)
 include(CheckIncludeFile)
@@ -121,3 +126,5 @@ endif()
 target_link_libraries(minizip PUBLIC ZLIB::ZLIB)
 
 add_library(minizip-ng::minizip-ng ALIAS minizip)
+add_subdirectory(minizip-ng)
+dolphin_disable_warnings(minizip-ng)
