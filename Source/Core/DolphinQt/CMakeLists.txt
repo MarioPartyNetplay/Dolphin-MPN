@@ -481,7 +481,7 @@ target_include_directories(dolphin-mpn PRIVATE
 )
 
 if (NEED_QT_GUI_PRIVATE_COMPONENT)
-  target_link_libraries(dolphin-emu
+  target_link_libraries(dolphin-mpn
   PRIVATE
     Qt6::GuiPrivate
   )
