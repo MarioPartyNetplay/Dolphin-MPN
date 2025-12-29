@@ -118,7 +118,7 @@ function(dolphin_find_optional_system_library_pkgconfig library search alias bun
       message(FATAL_ERROR "No system ${library} was found.  Please install it or set USE_SYSTEM_${upperlib} to AUTO or OFF.")
     endif()
   endif()
-  if(${library}_FOUND)
+  if(${library}_FOUND AND TARGET PkgConfig::${library})
     message(STATUS "Using system ${library}")
     dolphin_alias_library(${alias} PkgConfig::${library})
     set(${library}_TYPE "System" PARENT_SCOPE)
