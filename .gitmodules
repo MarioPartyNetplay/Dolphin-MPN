@@ -142,7 +142,7 @@
 	path = Externals/imgui/imgui
 	url = https://github.com/ocornut/imgui.git
 	shallow = true
-[submodule "emsdk"]
+[submodule "Externals/emsdk"]
 	path = emsdk
 	url = https://github.com/emscripten-core/emsdk.git
 	shallow = true
