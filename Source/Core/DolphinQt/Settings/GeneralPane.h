@@ -16,6 +16,7 @@ class QVBoxLayout;
 #include "DolphinQt/Config/ToolTipControls/ToolTipCheckBox.h"
 #include "DolphinQt/Config/ToolTipControls/ToolTipComboBox.h"
 #include "DolphinQt/Config/ToolTipControls/ToolTipPushButton.h"
+#include "DolphinQt/Config/ConfigControls/ConfigBool.h"
 
 namespace Core
 {
@@ -43,8 +44,9 @@ private:
   // Widgets
   QVBoxLayout* m_main_layout;
   ToolTipComboBox* m_combobox_speedlimit;
-  ToolTipComboBox* m_combobox_update_track;`
+  ToolTipComboBox* m_combobox_update_track;
   ToolTipComboBox* m_combobox_fallback_region;
+  ToolTipComboBox* m_combobox_codehandler;
   ConfigBool* m_checkbox_dualcore;
   ConfigBool* m_checkbox_cheats;
   ConfigBool* m_checkbox_load_games_into_memory;
