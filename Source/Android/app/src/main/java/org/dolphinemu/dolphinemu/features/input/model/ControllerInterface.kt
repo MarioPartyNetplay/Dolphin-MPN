@@ -163,10 +163,6 @@ object ControllerInterface {
 
     @Keep
     @JvmStatic
-<<<<<<< HEAD
-    private fun getSystemVibratorManager(): DolphinVibratorManager =
-        DolphinVibratorManagerFactory.getSystemVibratorManager()
-=======
     private fun getSystemVibratorManager(): DolphinVibratorManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = DolphinApplication.getAppContext()
@@ -179,7 +175,6 @@ object ControllerInterface {
             .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         return DolphinVibratorManagerCompat(vibrator)
     }
->>>>>>> 6c7b60250d3b93971579736d5d46da804abc3f39
 
     @Keep
     @JvmStatic

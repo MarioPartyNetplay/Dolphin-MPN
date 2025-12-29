@@ -130,83 +130,10 @@ class MainPresenter(private val mainView: MainView, private val activity: Fragme
         requestDirectory.launch(intent)
     }
 
-<<<<<<< HEAD
-    fun handleOptionSelection(itemId: Int, activity: ComponentActivity): Boolean =
-        when (itemId) {
-            R.id.menu_settings -> {
-                mainView.launchSettingsActivity(MenuTag.SETTINGS)
-                true
-            }
-
-            R.id.menu_grid_options -> {
-                mainView.showGridOptions()
-                true
-            }
-
-            R.id.menu_refresh -> {
-                mainView.setRefreshing(true)
-                GameFileCacheManager.startRescan()
-                true
-            }
-
-            R.id.button_add_directory -> {
-                AfterDirectoryInitializationRunner().runWithLifecycle(activity) { launchFileListActivity() }
-                true
-            }
-
-            R.id.menu_open_file -> {
-                requestGameFile.launch("*/*")
-                true
-            }
-
-            R.id.menu_load_wii_system_menu -> {
-                launchWiiSystemMenu()
-                true
-            }
-
-            R.id.menu_online_system_update -> {
-                AfterDirectoryInitializationRunner().runWithLifecycle(activity) { launchOnlineUpdate() }
-                true
-            }
-
-            R.id.menu_install_wad -> {
-                AfterDirectoryInitializationRunner().runWithLifecycle(
-                    activity
-                ) { requestWadFile.launch("*/*") }
-                true
-            }
-
-            R.id.menu_import_wii_save -> {
-                AfterDirectoryInitializationRunner().runWithLifecycle(
-                    activity
-                ) { requestWiiSaveFile.launch("*/*") }
-                true
-            }
-
-            R.id.menu_import_nand_backup -> {
-                AfterDirectoryInitializationRunner().runWithLifecycle(
-                    activity
-                ) { requestNandBinFile.launch("*/*") }
-                true
-            }
-
-            R.id.menu_netplay -> {
-                mainView.showNetPlayBrowser()
-                true
-            }
-
-            R.id.menu_about -> {
-                showAboutDialog()
-                false
-            }
-
-            else -> false
-=======
     fun handleOptionSelection(itemId: Int, activity: ComponentActivity): Boolean = when (itemId) {
         R.id.menu_settings -> {
             mainView.launchSettingsActivity(MenuTag.SETTINGS)
             true
->>>>>>> 6c7b60250d3b93971579736d5d46da804abc3f39
         }
 
         R.id.menu_grid_options -> {
