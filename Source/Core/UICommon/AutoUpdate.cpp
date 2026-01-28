@@ -9,9 +9,6 @@
 #include <fmt/format.h>
 #include <picojson.h>
 
-#include "Common/CommonFuncs.h"
-#include "Common/CommonPaths.h"
-#include "Common/FileUtil.h"
 #include "Common/HttpRequest.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
@@ -21,12 +18,18 @@
 #ifdef _WIN32
 #include <Windows.h>
 #else
-#include <sys/types.h>
 #include <unistd.h>
 #endif
 
 #ifdef __APPLE__
 #include <sys/stat.h>
+#endif
+
+#if defined(_WIN32) || defined(__APPLE__)
+#define OS_SUPPORTS_UPDATER
+#include "Common/CommonFuncs.h"
+#include "Common/CommonPaths.h"
+#include "Common/FileUtil.h"
 #endif
 
 // Refer to docs/autoupdate_overview.md for a detailed overview of the autoupdate process

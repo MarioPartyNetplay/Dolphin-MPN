@@ -17,7 +17,6 @@
 #include "Common/CommonPaths.h"
 #include "Common/FileSearch.h"
 #include "Common/FileUtil.h"
-#include "Common/MsgHandler.h"
 #include "Common/StringUtil.h"
 
 #include "Core/AchievementManager.h"
@@ -34,8 +33,6 @@
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/SignalBlocking.h"
 #include "DolphinQt/Settings.h"
-
-#include "UICommon/GameFile.h"
 
 static ConfigStringChoice* MakeLanguageComboBox()
 {
@@ -131,9 +128,9 @@ void InterfacePane::CreateUI()
   m_combobox_language = MakeLanguageComboBox();
   combobox_layout->addRow(tr("&Language:"), m_combobox_language);
 
-  // List avalable themes
-  auto theme_paths =
-      Common::DoFileSearch({File::GetUserPath(D_THEMES_IDX), File::GetSysDirectory() + THEMES_DIR});
+  // List available themes
+  auto theme_paths = Common::DoFileSearch(
+      {{File::GetUserPath(D_THEMES_IDX), File::GetSysDirectory() + THEMES_DIR}});
   std::vector<std::string> theme_names;
   theme_names.reserve(theme_paths.size());
   std::ranges::transform(theme_paths, std::back_inserter(theme_names), PathToFileName);
@@ -141,6 +138,34 @@ void InterfacePane::CreateUI()
   // Theme Combobox
   m_combobox_theme = new ConfigStringChoice(theme_names, Config::MAIN_THEME_NAME);
   combobox_layout->addRow(tr("&Theme:"), m_combobox_theme);
+
+  // User Style Combobox
+  m_combobox_userstyle = new ToolTipComboBox;
+  m_label_userstyle = new QLabel(tr("Style:"));
+  combobox_layout->addRow(m_label_userstyle, m_combobox_userstyle);
+
+  auto userstyle_search_results = Common::DoFileSearch(File::GetUserPath(D_STYLES_IDX));
+
+  m_combobox_userstyle->addItem(tr("(System)"), static_cast<int>(Settings::StyleType::System));
+
+  // TODO: Support forcing light/dark on other OSes too.
+#ifdef _WIN32
+  m_combobox_userstyle->addItem(tr("(Light)"), static_cast<int>(Settings::StyleType::Light));
+  m_combobox_userstyle->addItem(tr("(Dark)"), static_cast<int>(Settings::StyleType::Dark));
+#endif
+
+  m_combobox_userstyle->addItem(tr("(Fusion Light)"),
+                                static_cast<int>(Settings::StyleType::FusionLight));
+  m_combobox_userstyle->addItem(tr("(Fusion Dark Gray)"),
+                                static_cast<int>(Settings::StyleType::FusionDarkGray));
+  m_combobox_userstyle->addItem(tr("(Fusion Dark)"),
+                                static_cast<int>(Settings::StyleType::FusionDark));
+
+  for (const std::string& path : userstyle_search_results)
+  {
+    const QFileInfo file_info(QString::fromStdString(path));
+    m_combobox_userstyle->addItem(file_info.completeBaseName(), file_info.fileName());
+  }
 
   // Checkboxes
   m_checkbox_use_builtin_title_database = new ConfigBool(tr("Use Built-In Database of Game Names"),

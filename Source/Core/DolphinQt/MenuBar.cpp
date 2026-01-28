@@ -3,7 +3,6 @@
 
 #include "DolphinQt/MenuBar.h"
 
-#include <cinttypes>
 #include <future>
 
 #include <QAction>
@@ -22,11 +21,9 @@
 #include "Common/CommonPaths.h"
 #include "Common/FileUtil.h"
 #include "Common/IOFile.h"
-#include "Common/StringUtil.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/CommonTitles.h"
-#include "Core/Config/AchievementSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
@@ -35,7 +32,6 @@
 #include "Core/HW/AddressSpace.h"
 #include "Core/HW/Memmap.h"
 #include "Core/HW/WiiSave.h"
-#include "Core/HW/Wiimote.h"
 #include "Core/IOS/ES/ES.h"
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/IOS.h"
@@ -50,21 +46,20 @@
 #include "Core/PowerPC/SignatureDB/SignatureDB.h"
 #include "Core/State.h"
 #include "Core/System.h"
-#include "Core/TitleDatabase.h"
 #include "Core/WiiUtils.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/NANDImporter.h"
-#include "DiscIO/WiiBanner.h"
 
-#include "DolphinQt/AboutDialog.h"
 #include "DolphinQt/Host.h"
 #include "DolphinQt/NANDRepairDialog.h"
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonAutodismissibleMenu.h"
 #include "DolphinQt/QtUtils/ParallelProgressDialog.h"
+#ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
 #include "DolphinQt/QtUtils/QueueOnObject.h"
+#endif
 #include "DolphinQt/QtUtils/SignalBlocking.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/Updater.h"
@@ -260,6 +255,18 @@ void MenuBar::AddFileMenu()
 
   m_open_user_folder =
       file_menu->addAction(tr("Open &User Folder"), this, &MenuBar::OpenUserFolder);
+
+  const std::string user_path = File::GetUserPath(D_USER_IDX);
+  if (user_path + CONFIG_DIR DIR_SEP != File::GetUserPath(D_CONFIG_IDX))
+  {
+    m_open_config_folder =
+        file_menu->addAction(tr("Open &Config Folder"), this, &MenuBar::OpenConfigFolder);
+  }
+  if (user_path + CACHE_DIR DIR_SEP != File::GetUserPath(D_CACHE_IDX))
+  {
+    m_open_cache_folder =
+        file_menu->addAction(tr("Open C&ache Folder"), this, &MenuBar::OpenCacheFolder);
+  }
 
   file_menu->addSeparator();
 

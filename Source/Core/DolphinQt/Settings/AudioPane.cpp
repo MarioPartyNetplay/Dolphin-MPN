@@ -19,7 +19,6 @@
 #include <QVBoxLayout>
 
 #include "AudioCommon/AudioCommon.h"
-#include "AudioCommon/Enums.h"
 #include "AudioCommon/WASAPIStream.h"
 
 #include "Core/Config/MainSettings.h"
@@ -27,10 +26,8 @@
 #include "Core/System.h"
 #include "DolphinQt/Config/ConfigControls/ConfigBool.h"
 #include "DolphinQt/Config/ConfigControls/ConfigChoice.h"
-#include "DolphinQt/Config/ConfigControls/ConfigRadio.h"
 #include "DolphinQt/Config/ConfigControls/ConfigSlider.h"
 
-#include "DolphinQt/Config/SettingsWindow.h"
 #include "DolphinQt/Settings.h"
 
 static QString GetVolumeLabelText(int volume_level)
@@ -89,7 +86,7 @@ void AudioPane::CreateWidgets()
   const QFontMetrics font_metrics{font()};
   const int label_width = font_metrics.boundingRect(GetVolumeLabelText(100)).width();
   // Ensure the label is at least as wide as the QGroupBox title.
-  // This prevents [-Volume] title uglyness on Windows.
+  // This prevents [-Volume] title ugliness on Windows.
   const int title_width = font_metrics.boundingRect(volume_box->title()).width();
   m_volume_indicator->setFixedWidth(std::max(label_width, title_width));
 

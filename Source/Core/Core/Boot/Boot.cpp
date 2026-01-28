@@ -5,8 +5,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -17,7 +17,6 @@
 
 #include <fmt/ranges.h>
 
-#include "Common/Align.h"
 #include "Common/CommonPaths.h"
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
@@ -703,13 +702,13 @@ void UpdateStateFlags(std::function<void(StateFlags*)> update_function)
 
   StateFlags state{};
   if (file->GetStatus()->size == sizeof(StateFlags))
-    file->Read(&state, 1);
+    (void)file->Read(&state, 1);
 
   update_function(&state);
   state.UpdateChecksum();
 
-  file->Seek(0, IOS::HLE::FS::SeekMode::Set);
-  file->Write(&state, 1);
+  (void)file->Seek(0, IOS::HLE::FS::SeekMode::Set);
+  (void)file->Write(&state, 1);
 }
 
 void CreateSystemMenuTitleDirs()

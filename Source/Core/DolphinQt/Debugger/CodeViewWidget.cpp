@@ -27,7 +27,6 @@
 
 #include "Common/Assert.h"
 #include "Common/GekkoDisassembler.h"
-#include "Common/StringUtil.h"
 #include "Core/Core.h"
 #include "Core/Debugger/CodeTrace.h"
 #include "Core/Debugger/PPCDebugInterface.h"
@@ -676,7 +675,7 @@ void CodeViewWidget::OnContextMenu()
 
   auto* note = m_ppc_symbol_db.GetNoteFromAddr(addr);
   note_edit_action->setEnabled(note != nullptr);
-  // A note cannot be added ontop of the starting address of another note.
+  // A note cannot be added on top of the starting address of another note.
   if (note != nullptr && note->address == addr)
     note_add_action->setEnabled(false);
 

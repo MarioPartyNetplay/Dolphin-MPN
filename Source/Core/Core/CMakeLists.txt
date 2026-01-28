@@ -866,7 +866,7 @@ if(UNIX)
   )
 endif()
 
-if(WIN32 OR LINUX)
+if(TARGET cpp-ipc::ipc)
   target_sources(core PRIVATE HW/EXI/BBA/IPC.cpp)
   target_link_libraries(core PRIVATE cpp-ipc::ipc)
 elseif(NOT ANDROID)

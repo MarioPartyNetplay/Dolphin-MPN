@@ -49,7 +49,6 @@
 #include "Core/BootManager.h"
 #include "Core/CommonTitles.h"
 #include "Core/Config/AchievementSettings.h"
-#include "Core/Config/FreeLookSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Config/UISettings.h"
@@ -63,10 +62,8 @@
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/HW/Wiimote.h"
-#include "Core/HW/WiimoteEmu/WiimoteEmu.h"
 #include "Core/HotkeyManager.h"
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
-#include "Core/IOS/USB/Bluetooth/WiimoteDevice.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayClient.h"
 #include "Core/NetPlayProto.h"
@@ -135,19 +132,14 @@
 #include "DolphinQt/ToolBar.h"
 #include "DolphinQt/WiiUpdate.h"
 
-#include "InputCommon/ControllerInterface/ControllerInterface.h"
-#include "InputCommon/GCAdapter.h"
-
 #include "UICommon/DiscordPresence.h"
 #include "UICommon/GameFile.h"
 #include "UICommon/ResourcePack/Manager.h"
-#include "UICommon/ResourcePack/Manifest.h"
 #include "UICommon/ResourcePack/ResourcePack.h"
 
 #include "UICommon/UICommon.h"
 
 #include "VideoCommon/NetPlayChatUI.h"
-#include "VideoCommon/VideoConfig.h"
 
 #ifdef HAVE_XRANDR
 #include "UICommon/X11Utils.h"
@@ -547,6 +539,8 @@ void MainWindow::ConnectMenuBar()
   connect(m_menu_bar, &MenuBar::EjectDisc, this, &MainWindow::EjectDisc);
   connect(m_menu_bar, &MenuBar::ChangeDisc, this, &MainWindow::ChangeDisc);
   connect(m_menu_bar, &MenuBar::OpenUserFolder, this, &MainWindow::OpenUserFolder);
+  connect(m_menu_bar, &MenuBar::OpenConfigFolder, this, &MainWindow::OpenConfigFolder);
+  connect(m_menu_bar, &MenuBar::OpenCacheFolder, this, &MainWindow::OpenCacheFolder);
 
   // Emulation
   connect(m_menu_bar, &MenuBar::Pause, this, &MainWindow::Pause);
@@ -841,6 +835,22 @@ void MainWindow::EjectDisc()
 void MainWindow::OpenUserFolder()
 {
   std::string path = File::GetUserPath(D_USER_IDX);
+
+  QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
+  QDesktopServices::openUrl(url);
+}
+
+void MainWindow::OpenConfigFolder()
+{
+  std::string path = File::GetUserPath(D_CONFIG_IDX);
+
+  QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
+  QDesktopServices::openUrl(url);
+}
+
+void MainWindow::OpenCacheFolder()
+{
+  std::string path = File::GetUserPath(D_CACHE_IDX);
 
   QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
   QDesktopServices::openUrl(url);

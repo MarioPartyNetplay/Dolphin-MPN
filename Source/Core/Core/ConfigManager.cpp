@@ -4,11 +4,9 @@
 #include "Core/ConfigManager.h"
 
 #include <algorithm>
-#include <climits>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -19,7 +17,6 @@
 
 #include "AudioCommon/AudioCommon.h"
 
-#include "Common/Assert.h"
 #include "Common/CommonPaths.h"
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
@@ -27,14 +24,10 @@
 #include "Common/IniFile.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
-#include "Common/NandPaths.h"
 #include "Common/StringUtil.h"
-#include "Common/Version.h"
-#include "Common/Config/Config.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/Boot/Boot.h"
-#include "Core/CommonTitles.h"
 #include "Core/Config/DefaultLocale.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/SYSCONFSettings.h"
@@ -55,7 +48,6 @@
 #include "Core/IOS/ES/Formats.h"
 #include "Core/PatchEngine.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
-#include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
 #include "Core/TitleDatabase.h"
 #include "Core/WC24PatchEngine.h"
@@ -436,7 +428,16 @@ struct SetGameMetadata
 
     *region = DiscIO::Region::NTSC_U;
     system.SetIsWii(dff_file->GetIsWii());
-    Host_TitleChanged();
+
+    const std::string& game_id = dff_file->GetGameId();
+    if (game_id == DEFAULT_GAME_ID)
+    {
+      Host_TitleChanged();
+    }
+    else
+    {
+      config->SetRunningGameMetadata(game_id);
+    }
 
     return true;
   }
@@ -528,7 +529,7 @@ Common::IniFile SConfig::LoadGameIni() const
   return LoadGameIni(GetGameID(), m_revision);
 }
 
-Common::IniFile SConfig::LoadDefaultGameIni(const std::string& id, std::optional<u16> revision)
+Common::IniFile SConfig::LoadDefaultGameIni(std::string_view id, std::optional<u16> revision)
 {
   Common::IniFile game_ini;
   for (const std::string& filename : ConfigLoaders::GetGameIniFilenames(id, revision))
@@ -536,7 +537,7 @@ Common::IniFile SConfig::LoadDefaultGameIni(const std::string& id, std::optional
   return game_ini;
 }
 
-Common::IniFile SConfig::LoadLocalGameIni(const std::string& id, std::optional<u16> revision)
+Common::IniFile SConfig::LoadLocalGameIni(std::string_view id, std::optional<u16> revision)
 {
   Common::IniFile game_ini;
   for (const std::string& filename : ConfigLoaders::GetGameIniFilenames(id, revision))
@@ -544,7 +545,7 @@ Common::IniFile SConfig::LoadLocalGameIni(const std::string& id, std::optional<u
   return game_ini;
 }
 
-Common::IniFile SConfig::LoadGameIni(const std::string& id, std::optional<u16> revision)
+Common::IniFile SConfig::LoadGameIni(std::string_view id, std::optional<u16> revision)
 {
   Common::IniFile game_ini;
   for (const std::string& filename : ConfigLoaders::GetGameIniFilenames(id, revision))
@@ -563,35 +564,4 @@ std::string SConfig::GetGameTDBImageRegionCode(bool wii, DiscIO::Region region) 
     // Taiwanese games share the Japanese region code however their title ID ends with 'W'.
     // GameTDB differentiates the covers using the code "ZH".
     if (m_game_id.size() >= 4 && m_game_id.at(3) == 'W')
-      return "ZH";
-
-    return "JA";
-  }
-  case DiscIO::Region::NTSC_U:
-    return "US";
-  case DiscIO::Region::NTSC_K:
-    return "KO";
-  case DiscIO::Region::PAL:
-  {
-    const auto user_lang = GetCurrentLanguage(wii);
-    switch (user_lang)
-    {
-    case DiscIO::Language::German:
-      return "DE";
-    case DiscIO::Language::French:
-      return "FR";
-    case DiscIO::Language::Spanish:
-      return "ES";
-    case DiscIO::Language::Italian:
-      return "IT";
-    case DiscIO::Language::Dutch:
-      return "NL";
-    case DiscIO::Language::English:
-    default:
-      return "EN";
-    }
-  }
-  default:
-    return "EN";
-  }
-}
+      r

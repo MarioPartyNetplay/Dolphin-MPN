@@ -3,17 +3,14 @@
 
 #include "Common/JitRegister.h"
 
-#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <string>
 
 #include <fmt/format.h>
 
 #include "Common/CommonTypes.h"
 #include "Common/IOFile.h"
-#include "Common/StringUtil.h"
 
 #ifdef _WIN32
 #include <process.h>
@@ -34,15 +31,21 @@ static bool s_is_enabled = false;
 
 void Init(const std::string& perf_dir)
 {
+#ifdef USE_VTUNE
+  s_is_enabled = true;
+#endif
+
   if (!perf_dir.empty() || getenv("PERF_BUILDID_DIR"))
   {
     const std::string dir = perf_dir.empty() ? "/tmp" : perf_dir;
     const std::string filename = fmt::format("{}/perf-{}.map", dir, getpid());
-    s_perf_map_file.Open(filename, "w");
-    // Disable buffering in order to avoid missing some mappings
-    // if the event of a crash:
-    std::setvbuf(s_perf_map_file.GetHandle(), nullptr, _IONBF, 0);
-    s_is_enabled = true;
+    if (s_perf_map_file.Open(filename, "w"))
+    {
+      // Disable buffering in order to avoid missing some mappings
+      // in the event of a crash:
+      std::setvbuf(s_perf_map_file.GetHandle(), nullptr, _IONBF, 0);
+      s_is_enabled = true;
+    }
   }
 }
 
@@ -65,11 +68,6 @@ bool IsEnabled()
 
 void Register(const void* base_address, u32 code_size, const std::string& symbol_name)
 {
-#ifndef USE_VTUNE
-  if (!s_perf_map_file.IsOpen())
-    return;
-#endif
-
 #ifdef USE_VTUNE
   iJIT_Method_Load jmethod = {0};
   jmethod.method_id = iJIT_GetNewMethodID();
@@ -80,7 +78,7 @@ void Register(const void* base_address, u32 code_size, const std::string& symbol
 #endif
 
   // Linux perf /tmp/perf-$pid.map:
-  if (!s_perf_map_file.IsOpen())
+  if (!s_perf_map_file)
     return;
 
   const auto entry = fmt::format("{} {:x} {}\n", fmt::ptr(base_address), code_size, symbol_name);

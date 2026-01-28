@@ -31,13 +31,17 @@
 #include "Core/Core.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/GCMemcard/GCMemcard.h"
+#ifdef HAS_LIBMGBA
 #include "Core/NetPlayServer.h"
+#endif
 #include "Core/System.h"
 
 #include "DolphinQt/Config/ConfigControls/ConfigBool.h"
 #include "DolphinQt/Config/ConfigControls/ConfigChoice.h"
+#ifdef HAS_LIBMGBA
 #include "DolphinQt/Config/ConfigControls/ConfigText.h"
 #include "DolphinQt/Config/ConfigControls/ConfigUserPath.h"
+#endif
 #include "DolphinQt/Config/Mapping/MappingWindow.h"
 #include "DolphinQt/GCMemcardManager.h"
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
@@ -143,7 +147,7 @@ void GameCubePane::CreateWidgets()
            EXIDeviceType::EthernetXLink,
            EXIDeviceType::EthernetTapServer,
            EXIDeviceType::EthernetBuiltIn,
-#if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+#ifdef HAVE_CPPIPC
            EXIDeviceType::EthernetIPC,
 #endif
            EXIDeviceType::ModemTapServer,

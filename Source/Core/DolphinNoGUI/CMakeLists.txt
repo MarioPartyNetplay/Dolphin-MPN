@@ -28,6 +28,16 @@ if(EMSCRIPTEN)
 endif()
 
 set_target_properties(dolphin-nogui PROPERTIES OUTPUT_NAME dolphin-emu-nogui)
+if (WIN32)
+  target_sources(dolphin-nogui PRIVATE DolphinNoGUI.exe.manifest DolphinNoGUI.rc)
+
+  set_target_properties(dolphin-nogui PROPERTIES
+    DEBUG_POSTFIX    D
+    OUTPUT_NAME      DolphinNoGUI
+  )
+else()
+  set_target_properties(dolphin-nogui PROPERTIES OUTPUT_NAME dolphin-emu-nogui)
+endif()
 
 target_link_libraries(dolphin-nogui
 PRIVATE

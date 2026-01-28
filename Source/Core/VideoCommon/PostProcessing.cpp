@@ -24,7 +24,6 @@
 #include "VideoCommon/AbstractPipeline.h"
 #include "VideoCommon/AbstractShader.h"
 #include "VideoCommon/AbstractTexture.h"
-#include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/Present.h"
 #include "VideoCommon/ShaderCache.h"
 #include "VideoCommon/ShaderCompileUtils.h"
@@ -387,9 +386,9 @@ PostProcessing::~PostProcessing()
 static std::vector<std::string> GetShaders(const std::string& sub_dir = "")
 {
   std::vector<std::string> paths =
-      Common::DoFileSearch({File::GetUserPath(D_SHADERS_IDX) + sub_dir,
-                            File::GetSysDirectory() + SHADERS_DIR DIR_SEP + sub_dir},
-                           {".glsl"});
+      Common::DoFileSearch({{File::GetUserPath(D_SHADERS_IDX) + sub_dir,
+                             File::GetSysDirectory() + SHADERS_DIR DIR_SEP + sub_dir}},
+                           ".glsl");
   std::vector<std::string> result;
   for (std::string path : paths)
   {
@@ -908,7 +907,7 @@ void PostProcessing::FillUniformBuffer(const MathUtil::Rectangle<int>& src,
       g_ActiveConfig.color_correction.fSDRDisplayCustomGamma;
   // scRGB (RGBA16F) expects linear values as opposed to sRGB gamma
   builtin_uniforms.linear_space_output = m_framebuffer_format == AbstractTextureFormat::RGBA16F;
-  // Implies ouput values can be beyond the 0-1 range
+  // Implies output values can be beyond the 0-1 range
   builtin_uniforms.hdr_output = m_framebuffer_format == AbstractTextureFormat::RGBA16F;
   builtin_uniforms.hdr_paper_white_nits = g_ActiveConfig.color_correction.fHDRPaperWhiteNits;
   // A value of 1 1 1 usually matches 80 nits in HDR
