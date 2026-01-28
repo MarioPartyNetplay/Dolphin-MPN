@@ -688,10 +688,7 @@ dolphin_find_optional_system_library_pkgconfig(lz4 liblz4>=1.8 LZ4::LZ4 External
 # Force SPNG to use bundled version to avoid linking issues
 dolphin_add_bundled_library(SPNG AUTO Externals/libspng)
 
-# Fix bundled libspng target naming - it creates spng_static but we need spng::spng
-if(TARGET spng_static)
-  dolphin_alias_library(spng::spng spng_static)
-endif()
+# libspng CMakeLists.txt already creates the spng::spng alias target
 
 # Using static FreeSurround from Externals
 # There is no system FreeSurround library.
