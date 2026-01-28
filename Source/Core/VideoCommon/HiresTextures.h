@@ -1,3 +1,4 @@
+
 // Copyright 2008 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -8,14 +9,18 @@
 #include <string>
 #include <vector>
 
+#include "Common/CommonTypes.h"
+#include "VideoCommon/Assets/CustomTextureData.h"
+#include "VideoCommon/Resources/TextureDataResource.h"
+#include "VideoCommon/TextureConfig.h"
 #include "VideoCommon/TextureInfo.h"
+
+enum class TextureFormat;
 
 namespace VideoCommon
 {
-class TextureDataResource;
+class CustomResourceManager;
 }
-
-enum class TextureFormat;
 
 std::set<std::string> GetTextureDirectoriesWithGameId(const std::string& root_directory,
                                                       const std::string& game_id);
