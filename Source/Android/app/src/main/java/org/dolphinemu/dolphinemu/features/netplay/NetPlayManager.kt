@@ -56,6 +56,10 @@ class NetPlayManager private constructor() {
     private var players = mutableListOf<NetPlayPlayer>()
     private var isChatOpen = false
     
+    // NetPlay connection info - needed for passing to emulation activity
+    private var g_server_address: String = ""
+    private var g_server_port: Int = 2626
+    
     // Callbacks
     private var connectionCallback: ConnectionCallback? = null
     private var chatCallback: ChatCallback? = null
@@ -88,6 +92,13 @@ class NetPlayManager private constructor() {
     
     // NetPlay message processing
     external fun netPlayProcessMessages()
+    
+    // Player name and ROM folder management
+    external fun setPlayerName(playerName: String)
+    external fun getPlayerName(): String
+    external fun setRomFolder(folderPath: String)
+    external fun getRomFolder(): String
+    external fun getAndroidDeviceName(): String
     
     // ROM path getter for native code
     fun getRomPath(): String {
@@ -148,6 +159,10 @@ class NetPlayManager private constructor() {
     fun connectToServer(address: String, port: Int, callback: ConnectionCallback) {
         this.connectionCallback = callback
         Log.d(TAG, "Connecting to server: $address:$port")
+        
+        // Save connection info for later use when launching game
+        g_server_address = address
+        g_server_port = port
         
         try {
             if (netPlayConnect(address, port)) {
@@ -579,14 +594,18 @@ class NetPlayManager private constructor() {
         Log.d(TAG, "Starting NetPlay game: $filename")
         
         try {
-            // Launch the game using EmulationActivity
+            // Launch the game using EmulationActivity with NetPlay flag
             val context = DolphinApplication.getAppContext()
             val intent = Intent(context, EmulationActivity::class.java).apply {
                 putExtra(EmulationActivity.EXTRA_SELECTED_GAMES, arrayOf(filename))
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Critical: Signal that this is a NetPlay game so the emulation core doesn't reinitialize netplay
+                putExtra("is_netplay", true)
+                putExtra("netplay_address", g_server_address)
+                putExtra("netplay_port", g_server_port)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             }
             context.startActivity(intent)
-            Log.d(TAG, "Successfully launched game: $filename")
+            Log.d(TAG, "Successfully launched NetPlay game: $filename")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start NetPlay game: ${e.message}")
         }

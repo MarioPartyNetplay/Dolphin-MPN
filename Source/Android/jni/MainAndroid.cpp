@@ -38,6 +38,8 @@
 #include "Core/BootManager.h"
 #include "Core/CommonTitles.h"
 #include "Core/ConfigLoaders/GameConfigLoader.h"
+#include "Core/NetPlayClient.h"
+#include "Core/NetPlayProto.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/DolphinAnalytics.h"
@@ -68,6 +70,7 @@
 #include "jni/AndroidCommon/AndroidCommon.h"
 #include "jni/AndroidCommon/IDCache.h"
 #include "jni/Host.h"
+#include "jni/Netplay.h"
 
 namespace
 {
@@ -586,6 +589,9 @@ static float GetRenderSurfaceScale(JNIEnv* env)
   return env->CallStaticFloatMethod(native_library_class, get_render_surface_scale_method);
 }
 
+// NetPlay extern declarations
+extern std::unique_ptr<NetPlay::NetPlayClient> g_netplay_client;
+
 static void Run(JNIEnv* env, std::unique_ptr<BootParameters>&& boot, bool riivolution)
 {
   HostThreadLock host_identity_guard;
@@ -624,6 +630,13 @@ static void Run(JNIEnv* env, std::unique_ptr<BootParameters>&& boot, bool riivol
     host_identity_guard.Unlock();
     s_update_main_frame_event.Wait();
     host_identity_guard.Lock();
+
+    // Process NetPlay messages if connected
+    if (g_netplay_client)
+    {
+      g_netplay_client->Update();
+    }
+
     Core::HostDispatchJobs(Core::System::GetInstance());
   }
 

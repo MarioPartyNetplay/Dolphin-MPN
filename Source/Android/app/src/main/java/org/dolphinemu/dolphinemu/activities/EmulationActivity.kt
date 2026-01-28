@@ -199,6 +199,15 @@ class EmulationActivity : AppCompatActivity(), ThemeProvider {
             launchSystemMenu = intent.getBooleanExtra(EXTRA_SYSTEM_MENU, false)
             hasUserPausedEmulation =
                 intent.getBooleanExtra(EXTRA_USER_PAUSED_EMULATION, false)
+            
+            // Check if this is a NetPlay game launch
+            val isNetPlay = intent.getBooleanExtra("is_netplay", false)
+            if (isNetPlay) {
+                // This is a NetPlay game - the netplay client is already initialized
+                // Just continue with normal game launch
+                android.util.Log.d("EmulationActivity", "Launching game in NetPlay mode")
+            }
+            
             menuToastShown = false
             isActivityRecreated = false
         } else {
