@@ -102,6 +102,13 @@ bool InputConfig::LoadConfig()
       n++;
     }
 
+    std::vector<std::string> controller_names;
+    for (const auto& controller : m_controllers)
+    {
+      if (controller)
+        controller_names.push_back(controller->GetName());
+    }
+
     m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
     return true;
   }
@@ -136,6 +143,13 @@ void InputConfig::SaveConfig()
   for (auto& controller : m_controllers)
   {
     controller->SaveConfig(inifile.GetOrCreateSection(controller->GetName()));
+  }
+
+  std::vector<std::string> controller_names;
+  for (const auto& controller : m_controllers)
+  {
+    if (controller)
+      controller_names.push_back(controller->GetName());
   }
 
   m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
