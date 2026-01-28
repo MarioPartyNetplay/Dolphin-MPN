@@ -410,53 +410,6 @@ jobs:
         name: DolphinMPN-windows-x86_64
         path: Binary/x64/
         
-  build_deb22_04:
-    name: Ubuntu Linux 22.04 x86_64
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Install Git
-        run: |
-          sudo apt update
-          sudo apt install -y git
-      - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-      - name: Cache APT packages
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt/archives
-          key: ${{ runner.os }}-apt-22.04-${{ hashFiles('**/ci.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-apt-22.04-
-      - name: Cache CMake build
-        uses: actions/cache@v4
-        with:
-          path: |
-            build
-            ~/.cache/cmake
-          key: ${{ runner.os }}-cmake-22.04-${{ hashFiles('**/CMakeLists.txt',
-            '**/cmake/**') }}-${{ github.sha }}
-          restore-keys: >
-            ${{ runner.os }}-cmake-22.04-${{ hashFiles('**/CMakeLists.txt',
-            '**/cmake/**') }}-
-            
-            ${{ runner.os }}-cmake-22.04-
-      - name: Setup Packages
-        run: >
-          sudo apt update --fix-missing
-            
-          sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
-      - name: Build
-        run: >
-          mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party
-          Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb
-          OUT/
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: DolphinMPN-ubuntu-22.04-linux-x86_64
-          path: build/OUT/
-
   build_deb24_04:
     name: Ubuntu Linux 24.04 x86_64
     runs-on: ubuntu-24.04
