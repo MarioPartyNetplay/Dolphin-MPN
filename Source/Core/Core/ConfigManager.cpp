@@ -298,7 +298,7 @@ void SConfig::OnTitleDirectlyBooted(const Core::CPUThreadGuard& guard)
   HLE::Reload(system);
 
   HiresTexture::Update();
-  
+
   PatchEngine::Reload(system);
   WC24PatchEngine::Reload();
 
@@ -564,4 +564,35 @@ std::string SConfig::GetGameTDBImageRegionCode(bool wii, DiscIO::Region region) 
     // Taiwanese games share the Japanese region code however their title ID ends with 'W'.
     // GameTDB differentiates the covers using the code "ZH".
     if (m_game_id.size() >= 4 && m_game_id.at(3) == 'W')
-      r
+        return "ZH";
+
+      return "JA";
+  }
+      case DiscIO::Region::NTSC_U:
+          return "US";
+      case DiscIO::Region::NTSC_K:
+          return "KO";
+      case DiscIO::Region::PAL:
+      {
+          const auto user_lang = GetCurrentLanguage(wii);
+          switch (user_lang)
+          {
+              case DiscIO::Language::German:
+                  return "DE";
+              case DiscIO::Language::French:
+                  return "FR";
+              case DiscIO::Language::Spanish:
+                  return "ES";
+              case DiscIO::Language::Italian:
+                  return "IT";
+              case DiscIO::Language::Dutch:
+                  return "NL";
+              case DiscIO::Language::English:
+              default:
+                  return "EN";
+          }
+      }
+      default:
+          return "EN";
+  }
+}

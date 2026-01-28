@@ -92,12 +92,12 @@ void HiresTexture::Update()
   texture_directories.insert(additional_texture_directories.begin(),
                              additional_texture_directories.end());
 
-  const std::vector<std::string> extensions{".png", ".dds"};
+  const std::vector<std::string_view> extensions{".png", ".dds"};
 
   for (const auto& texture_directory : texture_directories)
   {
     const auto texture_paths =
-        Common::DoFileSearch({texture_directory}, extensions, /*recursive*/ true);
+        Common::DoFileSearch(texture_directory, extensions, /*recursive*/ true);
 
     bool failed_insert = false;
     for (auto& path : texture_paths)

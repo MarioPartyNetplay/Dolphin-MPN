@@ -631,12 +631,6 @@ static void Run(JNIEnv* env, std::unique_ptr<BootParameters>&& boot, bool riivol
     s_update_main_frame_event.Wait();
     host_identity_guard.Lock();
 
-    // Process NetPlay messages if connected
-    if (g_netplay_client)
-    {
-      g_netplay_client->Update();
-    }
-
     Core::HostDispatchJobs(Core::System::GetInstance());
   }
 
