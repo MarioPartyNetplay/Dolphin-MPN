@@ -343,6 +343,13 @@ class MainPresenter(private val mainView: MainView, private val activity: Fragme
     companion object {
         private var shouldRescanLibrary = true
 
+        // Request codes for activity results
+        const val REQUEST_DIRECTORY = 1
+        const val REQUEST_GAME_FILE = 2
+        const val REQUEST_WAD_FILE = 3
+        const val REQUEST_WII_SAVE_FILE = 4
+        const val REQUEST_NAND_BIN_FILE = 5
+
         @JvmStatic
         fun skipRescanningLibrary() {
             shouldRescanLibrary = false
