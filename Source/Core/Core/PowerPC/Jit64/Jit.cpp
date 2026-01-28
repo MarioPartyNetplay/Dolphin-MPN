@@ -7,6 +7,7 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -17,12 +18,10 @@
 #endif
 
 #include "Common/CommonTypes.h"
-#include "Common/EnumUtils.h"
 #include "Common/GekkoDisassembler.h"
 #include "Common/HostDisassembler.h"
 #include "Common/IOFile.h"
 #include "Common/Logging/Log.h"
-#include "Common/StringUtil.h"
 #include "Common/Swap.h"
 #include "Common/x64ABI.h"
 #include "Core/Core.h"
@@ -1071,7 +1070,7 @@ bool Jit64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
         ABI_CallFunctionP(PowerPC::CheckAndHandleBreakPointsFromJIT, &power_pc);
         ABI_PopRegistersAndAdjustStack({}, 0);
         MOV(64, R(RSCRATCH), ImmPtr(cpu.GetStatePtr()));
-        CMP(32, MatR(RSCRATCH), Imm32(Common::ToUnderlying(CPU::State::Running)));
+        CMP(32, MatR(RSCRATCH), Imm32(std::to_underlying(CPU::State::Running)));
         FixupBranch noBreakpoint = J_CC(CC_E);
 
         Cleanup();
@@ -1284,9 +1283,9 @@ BitSet8 Jit64::ComputeStaticGQRs(const PPCAnalyst::CodeBlock& cb) const
   return cb.m_gqr_used & ~cb.m_gqr_modified;
 }
 
-BitSet32 Jit64::CallerSavedRegistersInUse() const
+BitSet32 Jit64::CallerSavedRegistersInUse(BitSet32 additional_registers) const
 {
-  BitSet32 in_use = gpr.RegistersInUse() | (fpr.RegistersInUse() << 16);
+  BitSet32 in_use = gpr.RegistersInUse() | (fpr.RegistersInUse() << 16) | additional_registers;
   return in_use & ABI_ALL_CALLER_SAVED;
 }
 

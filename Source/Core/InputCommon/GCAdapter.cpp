@@ -11,7 +11,6 @@
 #define GCADAPTER_USE_ANDROID_IMPLEMENTATION true
 #endif
 
-#include <algorithm>
 #include <array>
 #include <mutex>
 #include <optional>
@@ -676,7 +675,7 @@ static bool CheckDeviceAccess(libusb_device* device)
   }
   else if (ret != 0)  // 0: kernel driver is not active, but otherwise no error.
   {
-    // Neither 0 nor 1 means an error occured.
+    // Neither 0 nor 1 means an error occurred.
     ERROR_LOG_FMT(CONTROLLERINTERFACE, "libusb_kernel_driver_active failed: {}",
                   LibusbUtils::ErrorWrap(ret));
   }

@@ -3,15 +3,11 @@
 
 #include "VideoCommon/HiresTextures.h"
 
-#include <algorithm>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 #include <xxhash.h>
 #include <algorithm>
 #include <string>
@@ -25,10 +21,8 @@
 #include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
-#include "Core/Config/GraphicsSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/System.h"
-#include "VideoCommon/Assets/CustomAsset.h"
 #include "VideoCommon/Assets/DirectFilesystemAssetLibrary.h"
 #include "VideoCommon/OnScreenDisplay.h"
 #include "VideoCommon/Resources/CustomResourceManager.h"
@@ -109,10 +103,18 @@ void HiresTexture::Update()
 
     const std::set<std::string> additional_texture_directories =
         GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/Textures/", game_id);
+  const std::string& game_id = SConfig::GetInstance().GetGameID();
+  const std::set<std::string> texture_directories =
+      GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
+  constexpr auto extensions = std::to_array<std::string_view>({".png", ".dds"});
 
     texture_directories.insert(additional_texture_directories.begin(), additional_texture_directories.end());
 
-    if (!g_ActiveConfig.bHiresTextures1)
+    const auto texture_paths =
+        Common::DoFileSearch(texture_directory, extensions, /*recursive*/ true);
+
+    bool failed_insert = false;
+    for (auto& path : texture_paths)
     {
       // Iterate over texture_directories and remove directories containing "Generated" in their name
       for (auto it = texture_directories.begin(); it != texture_directories.end(); ) {
@@ -280,7 +282,7 @@ std::set<std::string> GetTextureDirectoriesWithGameId(const std::string& root_di
   };
 
   // Look for any other directories that might be specific to the given gameid
-  const auto files = Common::DoFileSearch({root_directory}, {".txt"}, true);
+  const auto files = Common::DoFileSearch(root_directory, ".txt", true);
   for (const auto& file : files)
   {
     if (match_gameid_or_all(file))

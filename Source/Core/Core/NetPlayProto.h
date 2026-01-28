@@ -5,7 +5,6 @@
 
 #include <array>
 #include <string>
-#include <vector>
 
 #include "Common/CommonTypes.h"
 #include "Common/EnumMap.h"
@@ -68,6 +67,7 @@ struct NetSettings
   bool divide_by_zero_exceptions = false;
   bool fprf = false;
   bool accurate_nans = false;
+  bool accurate_fmadds = false;
   bool disable_icache = false;
   bool sync_on_skip_idle = false;
   bool sync_gpu = false;

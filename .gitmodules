@@ -145,4 +145,7 @@
 [submodule "Externals/emsdk"]
 	path = emsdk
 	url = https://github.com/emscripten-core/emsdk.git
+[submodule "Externals/wil"]
+	path = Externals/wil
+	url = https://github.com/microsoft/wil.git
 	shallow = true

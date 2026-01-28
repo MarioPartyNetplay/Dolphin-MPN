@@ -56,7 +56,6 @@
     <ClInclude Include="Common\ENet.h" />
     <ClInclude Include="Common\EnumFormatter.h" />
     <ClInclude Include="Common\EnumMap.h" />
-    <ClInclude Include="Common\EnumUtils.h" />
     <ClInclude Include="Common\Event.h" />
     <ClInclude Include="Common\FatFsUtil.h" />
     <ClInclude Include="Common\FileSearch.h" />
@@ -155,7 +154,6 @@
     <ClInclude Include="Common\Projection.h" />
     <ClInclude Include="Common\QoSSession.h" />
     <ClInclude Include="Common\Random.h" />
-    <ClInclude Include="Common\Result.h" />
     <ClInclude Include="Common\scmrev.h" />
     <ClInclude Include="Common\ScopeGuard.h" />
     <ClInclude Include="Common\SDCardUtil.h" />
@@ -176,7 +174,6 @@
     <ClInclude Include="Common\TraversalClient.h" />
     <ClInclude Include="Common\TraversalProto.h" />
     <ClInclude Include="Common\TypeUtils.h" />
-    <ClInclude Include="Common\Unreachable.h" />
     <ClInclude Include="Common\UPnP.h" />
     <ClInclude Include="Common\VariantUtil.h" />
     <ClInclude Include="Common\Version.h" />

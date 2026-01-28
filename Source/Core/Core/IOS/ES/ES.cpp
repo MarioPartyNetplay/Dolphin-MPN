@@ -12,7 +12,6 @@
 #include <fmt/format.h>
 
 #include "Common/ChunkFile.h"
-#include "Common/EnumUtils.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 #include "Common/NandPaths.h"
@@ -96,7 +95,7 @@ ESCore::ESCore(Kernel& ios) : m_ios(ios)
     if (result != FS::ResultCode::Success && result != FS::ResultCode::AlreadyExists)
     {
       ERROR_LOG_FMT(IOS_ES, "Failed to create {}: error {}", directory.path,
-                    Common::ToUnderlying(FS::ConvertResult(result)));
+                    std::to_underlying(FS::ConvertResult(result)));
     }
 
     // Now update the UID/GID and other attributes.
@@ -162,7 +161,7 @@ void ESDevice::FinishInit()
     if (launch_file)
     {
       u64 id;
-      if (launch_file->Read(&id, 1).Succeeded())
+      if (launch_file->Read(&id, 1).has_value())
         pending_launch_title_id = id;
     }
   }
@@ -812,7 +811,7 @@ static ReturnCode WriteTmdForDiVerify(FS::FileSystem* fs, const ES::TMDReader& t
   {
     const auto file = fs->CreateAndOpenFile(PID_KERNEL, PID_KERNEL, temp_path, internal_modes);
     if (!file)
-      return FS::ConvertResult(file.Error());
+      return FS::ConvertResult(file.error());
     if (!file->Write(tmd.GetBytes().data(), tmd.GetBytes().size()))
       return ES_EIO;
   }
@@ -1040,7 +1039,7 @@ ReturnCode ESCore::ReadCertStore(std::vector<u8>* buffer) const
   const auto store_file =
       m_ios.GetFS()->OpenFile(PID_KERNEL, PID_KERNEL, CERT_STORE_PATH, FS::Mode::Read);
   if (!store_file)
-    return FS::ConvertResult(store_file.Error());
+    return FS::ConvertResult(store_file.error());
 
   buffer->resize(store_file->GetStatus()->size);
   if (!store_file->Read(buffer->data(), buffer->size()))
@@ -1116,7 +1115,7 @@ ReturnCode ESCore::VerifyContainer(VerifyContainerType type, VerifyMode mode,
   if (ret != IPC_SUCCESS)
   {
     ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_ImportCertificate(ca) failed with error {}",
-                  Common::ToUnderlying(ret));
+                  std::to_underlying(ret));
     return ret;
   }
 
@@ -1132,7 +1131,7 @@ ReturnCode ESCore::VerifyContainer(VerifyContainerType type, VerifyMode mode,
   if (ret != IPC_SUCCESS)
   {
     ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_ImportCertificate(issuer) failed with error {}",
-                  Common::ToUnderlying(ret));
+                  std::to_underlying(ret));
     return ret;
   }
 
@@ -1142,7 +1141,7 @@ ReturnCode ESCore::VerifyContainer(VerifyContainerType type, VerifyMode mode,
   if (ret != IPC_SUCCESS)
   {
     ERROR_LOG_FMT(IOS_ES, "VerifyContainer: IOSC_VerifyPublicKeySign failed with error {}",
-                  Common::ToUnderlying(ret));
+                  std::to_underlying(ret));
     return ret;
   }
 
@@ -1152,13 +1151,13 @@ ReturnCode ESCore::VerifyContainer(VerifyContainerType type, VerifyMode mode,
     if (ret != IPC_SUCCESS)
     {
       ERROR_LOG_FMT(IOS_ES, "VerifyContainer: Writing the issuer cert failed with return code {}",
-                    Common::ToUnderlying(ret));
+                    std::to_underlying(ret));
     }
 
     ret = WriteNewCertToStore(ca_cert);
     if (ret != IPC_SUCCESS)
       ERROR_LOG_FMT(IOS_ES, "VerifyContainer: Writing the CA cert failed with return code {}",
-                    Common::ToUnderlying(ret));
+                    std::to_underlying(ret));
   }
 
   if (ret == IPC_SUCCESS && issuer_handle_out)

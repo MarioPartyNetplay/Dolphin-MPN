@@ -7,7 +7,6 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
-#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -21,12 +20,10 @@
 #include <fmt/format.h>
 
 #include "Common/Assert.h"
-#include "Common/BitUtils.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
 #include "Common/Network.h"
 #include "Common/ScopeGuard.h"
-#include "Common/StringUtil.h"
 
 #include "Core/Core.h"
 #include "Core/HW/Memmap.h"
@@ -49,7 +46,6 @@
 #include <netinet/in.h>
 #include <resolv.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 #endif
 
@@ -388,7 +384,7 @@ static std::optional<DefaultInterface> GetSystemDefaultInterface()
   const u32 prefix_length = GetNetworkPrefixLength();
   const u32 netmask = (1 << prefix_length) - 1;
   const u32 gateway = GetNetworkGateway();
-  // this isnt fully correct, but this will make calls to get the routing table at least return the
+  // this isn't fully correct, but this will make calls to get the routing table at least return the
   // gateway
   if (routing_table.empty())
     routing_table = {{0, 0, 0, gateway}};
@@ -433,7 +429,7 @@ static std::optional<DefaultInterface> GetSystemDefaultInterface()
     if (iface->ifa_addr && iface->ifa_addr->sa_family == AF_INET &&
         get_addr(iface->ifa_addr).s_addr == default_interface_address->s_addr)
     {
-      // this isnt fully correct, but this will make calls to get the routing table at least return
+      // this isn't fully correct, but this will make calls to get the routing table at least return
       // the gateway
       if (routing_table.empty())
         routing_table = {{0, {}, {}, get_addr(iface->ifa_dstaddr)}};

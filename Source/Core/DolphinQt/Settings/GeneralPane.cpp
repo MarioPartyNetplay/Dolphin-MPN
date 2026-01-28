@@ -3,8 +3,6 @@
 
 #include "DolphinQt/Settings/GeneralPane.h"
 
-#include <map>
-
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -24,7 +22,7 @@
 #include "Core/Config/UISettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
-#include "Core/PowerPC/PowerPC.h"
+#include "Core/DolphinAnalytics.h"
 #include "Core/System.h"
 
 #include "DolphinQt/QtUtils/ModalMessageBox.h"

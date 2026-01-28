@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <expected>
 #include <memory>
 #include <string>
 #include <utility>
@@ -25,7 +26,6 @@
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 #include "DiscIO/Blob.h"
-#include "DiscIO/DiscScrubber.h"
 #include "DiscIO/MultithreadedCompressor.h"
 #include "DiscIO/Volume.h"
 
@@ -210,7 +210,7 @@ static ConversionResult<OutputParameters> Compress(CompressThreadState* state,
   if (retval != Z_OK)
   {
     ERROR_LOG_FMT(DISCIO, "Deflate failed");
-    return ConversionResultCode::InternalError;
+    return std::unexpected{ConversionResultCode::InternalError};
   }
 
   const int status = deflate(&state->z, Z_FINISH);

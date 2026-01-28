@@ -22,7 +22,6 @@
 #include <rangeset/rangesizeset.h>
 
 #include "Common/CommonTypes.h"
-#include "Common/x64ABI.h"
 #include "Common/x64Emitter.h"
 #include "Core/PowerPC/Jit64/JitAsm.h"
 #include "Core/PowerPC/Jit64/RegCache/FPURegCache.h"
@@ -77,7 +76,7 @@ public:
   // Returns false if no free memory region can be found for either of the two.
   bool SetEmitterStateToFreeCodeRegion();
 
-  BitSet32 CallerSavedRegistersInUse() const;
+  BitSet32 CallerSavedRegistersInUse(BitSet32 additional_registers = {}) const;
   BitSet8 ComputeStaticGQRs(const PPCAnalyst::CodeBlock&) const;
 
   void IntializeSpeculativeConstants();
@@ -153,9 +152,10 @@ public:
   void FinalizeSingleResult(Gen::X64Reg output, const Gen::OpArg& input, bool packed = true,
                             bool duplicate = false);
   void FinalizeDoubleResult(Gen::X64Reg output, const Gen::OpArg& input);
-  void HandleNaNs(UGeckoInstruction inst, Gen::X64Reg xmm, Gen::X64Reg clobber,
-                  std::optional<Gen::OpArg> Ra, std::optional<Gen::OpArg> Rb,
-                  std::optional<Gen::OpArg> Rc);
+  [[nodiscard]] Gen::FixupBranch HandleNaNs(UGeckoInstruction inst, Gen::X64Reg xmm,
+                                            Gen::X64Reg clobber, std::optional<Gen::OpArg> Ra,
+                                            std::optional<Gen::OpArg> Rb,
+                                            std::optional<Gen::OpArg> Rc);
 
   void MultiplyImmediate(u32 imm, int a, int d, bool overflow);
 

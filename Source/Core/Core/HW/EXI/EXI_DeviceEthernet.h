@@ -19,13 +19,12 @@
 #endif
 
 #include <SFML/Network.hpp>
-#if defined(WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+#ifdef HAVE_CPPIPC
 #include <libipc/ipc.h>
 #endif
 
 #include "Common/Flag.h"
 #include "Common/Network.h"
-#include "Common/SocketContext.h"
 #include "Core/HW/EXI/BBA/BuiltIn.h"
 #include "Core/HW/EXI/BBA/TAPServerConnection.h"
 #include "Core/HW/EXI/EXI_Device.h"
@@ -495,6 +494,8 @@ private:
   {
   public:
     explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
+
+#ifdef HAVE_CPPIPC
 
     bool Activate() override;
     void Deactivate() override;

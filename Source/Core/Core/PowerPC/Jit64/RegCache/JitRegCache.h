@@ -11,7 +11,6 @@
 
 #include "Common/x64Emitter.h"
 #include "Core/PowerPC/Jit64/RegCache/CachedReg.h"
-#include "Core/PowerPC/PPCAnalyst.h"
 
 class Jit64;
 enum class RCMode;
@@ -49,9 +48,9 @@ public:
 
   void Unlock();
 
-  bool IsImm() const;
-  s32 SImm32() const;
-  u32 Imm32() const;
+  bool IsImm() const { return Location().IsImm(); }
+  s32 SImm32() const { return Location().SImm32(); }
+  u32 Imm32() const { return Location().Imm32(); }
   bool IsZero() const { return IsImm() && Imm32() == 0; }
 
 private:

@@ -17,7 +17,6 @@
 #include "Common/Assembler/AssemblerShared.h"
 #include "Common/Assembler/GekkoParser.h"
 #include "Common/Assert.h"
-#include "Common/BitUtils.h"
 
 namespace Common::GekkoAssembler::detail
 {
@@ -844,7 +843,7 @@ void GekkoIRPlugin::EvalTerminalAbs(Terminal type, const AssemblerToken& tok)
 
   case Terminal::NumLabFwd:
     m_owner->EmitErrorHere(
-        fmt::format("Forward label references not supported in fully resolved expressons"));
+        fmt::format("Forward label references not supported in fully resolved expressions"));
     break;
 
   case Terminal::NumLabBwd:

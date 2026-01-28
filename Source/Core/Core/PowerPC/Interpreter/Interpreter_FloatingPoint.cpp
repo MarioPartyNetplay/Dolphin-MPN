@@ -4,11 +4,10 @@
 #include "Core/PowerPC/Interpreter/Interpreter.h"
 
 #include <cmath>
-#include <limits>
+#include <utility>
 
 #include "Common/CommonTypes.h"
 #include "Common/FloatUtils.h"
-#include "Common/Unreachable.h"
 #include "Core/PowerPC/Gekko.h"
 #include "Core/PowerPC/Interpreter/Interpreter_FPUtils.h"
 #include "Core/PowerPC/PowerPC.h"
@@ -81,7 +80,7 @@ void ConvertToInteger(PowerPC::PowerPCState& ppc_state, UGeckoInstruction inst,
     rounded = std::floor(b);
     break;
   default:
-    Common::Unreachable();
+    std::unreachable();
   }
 
   if (std::isnan(b))

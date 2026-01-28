@@ -7,7 +7,6 @@
 
 #include "VideoCommon/BPMemory.h"
 #include "VideoCommon/DriverDetails.h"
-#include "VideoCommon/NativeVertexFormat.h"
 #include "VideoCommon/PixelShaderGen.h"
 #include "VideoCommon/ShaderGenCommon.h"
 #include "VideoCommon/UberShaderCommon.h"
@@ -557,7 +556,7 @@ ShaderCode GenPixelShader(APIType api_type, const ShaderHostConfig& host_config,
   out.Write("}}\n"
             "\n");
 
-  // Since the fixed-point texture coodinate variables aren't global, we need to pass
+  // Since the fixed-point texture coordinate variables aren't global, we need to pass
   // them to the select function.  This applies to all backends.
   if (numTexgen > 0)
   {

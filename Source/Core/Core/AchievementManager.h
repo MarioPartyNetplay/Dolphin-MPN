@@ -9,16 +9,16 @@
 #include <chrono>
 #include <ctime>
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <picojson.h>
 
 #include <rcheevos/include/rc_api_runtime.h>
 #include <rcheevos/include/rc_api_user.h>
@@ -28,10 +28,7 @@
 
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
-#include "Common/Event.h"
 #include "Common/HookableEvent.h"
-#include "Common/HttpRequest.h"
-#include "Common/JsonUtil.h"
 #include "Common/Lazy.h"
 #include "Common/WorkQueueThread.h"
 #include "DiscIO/Volume.h"
@@ -43,7 +40,6 @@
 
 namespace Core
 {
-class CPUThreadGuard;
 class System;
 }  // namespace Core
 
@@ -77,9 +73,6 @@ public:
   using RichPresence = std::array<char, RP_SIZE>;
   using Badge = VideoCommon::CustomTextureData::ArraySlice::Level;
   static constexpr size_t MAX_DISPLAYED_LBOARDS = 4;
-  // This is hardcoded to 24MiB because rcheevos currently hardcodes it to 24MiB.
-  static constexpr u32 MEM1_SIZE = 0x01800000;
-  static constexpr u32 MEM2_START = 0x10000000;
 
   static constexpr std::string_view DEFAULT_PLAYER_BADGE_FILENAME = "achievements_player.png";
   static constexpr std::string_view DEFAULT_GAME_BADGE_FILENAME = "achievements_game.png";
@@ -90,8 +83,8 @@ public:
   static constexpr std::string_view BLUE = "#0B71C1";
   static constexpr std::string_view APPROVED_LIST_FILENAME = "ApprovedInis.json";
   static const inline Common::SHA1::Digest APPROVED_LIST_HASH = {
-      0xDF, 0x11, 0xD6, 0xA7, 0x2E, 0x8D, 0x3B, 0x3C, 0x41, 0x22,
-      0x29, 0x3F, 0x67, 0x40, 0xD9, 0x92, 0xBF, 0xC0, 0x1C, 0x43};
+      0x7D, 0x96, 0x3E, 0x00, 0x30, 0x1C, 0x7D, 0x0E, 0x72, 0x09,
+      0xE1, 0xF0, 0xF3, 0x51, 0x6D, 0x5C, 0xB3, 0x68, 0xAD, 0x79};
 
   struct LeaderboardEntry
   {
@@ -144,19 +137,19 @@ public:
   std::recursive_mutex& GetLock();
   bool IsHardcoreModeActive() const;
 
-  void FilterApprovedPatches(std::vector<PatchEngine::Patch>& patches, const std::string& game_id,
+  void FilterApprovedPatches(std::vector<PatchEngine::Patch>& patches, std::string_view game_id,
                              u16 revision) const;
-  void FilterApprovedGeckoCodes(std::vector<Gecko::GeckoCode>& codes, const std::string& game_id,
+  void FilterApprovedGeckoCodes(std::vector<Gecko::GeckoCode>& codes, std::string_view game_id,
                                 u16 revision) const;
-  void FilterApprovedARCodes(std::vector<ActionReplay::ARCode>& codes, const std::string& game_id,
+  void FilterApprovedARCodes(std::vector<ActionReplay::ARCode>& codes, std::string_view game_id,
                              u16 revision) const;
-  bool ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code, const std::string& game_id,
+  bool ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code, std::string_view game_id,
                                   u16 revision) const;
-  bool ShouldARCodeBeActivated(const ActionReplay::ARCode& code, const std::string& game_id,
+  bool ShouldARCodeBeActivated(const ActionReplay::ARCode& code, std::string_view game_id,
                                u16 revision) const;
-  bool IsApprovedGeckoCode(const Gecko::GeckoCode& code, const std::string& game_id,
+  bool IsApprovedGeckoCode(const Gecko::GeckoCode& code, std::string_view game_id,
                            u16 revision) const;
-  bool IsApprovedARCode(const ActionReplay::ARCode& code, const std::string& game_id,
+  bool IsApprovedARCode(const ActionReplay::ARCode& code, std::string_view game_id,
                         u16 revision) const;
 
   void SetSpectatorMode();
@@ -223,11 +216,11 @@ private:
   void SetHardcoreMode();
 
   template <typename T>
-  void FilterApprovedIni(std::vector<T>& codes, const std::string& game_id, u16 revision) const;
+  void FilterApprovedIni(std::vector<T>& codes, std::string_view game_id, u16 revision) const;
   template <typename T>
-  bool ShouldCodeBeActivated(const T& code, const std::string& game_id, u16 revision) const;
+  bool ShouldCodeBeActivated(const T& code, std::string_view game_id, u16 revision) const;
   template <typename T>
-  bool IsApprovedCode(const T& code, const std::string& game_id, u16 revision) const;
+  bool IsApprovedCode(const T& code, std::string_view game_id, u16 revision) const;
   Common::SHA1::Digest GetCodeHash(const PatchEngine::Patch& patch) const;
   Common::SHA1::Digest GetCodeHash(const Gecko::GeckoCode& code) const;
   Common::SHA1::Digest GetCodeHash(const ActionReplay::ARCode& code) const;
@@ -326,14 +319,14 @@ public:
 
   constexpr bool IsHardcoreModeActive() { return false; }
 
-  constexpr bool ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code,
-                                            const std::string& game_id, u16 revision)
+  constexpr bool ShouldGeckoCodeBeActivated(const Gecko::GeckoCode& code, std::string_view game_id,
+                                            u16 revision)
   {
     return code.enabled;
   }
 
-  constexpr bool ShouldARCodeBeActivated(const ActionReplay::ARCode& code,
-                                         const std::string& game_id, u16 revision)
+  constexpr bool ShouldARCodeBeActivated(const ActionReplay::ARCode& code, std::string_view game_id,
+                                         u16 revision)
   {
     return code.enabled;
   }

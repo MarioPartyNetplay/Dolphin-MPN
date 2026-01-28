@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <expected>
 #include <limits>
 #include <map>
 #include <memory>
@@ -1578,7 +1579,7 @@ WIARVZFileReader<RVZ>::ProcessAndCompress(CompressThreadState* state, CompressPa
     if (state->compressor)
     {
       if (!state->compressor->Start(entry.exception_lists.size() + entry.main_data.size()))
-        return ConversionResultCode::InternalError;
+        return std::unexpected{ConversionResultCode::InternalError};
     }
 
     if (!entry.exception_lists.empty())
@@ -1588,7 +1589,7 @@ WIARVZFileReader<RVZ>::ProcessAndCompress(CompressThreadState* state, CompressPa
         if (!state->compressor->Compress(entry.exception_lists.data(),
                                          entry.exception_lists.size()))
         {
-          return ConversionResultCode::InternalError;
+          return std::unexpected{ConversionResultCode::InternalError};
         }
       }
       else
@@ -1601,7 +1602,7 @@ WIARVZFileReader<RVZ>::ProcessAndCompress(CompressThreadState* state, CompressPa
           if (!state->compressor->AddPrecedingDataOnlyForPurgeHashing(entry.exception_lists.data(),
                                                                       entry.exception_lists.size()))
           {
-            return ConversionResultCode::InternalError;
+            return std::unexpected{ConversionResultCode::InternalError};
           }
         }
       }
@@ -1610,9 +1611,9 @@ WIARVZFileReader<RVZ>::ProcessAndCompress(CompressThreadState* state, CompressPa
     if (state->compressor)
     {
       if (!state->compressor->Compress(entry.main_data.data(), entry.main_data.size()))
-        return ConversionResultCode::InternalError;
+        return std::unexpected{ConversionResultCode::InternalError};
       if (!state->compressor->End())
-        return ConversionResultCode::InternalError;
+        return std::unexpected{ConversionResultCode::InternalError};
     }
 
     bool compressed = !!state->compressor;
@@ -1792,7 +1793,7 @@ WIARVZFileReader<RVZ>::Convert(BlobReader* infile, const VolumeDisc* infile_volu
 
     // Compared to WIA, RVZ adds an extra member to the GroupEntry struct. This added data usually
     // compresses well, so we'll assume the compression ratio for RVZ GroupEntries is 9 / 16 or
-    // better. This constant is somehwat arbitrarily chosen, but no games were found that get a
+    // better. This constant is somewhat arbitrarily chosen, but no games were found that get a
     // worse compression ratio than that. There are some games that get a worse ratio than 1 / 2,
     // such as Metroid: Other M (PAL) with the default settings.
     if (RVZ && compression_type > WIARVZCompressionType::Purge)
