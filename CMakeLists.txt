@@ -784,6 +784,11 @@ if(WIN32 OR LINUX OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME S
   add_definitions(-DHAVE_CPPIPC)
 endif()
 
+# Add libzmq for non-Apple platforms that aren't Android
+if(NOT APPLE AND NOT ANDROID)
+  add_subdirectory(Externals/libzmq)
+endif()
+
 ########################################
 # Pre-build events: Define configuration variables and write SCM info header
 #
