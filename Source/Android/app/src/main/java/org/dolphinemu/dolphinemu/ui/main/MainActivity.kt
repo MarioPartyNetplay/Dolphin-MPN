@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity(), MainView, OnRefreshListener, ThemeProv
         dialog.show(supportFragmentManager, "MPNNetPlayBrowser")
     }
 
-    private fun forEachPlatformGamesView(action: Action1<PlatformGamesView>) {
+    private fun forEachPlatformGamesView(action: (PlatformGamesView) -> Unit) {
         for (platformTab in PlatformTab.values()) {
             val fragment = getPlatformGamesView(platformTab)
             if (fragment != null) {
