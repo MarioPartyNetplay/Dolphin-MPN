@@ -49,7 +49,7 @@ class NetplaySession(
     @Volatile
     var isClosing = false
         private set
-        
+
     val isHosting: Boolean
         get() = netPlayServerPointer != 0L
 
@@ -158,7 +158,9 @@ class NetplaySession(
         nativeSendMessage(message)
     }
 
-    fun adjustPadBufferSize(buffer: Int) = nativeAdjustPadBufferSize(buffer)
+    fun adjustClientPadBufferSize(buffer: Int) = nativeAdjustClientPadBufferSize(buffer)
+
+    fun adjustServerPadBufferSize(buffer: Int) = nativeAdjustServerPadBufferSize(buffer)
 
     fun changeGame(gameFile: GameFile) = nativeChangeGame(gameFile)
 
@@ -237,7 +239,9 @@ class NetplaySession(
 
     private external fun nativeSendMessage(message: String)
 
-    private external fun nativeAdjustPadBufferSize(buffer: Int)
+    private external fun nativeAdjustClientPadBufferSize(buffer: Int)
+
+    private external fun nativeAdjustServerPadBufferSize(buffer: Int)
 
     private external fun nativeReleaseUICallbacks(pointer: Long)
 
