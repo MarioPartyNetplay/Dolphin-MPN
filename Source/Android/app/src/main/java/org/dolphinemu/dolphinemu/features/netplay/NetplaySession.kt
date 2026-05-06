@@ -158,6 +158,8 @@ class NetplaySession(
         nativeSendMessage(message)
     }
 
+    fun setHostInputAuthority(enable: Boolean) = nativeSetHostInputAuthority(enable)
+
     fun adjustClientPadBufferSize(buffer: Int) = nativeAdjustClientPadBufferSize(buffer)
 
     fun adjustServerPadBufferSize(buffer: Int) = nativeAdjustServerPadBufferSize(buffer)
@@ -238,6 +240,8 @@ class NetplaySession(
     private external fun nativeHost(): Long
 
     private external fun nativeSendMessage(message: String)
+
+    private external fun nativeSetHostInputAuthority(enable: Boolean)
 
     private external fun nativeAdjustClientPadBufferSize(buffer: Int)
 
