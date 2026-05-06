@@ -49,15 +49,17 @@ class NetplayActivity : AppCompatActivity(), ThemeProvider {
             DolphinTheme {
                 NetplayScreen(
                     onBackClicked = { finish() },
+                    isHosting = viewModel.isHosting,
                     connectionLost = viewModel.connectionLost,
                     fatalTraversalError = viewModel.fatalTraversalError,
                     messages = viewModel.messages.collectAsState().value,
                     onSendMessage = viewModel::sendMessage,
                     game = viewModel.game.collectAsState().value,
-                    isHosting = viewModel.isHosting,
                     onStartGame = viewModel::startGame,
                     onGameSelected = viewModel::changeGame,
                     gameFiles = viewModel.gameFiles.collectAsState().value,
+                    startGameWarning = viewModel.startGameWarning,
+                    onConfirmStartGame = viewModel::confirmStartGame,
                     players = viewModel.players.collectAsState().value,
                     hostInputAuthorityEnabled = viewModel.hostInputAuthority.collectAsState().value,
                     networkMode = viewModel.networkMode.collectAsState().value,

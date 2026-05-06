@@ -121,6 +121,8 @@ fun NetplayScreen(
     onStartGame: () -> Unit,
     onGameSelected: (GameFile) -> Unit,
     gameFiles: List<GameFile>,
+    startGameWarning: Flow<Unit>,
+    onConfirmStartGame: () -> Unit,
     hostInputAuthorityEnabled: Boolean,
     networkMode: NetworkMode,
     onNetworkModeChanged: (NetworkMode) -> Unit,
@@ -229,6 +231,11 @@ fun NetplayScreen(
             fatalTraversalError.collect { traversalError = it }
         }
 
+        var showStartGameWarning by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            startGameWarning.collect { showStartGameWarning = true }
+        }
+
         var dismissSaveTransferProgressDialog by rememberSaveable { mutableStateOf(false) }
         if (saveTransferProgress == null) {
             dismissSaveTransferProgressDialog = false
@@ -277,6 +284,27 @@ fun NetplayScreen(
                 GameDigestProgressDialog(
                     gameDigestProgress = gameDigestProgress,
                     onDismiss = { dismissGameDigestDialog = true },
+                )
+            }
+
+            showStartGameWarning -> {
+                AlertDialog(
+                    title = { Text(stringResource(R.string.netplay_start_warning_title)) },
+                    text = { Text(stringResource(R.string.netplay_start_warning_not_all_players_have_game)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showStartGameWarning = false
+                            onConfirmStartGame()
+                        }) {
+                            Text(stringResource(R.string.yes))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showStartGameWarning = false }) {
+                            Text(stringResource(R.string.no))
+                        }
+                    },
+                    onDismissRequest = { showStartGameWarning = false },
                 )
             }
         }
@@ -1280,6 +1308,8 @@ private fun PreviewNetplayScreen() {
         onStartGame = {},
         onGameSelected = {},
         gameFiles = emptyList(),
+        startGameWarning = emptyFlow(),
+        onConfirmStartGame = {},
         hostInputAuthorityEnabled = true,
         networkMode = NetworkMode.HOST_INPUT_AUTHORITY,
         onNetworkModeChanged = {},
