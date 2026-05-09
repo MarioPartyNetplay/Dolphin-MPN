@@ -59,8 +59,7 @@ bool OnScreenUI::Initialize(u32 width, u32 height, float scale)
     return false;
   }
 
-  // Don't create an ini file. TODO: Do we want this in the future?
-  ImGui::GetIO().IniFilename = nullptr;
+  ImGui::GetIO().IniFilename = File::GetUserPath(F_IMGUICONFIG_IDX).data();
   SetScale(scale);
 
   PortableVertexDeclaration vdecl = {};

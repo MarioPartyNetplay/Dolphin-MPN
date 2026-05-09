@@ -200,6 +200,21 @@ class MainActivity : AppCompatActivity(), MainView, OnRefreshListener, ThemeProv
     override fun showGridOptions() =
         GridOptionDialogFragment().show(supportFragmentManager, "gridOptions")
 
+    override fun showNetPlayDialog() {
+        // Show the MPN netplay browser dialog
+        showMPNNetPlayBrowser()
+    }
+
+    override fun showNetPlayBrowser() {
+        // Show the MPN netplay browser dialog
+        showMPNNetPlayBrowser()
+    }
+
+    private fun showMPNNetPlayBrowser() {
+        val dialog = org.dolphinemu.dolphinemu.dialogs.MPNNetPlayBrowserDialog()
+        dialog.show(supportFragmentManager, "MPNNetPlayBrowser")
+    }
+
     private fun forEachPlatformGamesView(action: (PlatformGamesView) -> Unit) {
         for (platformTab in PlatformTab.values()) {
             val fragment = getPlatformGamesView(platformTab)

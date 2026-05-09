@@ -12,6 +12,7 @@
 #include <QRadioButton>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QOperatingSystemVersion>
 
 #include "Common/CommonPaths.h"
 #include "Common/FileSearch.h"
@@ -89,7 +90,6 @@ InterfacePane::InterfacePane(QWidget* parent) : QWidget(parent)
 {
   CreateLayout();
   UpdateShowDebuggingCheckbox();
-  LoadUserStyle();
   ConnectLayout();
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this,
@@ -249,8 +249,6 @@ void InterfacePane::ConnectLayout()
           &Settings::SetDebugModeEnabled);
   connect(m_combobox_theme, &QComboBox::currentIndexChanged, &Settings::Instance(),
           &Settings::ThemeChanged);
-  connect(m_combobox_userstyle, &QComboBox::currentIndexChanged, this,
-          &InterfacePane::OnUserStyleChanged);
   connect(m_combobox_language, &QComboBox::currentIndexChanged, this,
           &InterfacePane::OnLanguageChanged);
   connect(m_checkbox_top_window, &QCheckBox::toggled, &Settings::Instance(),
@@ -289,31 +287,6 @@ void InterfacePane::UpdateShowDebuggingCheckbox()
   {
     m_checkbox_show_debugging_ui->SetDescription(tr(TR_SHOW_DEBUGGING_UI_DESCRIPTION));
   }
-}
-
-void InterfacePane::LoadUserStyle()
-{
-  const Settings::StyleType style_type = Settings::Instance().GetStyleType();
-  const QString userstyle = Settings::Instance().GetUserStyleName();
-  const int index = style_type == Settings::StyleType::User ?
-                        m_combobox_userstyle->findData(userstyle) :
-                        m_combobox_userstyle->findData(static_cast<int>(style_type));
-
-  if (index > 0)
-    SignalBlocking(m_combobox_userstyle)->setCurrentIndex(index);
-}
-
-void InterfacePane::OnUserStyleChanged()
-{
-  const auto selected_style = m_combobox_userstyle->currentData();
-  bool is_builtin_type = false;
-  const int style_type_int = selected_style.toInt(&is_builtin_type);
-  Settings::Instance().SetStyleType(is_builtin_type ?
-                                        static_cast<Settings::StyleType>(style_type_int) :
-                                        Settings::StyleType::User);
-  if (!is_builtin_type)
-    Settings::Instance().SetUserStyleName(selected_style.toString());
-  Settings::Instance().ApplyStyle();
 }
 
 void InterfacePane::OnLanguageChanged()
@@ -427,7 +400,4 @@ void InterfacePane::AddDescriptions()
   m_radio_cursor_visible_never->SetDescription(tr(TR_CURSOR_VISIBLE_NEVER_DESCRIPTION));
 
   m_radio_cursor_visible_always->SetDescription(tr(TR_CURSOR_VISIBLE_ALWAYS_DESCRIPTION));
-
-  m_combobox_userstyle->SetTitle(tr("Style"));
-  m_combobox_userstyle->SetDescription(tr(TR_USER_STYLE_DESCRIPTION));
 }

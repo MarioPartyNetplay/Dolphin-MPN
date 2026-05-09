@@ -32,6 +32,7 @@
 #include "Core/Debugger/PPCDebugInterface.h"
 #include "Core/GeckoCode.h"
 #include "Core/GeckoCodeConfig.h"
+#include "Core/MarioPartyNetplay/Gamestate.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
@@ -232,19 +233,19 @@ static void ApplyPatches(const Core::CPUThreadGuard& guard, const std::vector<Pa
           if (!entry.conditional ||
               PowerPC::MMU::HostRead<u8>(guard, addr) == static_cast<u8>(comparand))
           {
-            ApplyMemoryPatch<u8>(guard, static_cast<u8>(value), addr);
+            PowerPC::MMU::HostWrite<u8>(guard, static_cast<u8>(value), addr);
           }
           break;
         case PatchType::Patch16Bit:
           if (!entry.conditional ||
               PowerPC::MMU::HostRead<u16>(guard, addr) == static_cast<u16>(comparand))
           {
-            ApplyMemoryPatch<u16>(guard, static_cast<u16>(value), addr);
+            PowerPC::MMU::HostWrite<u16>(guard, static_cast<u16>(value), addr);
           }
           break;
         case PatchType::Patch32Bit:
           if (!entry.conditional || PowerPC::MMU::HostRead<u32>(guard, addr) == comparand)
-            ApplyMemoryPatch<u32>(guard, value, addr);
+            PowerPC::MMU::HostWrite<u32>(guard, value, addr);
           break;
         default:
           // unknown patchtype
@@ -345,6 +346,8 @@ bool ApplyFramePatches(Core::System& system)
 
   ApplyPatches(guard, s_on_frame);
   ApplyMemoryPatches(guard, s_on_frame_memory);
+
+  mpn_per_frame();
 
   // Run the Gecko code handler
   Gecko::RunCodeHandler(guard);

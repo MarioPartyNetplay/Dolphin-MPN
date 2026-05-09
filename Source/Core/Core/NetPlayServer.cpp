@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/NetPlayServer.h"
+#include "ChatBlocklist.h"
 
 #include <algorithm>
 #include <chrono>
@@ -61,6 +62,7 @@
 #include "Core/NetPlayClient.h"  //for NetPlayUI
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
+#include "Core/HW/EXI/EXI_DeviceEthernet.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/RiivolutionPatcher.h"
@@ -429,8 +431,8 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 {
   std::string netplay_version;
   received_packet >> netplay_version;
-  if (netplay_version != Common::GetScmRevGitStr())
-    return ConnectionError::VersionMismatch;
+  //if (netplay_version != Common::GetScmRevGitStr())
+  //  return ConnectionError::VersionMismatch;
 
   if (m_is_running || m_start_pending)
     return ConnectionError::GameRunning;
@@ -478,6 +480,7 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
     SendResponseToPlayer(new_player, MessageID::PadBuffer, m_target_buffer_size);
 
   SendResponseToPlayer(new_player, MessageID::HostInputAuthority, m_host_input_authority);
+
 
   for (const auto& existing_player : std::views::values(m_players))
   {
@@ -756,6 +759,20 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     std::string msg;
     packet >> msg;
 
+    // Check for blocked words
+    if (ContainsBlockedWord(msg))
+    {
+      // Notify the user that their message was blocked
+      sf::Packet blocked_packet;
+      blocked_packet << MessageID::ChatMessage;
+      blocked_packet << PlayerId{0};  // server ID
+      blocked_packet << fmt::format("Your message was not sent, because it contained contraband.");
+
+      Send(player.socket, blocked_packet);
+      INFO_LOG_FMT(NETPLAY, "Blocked chat message from player {} ({}): {}", player.name, player.pid, msg);
+      break;
+    }
+
     // send msg to other clients
     sf::Packet spac;
     spac << MessageID::ChatMessage;
@@ -792,6 +809,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
     // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
       break;
@@ -842,6 +863,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadHostData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
     // Kick player if they're not the golfer.
     if (m_current_golfer != 0 && player.pid != m_current_golfer)
       return 1;
@@ -873,6 +898,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::WiimoteData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
     // if this is Wiimote data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
       break;
@@ -1213,7 +1242,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         }
         else
         {
-          INFO_LOG_FMT(NETPLAY, "SyncCodes: Not all players synchronized. ({} < {})",
+          INFO_LOG_FMT(NETPLAY, "SyncCodes: Not all players synchronized. ({} >= {})",
                        m_codes_synced_players, m_players.size() - 1);
         }
       }
@@ -1240,6 +1269,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     }
   }
   break;
+
 
   default:
     PanicAlertFmtT("Unknown message with id:{0} received from player:{1} Kicking player!",
@@ -1281,6 +1311,90 @@ void NetPlayServer::SendChatMessage(const std::string& msg)
   spac << msg;
 
   SendAsyncToClients(std::move(spac));
+}
+
+namespace
+{
+// Helper function to check if a wildcard pattern matches anywhere in the text
+// Supports * wildcards (matches any sequence of characters)
+// Pattern like "*word*" matches if "word" appears anywhere in text
+bool MatchesWildcard(const std::string& text, const std::string& pattern)
+{
+  // Handle common case: pattern surrounded by wildcards like "*word*"
+  // This means we just need to find "word" anywhere in text
+  if (pattern.size() >= 2 && pattern.front() == '*' && pattern.back() == '*')
+  {
+    // Extract the middle part (without the surrounding asterisks)
+    std::string middle = pattern.substr(1, pattern.size() - 2);
+    
+    // If middle contains no wildcards, simple substring search
+    if (middle.find('*') == std::string::npos)
+    {
+      return text.find(middle) != std::string::npos;
+    }
+  }
+  
+  // For patterns starting with * (like "*word"), check if text ends with the rest
+  if (!pattern.empty() && pattern.front() == '*' && pattern.find('*', 1) == std::string::npos)
+  {
+    std::string suffix = pattern.substr(1);
+    if (text.size() >= suffix.size())
+    {
+      return text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+    return false;
+  }
+  
+  // For patterns ending with * (like "word*"), check if text starts with the rest
+  if (!pattern.empty() && pattern.back() == '*' && pattern.find('*') == pattern.size() - 1)
+  {
+    std::string prefix = pattern.substr(0, pattern.size() - 1);
+    return text.compare(0, prefix.size(), prefix) == 0;
+  }
+  
+  // Fallback: simple substring match (ignoring wildcards)
+  std::string clean_pattern;
+  for (char c : pattern)
+  {
+    if (c != '*')
+      clean_pattern += c;
+  }
+  return text.find(clean_pattern) != std::string::npos;
+}
+}  // namespace
+
+bool NetPlayServer::ContainsBlockedWord(const std::string& msg) const
+{
+  // Blocklist loaded from blocklist.txt at compile time
+  const auto& blocked_words = GetChatBlocklist();
+
+  // Convert message to lowercase for case-insensitive matching
+  std::string lower_msg = msg;
+  Common::ToLower(&lower_msg);
+
+  // Check if any blocked word/pattern appears in the message
+  for (const auto& blocked_word : blocked_words)
+  {
+    // Check if pattern contains wildcards
+    if (blocked_word.find('*') != std::string::npos)
+    {
+      // Use wildcard matching
+      if (MatchesWildcard(lower_msg, blocked_word))
+      {
+        return true;
+      }
+    }
+    else
+    {
+      // Simple substring matching for non-wildcard patterns
+      if (lower_msg.find(blocked_word) != std::string::npos)
+      {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // called from ---GUI--- thread
@@ -1373,15 +1487,7 @@ bool NetPlayServer::SetupNetSettings()
   for (ExpansionInterface::Slot slot : ExpansionInterface::SLOTS)
   {
     ExpansionInterface::EXIDeviceType device;
-    if (slot == ExpansionInterface::Slot::SP1)
-    {
-      // There's no way the BBA is going to sync, disable it
-      device = ExpansionInterface::EXIDeviceType::None;
-    }
-    else
-    {
-      device = Config::Get(Config::GetInfoForEXIDevice(slot));
-    }
+    device = Config::Get(Config::GetInfoForEXIDevice(slot));
     settings.exi_device[slot] = device;
   }
 
@@ -1578,6 +1684,56 @@ bool NetPlayServer::StartGame()
   SConfig::GetInstance().m_strSRAM = File::GetUserPath(F_GCSRAM_IDX);
   InitSRAM(&m_settings.sram, SConfig::GetInstance().m_strSRAM);
 
+  // CRITICAL FIX: Ensure all clients have proper NetPlay configuration before starting game
+  // This prevents black screens and improper P1 binding issues
+  
+  // Send PadMapping configuration to all clients
+  sf::Packet pad_mapping_packet;
+  pad_mapping_packet << MessageID::PadMapping;
+  for (PlayerId mapping : m_pad_map)
+  {
+    pad_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(pad_mapping_packet));
+  
+  // Send WiimoteMapping configuration to all clients
+  sf::Packet wiimote_mapping_packet;
+  wiimote_mapping_packet << MessageID::WiimoteMapping;
+  for (PlayerId mapping : m_wiimote_map)
+  {
+    wiimote_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(wiimote_mapping_packet));
+  
+  // Send GBA configuration to all clients
+  sf::Packet gba_config_packet;
+  gba_config_packet << MessageID::GBAConfig;
+  for (const auto& config : m_gba_config)
+  {
+    gba_config_packet << config.enabled << config.has_rom << config.title;
+    for (auto& data : config.hash)
+      gba_config_packet << data;
+  }
+  SendAsyncToClients(std::move(gba_config_packet));
+  
+  // Send HostInputAuthority setting to all clients
+  sf::Packet host_input_packet;
+  host_input_packet << MessageID::HostInputAuthority;
+  host_input_packet << m_host_input_authority;
+  SendAsyncToClients(std::move(host_input_packet));
+  
+  // Send PadBuffer size to all clients (if not using host input authority)
+  if (!m_host_input_authority)
+  {
+    sf::Packet pad_buffer_packet;
+    pad_buffer_packet << MessageID::PadBuffer;
+    pad_buffer_packet << m_target_buffer_size;
+    SendAsyncToClients(std::move(pad_buffer_packet));
+  }
+  
+  // Wait a moment for all configuration to be processed
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  
   // tell clients to start game
   sf::Packet spac;
   spac << MessageID::StartGame;

@@ -11,12 +11,17 @@
 #include <QLabel>
 #include <QRadioButton>
 #include <QSignalBlocker>
+#include <QPushButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
+#include "Common/Config/Config.h"
+#include "Common/FileUtil.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/MarioPartyNetplay/TurnCountLogger.h"
 #include "Core/System.h"
 
 #include "DolphinQt/Config/ConfigControls/ConfigBool.h"

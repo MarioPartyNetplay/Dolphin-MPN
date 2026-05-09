@@ -8,6 +8,7 @@
 
 #include "Common/ChunkFile.h"
 #include "Common/CommonTypes.h"
+#include "Common/Logging/Log.h"
 #include "Common/IOFile.h"
 
 #include "Core/Config/MainSettings.h"
@@ -64,6 +65,21 @@ void ExpansionInterfaceManager::AddMemoryCard(Slot slot)
   }
 
   m_channels[SlotToEXIChannel(slot)]->AddDevice(memorycard_device, SlotToEXIDevice(slot));
+}
+
+void ExpansionInterfaceManager::AddSP1Device()
+{
+  EXIDeviceType sp1_device = EXIDeviceType::Baseboard;
+  auto& system = Core::System::GetInstance();
+  if (system.IsTriforce())
+  {
+    sp1_device = Config::Get(Config::MAIN_SERIAL_PORT_1);
+  }
+
+  INFO_LOG_FMT(SP1, "AddSP1Device: initial sp1_device={} (isTriforce={})",
+               static_cast<int>(sp1_device), system.IsTriforce());
+
+  m_channels[0]->AddDevice(sp1_device, SlotToEXIDevice(Slot::SP1));
 }
 
 u8 SlotToEXIChannel(Slot slot)

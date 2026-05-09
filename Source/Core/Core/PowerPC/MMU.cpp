@@ -265,7 +265,7 @@ T MMU::ReadFromHardware(u32 em_address)
     }
     else
     {
-      m_ppc_state.dCache.Read(m_memory, em_address, &value, sizeof(T),
+      m_ppc_state.dCache.Read(em_address, &value, sizeof(T),
                               HID0(m_ppc_state).DLOCK || flag != XCheckTLBFlag::Read);
     }
 
@@ -284,7 +284,7 @@ T MMU::ReadFromHardware(u32 em_address)
     }
     else
     {
-      m_ppc_state.dCache.Read(m_memory, em_address + 0x10000000, &value, sizeof(T),
+      m_ppc_state.dCache.Read(em_address + 0x10000000, &value, sizeof(T),
                               HID0(m_ppc_state).DLOCK || flag != XCheckTLBFlag::Read);
     }
 
@@ -466,7 +466,7 @@ void MMU::WriteToHardware(u32 em_address, const u32 data, const u32 size)
     em_address &= m_memory.GetRamMask();
 
     if (m_ppc_state.m_enable_dcache && !wi)
-      m_ppc_state.dCache.Write(m_memory, em_address, &swapped_data, size, HID0(m_ppc_state).DLOCK);
+      m_ppc_state.dCache.Write(em_address, &swapped_data, size, HID0(m_ppc_state).DLOCK);
 
     if (!m_ppc_state.m_enable_dcache || wi || flag != XCheckTLBFlag::Write)
       std::memcpy(&m_memory.GetRAM()[em_address], &swapped_data, size);
@@ -481,7 +481,7 @@ void MMU::WriteToHardware(u32 em_address, const u32 data, const u32 size)
 
     if (m_ppc_state.m_enable_dcache && !wi)
     {
-      m_ppc_state.dCache.Write(m_memory, em_address + 0x10000000, &swapped_data, size,
+      m_ppc_state.dCache.Write(em_address + 0x10000000, &swapped_data, size,
                                HID0(m_ppc_state).DLOCK);
     }
 
@@ -555,7 +555,7 @@ TryReadInstResult MMU::TryReadInstruction(u32 address)
   }
   else
   {
-    hex = m_ppc_state.iCache.ReadInstruction(m_memory, m_ppc_state, address);
+    hex = m_ppc_state.iCache.ReadInstruction(address);
   }
   return TryReadInstResult{true, from_bat, hex, address};
 }
@@ -1076,7 +1076,7 @@ void MMU::StoreDCacheLine(u32 address)
   }
 
   if (m_ppc_state.m_enable_dcache)
-    m_ppc_state.dCache.Store(m_memory, address);
+    m_ppc_state.dCache.Store(address);
 }
 
 void MMU::InvalidateDCacheLine(u32 address)
@@ -1098,7 +1098,7 @@ void MMU::InvalidateDCacheLine(u32 address)
   }
 
   if (m_ppc_state.m_enable_dcache)
-    m_ppc_state.dCache.Invalidate(m_memory, address);
+    m_ppc_state.dCache.Invalidate(address);
 }
 
 void MMU::FlushDCacheLine(u32 address)
@@ -1122,7 +1122,7 @@ void MMU::FlushDCacheLine(u32 address)
   }
 
   if (m_ppc_state.m_enable_dcache)
-    m_ppc_state.dCache.Flush(m_memory, address);
+    m_ppc_state.dCache.Flush(address);
 }
 
 void MMU::TouchDCacheLine(u32 address, bool store)
@@ -1146,7 +1146,7 @@ void MMU::TouchDCacheLine(u32 address, bool store)
   }
 
   if (m_ppc_state.m_enable_dcache)
-    m_ppc_state.dCache.Touch(m_memory, address, store);
+    m_ppc_state.dCache.Touch(address, store);
 }
 
 u32 MMU::IsOptimizableMMIOAccess(u32 address, u32 access_size) const

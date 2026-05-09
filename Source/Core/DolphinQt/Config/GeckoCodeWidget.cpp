@@ -22,6 +22,7 @@
 #endif  // USE_RETRO_ACHIEVEMENTS
 #include <QTextEdit>
 #include <QVBoxLayout>
+#include <QSizePolicy>
 
 #include "Common/FileUtil.h"
 #include "Common/IniFile.h"
@@ -85,6 +86,7 @@ void GeckoCodeWidget::CreateWidgets()
   m_hc_warning = new HardcoreWarningWidget(this);
 #endif  // USE_RETRO_ACHIEVEMENTS
   m_code_list = new QtUtils::MinimumSizeHintWidget<QListWidget>;
+  m_code_list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   m_name_label = new QLabel;
   m_creator_label = new QLabel;
 
@@ -97,36 +99,42 @@ void GeckoCodeWidget::CreateWidgets()
   m_code_description = new QTextEdit;
   m_code_description->setFont(monospace);
   m_code_description->setReadOnly(true);
-  m_code_description->setFixedHeight(line_height * 5);
+  m_code_description->setMinimumHeight(line_height * 2.5);
+  m_code_description->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
   m_code_view = new QTextEdit;
   m_code_view->setFont(monospace);
   m_code_view->setReadOnly(true);
-  m_code_view->setFixedHeight(line_height * 10);
+  m_code_view->setMinimumHeight(line_height * 2.5);
+  m_code_view->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
   m_add_code = new NonDefaultQPushButton(tr("&Add New Code..."));
   m_edit_code = new NonDefaultQPushButton(tr("&Edit Code..."));
   m_remove_code = new NonDefaultQPushButton(tr("&Remove Code"));
-  m_download_codes = new NonDefaultQPushButton(tr("Download Codes"));
 
+  m_code_list->setEnabled(!m_game_id.empty());
+  m_name_label->setEnabled(!m_game_id.empty());
+  m_creator_label->setEnabled(!m_game_id.empty());
+  m_code_description->setEnabled(!m_game_id.empty());
+  m_code_view->setEnabled(!m_game_id.empty());
+
+  m_add_code->setEnabled(!m_game_id.empty());
+  m_edit_code->setEnabled(false);
+  m_remove_code->setEnabled(false);
   m_cheat_code_editor = new CheatCodeEditor(this);
 
-  m_download_codes->setToolTip(tr("Download Codes from the WiiRD Database"));
+  auto* layout = new QVBoxLayout;
 
-  auto* const layout = new QVBoxLayout{this};
-
-  layout->addWidget(m_warning);
+  layout->addWidget(m_warning, 0);
 #ifdef USE_RETRO_ACHIEVEMENTS
-  layout->addWidget(m_hc_warning);
+  layout->addWidget(m_hc_warning, 0);
 #endif  // USE_RETRO_ACHIEVEMENTS
-  layout->addWidget(m_code_list);
+  layout->addWidget(m_code_list, 4); // Give the code list more space
 
   auto* info_layout = new QFormLayout;
-
   info_layout->addRow(tr("Name:"), m_name_label);
   info_layout->addRow(tr("Creator:"), m_creator_label);
   info_layout->addRow(tr("Description:"), static_cast<QWidget*>(nullptr));
-
   info_layout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
 
   for (QLabel* label : {m_name_label, m_creator_label})
@@ -135,18 +143,20 @@ void GeckoCodeWidget::CreateWidgets()
     label->setCursor(Qt::IBeamCursor);
   }
 
-  layout->addLayout(info_layout);
-  layout->addWidget(m_code_description);
-  layout->addWidget(m_code_view);
+  layout->addLayout(info_layout, 0); // Minimal space for info
+  layout->addWidget(m_code_description, 1); // Less space for description
+  layout->addWidget(m_code_view, 2); // Some space for code view
 
   QHBoxLayout* btn_layout = new QHBoxLayout;
-
   btn_layout->addWidget(m_add_code);
   btn_layout->addWidget(m_edit_code);
   btn_layout->addWidget(m_remove_code);
-  btn_layout->addWidget(m_download_codes);
 
-  layout->addLayout(btn_layout);
+  layout->addLayout(btn_layout, 0);
+  
+  setLayout(layout);
+  setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  setMinimumSize(300, 200);
 }
 
 void GeckoCodeWidget::ConnectWidgets()
@@ -162,7 +172,6 @@ void GeckoCodeWidget::ConnectWidgets()
   connect(m_add_code, &QPushButton::clicked, this, &GeckoCodeWidget::AddCode);
   connect(m_remove_code, &QPushButton::clicked, this, &GeckoCodeWidget::RemoveCode);
   connect(m_edit_code, &QPushButton::clicked, this, &GeckoCodeWidget::EditCode);
-  connect(m_download_codes, &QPushButton::clicked, this, &GeckoCodeWidget::DownloadCodes);
   connect(m_warning, &CheatWarningWidget::OpenCheatEnableSettings, this,
           &GeckoCodeWidget::OpenGeneralSettings);
 #ifdef USE_RETRO_ACHIEVEMENTS
@@ -286,7 +295,6 @@ void GeckoCodeWidget::LoadCodes()
   m_add_code->setEnabled(!m_game_id.empty());
   m_edit_code->setEnabled(false);
   m_remove_code->setEnabled(false);
-  m_download_codes->setEnabled(!m_game_id.empty());
 
   UpdateList();
 }

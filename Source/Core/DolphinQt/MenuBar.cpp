@@ -66,6 +66,7 @@
 
 #include "UICommon/AutoUpdate.h"
 #include "UICommon/GameFile.h"
+#include <qprocess.h>
 
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
 #include <rcheevos/include/rc_client_raintegration.h>
@@ -293,11 +294,6 @@ void MenuBar::AddToolsMenu()
 
   tools_menu->addSeparator();
 
-  tools_menu->addAction(tr("Start &NetPlay..."), this, &MenuBar::StartNetPlay);
-  tools_menu->addAction(tr("Browse &NetPlay Sessions...."), this, &MenuBar::BrowseNetPlay);
-
-  tools_menu->addSeparator();
-
 #ifdef USE_RETRO_ACHIEVEMENTS
   m_achievements_action =
       tools_menu->addAction(tr("Achievements"), this, [this] { emit ShowAchievementsWindow(); });
@@ -386,7 +382,7 @@ void MenuBar::AddToolsMenu()
 void MenuBar::AddEmulationMenu()
 {
   QMenu* emu_menu = addMenu(tr("&Emulation"));
-  m_play_action = emu_menu->addAction(tr("&Play"), this, &MenuBar::Play);
+  m_play_action = emu_menu->addAction(tr("&Local Play"), this, &MenuBar::Play);
   m_pause_action = emu_menu->addAction(tr("&Pause"), this, &MenuBar::Pause);
   m_stop_action = emu_menu->addAction(tr("&Stop"), this, &MenuBar::Stop);
   m_reset_action = emu_menu->addAction(tr("&Reset"), this, &MenuBar::Reset);
@@ -656,47 +652,34 @@ void MenuBar::AddOptionsMenu()
   m_change_font = options_menu->addAction(tr("&Font..."), this, &MenuBar::ChangeDebugFont);
 }
 
-void MenuBar::InstallUpdateManually()
-{
-  const std::string autoupdate_track = Config::Get(Config::MAIN_AUTOUPDATE_UPDATE_TRACK);
-  const std::string manual_track = autoupdate_track.empty() ? "dev" : autoupdate_track;
-  auto* const updater = new Updater(this->parentWidget(), manual_track,
-                                    Config::Get(Config::MAIN_AUTOUPDATE_HASH_OVERRIDE));
-
-  updater->CheckForUpdate();
-}
-
 void MenuBar::AddHelpMenu()
 {
   QMenu* help_menu = addMenu(tr("&Help"));
 
-  QAction* website = help_menu->addAction(tr("&Website"));
+  QAction* website = help_menu->addAction(tr("&Dolphin Website"));
   connect(website, &QAction::triggered, this,
-          [] { QDesktopServices::openUrl(QUrl(QStringLiteral("https://dolphin-emu.org/"))); });
-  QAction* documentation = help_menu->addAction(tr("Online &Documentation"));
-  connect(documentation, &QAction::triggered, this, [] {
-    QDesktopServices::openUrl(QUrl(QStringLiteral("https://dolphin-emu.org/docs/guides")));
-  });
+          []() { QDesktopServices::openUrl(QUrl(QStringLiteral("https://dolphin-emu.org/"))); });
+  help_menu->addSeparator();
+  QAction* discord = help_menu->addAction(tr("&MPN Discord"));
+  connect(discord, &QAction::triggered, this,
+          []() { QDesktopServices::openUrl(QUrl(QStringLiteral("https://discord.gg/marioparty/"))); });
   QAction* github = help_menu->addAction(tr("&GitHub Repository"));
-  connect(github, &QAction::triggered, this, [] {
-    QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/dolphin-emu/dolphin")));
+  connect(github, &QAction::triggered, this, []() {
+    QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/MarioPartyNetplay/Dolphin-MPN")));
   });
-  QAction* bugtracker = help_menu->addAction(tr("&Bug Tracker"));
-  connect(bugtracker, &QAction::triggered, this, [] {
+  QAction* documentation = help_menu->addAction(tr("&How-to Netplay"));
+  connect(documentation, &QAction::triggered, this, []() {
     QDesktopServices::openUrl(
-        QUrl(QStringLiteral("https://bugs.dolphin-emu.org/projects/emulator")));
+        QUrl(QStringLiteral("https://rentry.org/mario-party-netplay-gcn-wii")));
   });
 
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    help_menu->addSeparator();
-
-    help_menu->addAction(tr("&Check for Updates..."), this, &MenuBar::InstallUpdateManually);
-  }
 
 #ifndef __APPLE__
   help_menu->addSeparator();
 #endif
+
+  QAction* updaterCheck = help_menu->addAction(tr("Check For &Updates"));
+  connect(updaterCheck, &QAction::triggered, this, &MenuBar::ShowUpdateDialog);
 
   help_menu->addAction(tr("&About"), this, &MenuBar::ShowAboutDialog);
 }

@@ -27,6 +27,7 @@
 #include "DolphinQt/Settings/GameCubePane.h"
 #include "DolphinQt/Settings/GeneralPane.h"
 #include "DolphinQt/Settings/InterfacePane.h"
+#include "DolphinQt/Settings/MarioPartyNetplayPane.h"
 #include "DolphinQt/Settings/OnScreenDisplayPane.h"
 #include "DolphinQt/Settings/PathPane.h"
 #include "DolphinQt/Settings/TriforcePane.h"
@@ -195,6 +196,7 @@ SettingsWindow::SettingsWindow(MainWindow* parent) : StackedSettingsWindow{paren
   AddPane(new GraphicsPane{parent, nullptr}, tr("Graphics"));
   AddWrappedPane(new ControllersPane, tr("Controllers"));
   AddWrappedPane(new InterfacePane, tr("Interface"));
+  AddWrappedPane(new MarioPartyNetplayPane, tr("Mario Party Netplay"));
   AddWrappedPane(new OnScreenDisplayPane, tr("On-Screen Display"));
   AddWrappedPane(new AudioPane, tr("Audio"));
   AddWrappedPane(new PathPane, tr("Paths"));

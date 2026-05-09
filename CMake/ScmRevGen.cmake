@@ -7,7 +7,7 @@ if(GIT_FOUND)
       OUTPUT_VARIABLE DOLPHIN_WC_REVISION
       OUTPUT_STRIP_TRAILING_WHITESPACE)
   # defines DOLPHIN_WC_DESCRIBE
-  execute_process(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} describe --always --long --dirty
+  execute_process(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} rev-parse --short=7 HEAD
       OUTPUT_VARIABLE DOLPHIN_WC_DESCRIBE
       OUTPUT_STRIP_TRAILING_WHITESPACE)
 
@@ -68,8 +68,4 @@ configure_source_file("Source/Core/Common/scmrev.h")
 
 if(APPLE)
   configure_source_file("Source/Core/VersionInfo.plist")
-endif()
-
-if(LINUX)
-  configure_source_file("Flatpak/org.DolphinEmu.dolphin-emu.metainfo.xml")
 endif()

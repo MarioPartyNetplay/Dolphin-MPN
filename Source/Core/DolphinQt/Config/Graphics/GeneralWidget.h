@@ -14,6 +14,9 @@ class ConfigRadioInt;
 class ConfigStringChoice;
 class GraphicsPane;
 class QLabel;
+class QPushButton;
+class QRadioButton;
+class QGridLayout;
 class ToolTipComboBox;
 
 namespace Config

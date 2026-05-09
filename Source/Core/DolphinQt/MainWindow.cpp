@@ -12,6 +12,9 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QIcon>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QStackedWidget>
 #include <QStyleHints>
@@ -36,6 +39,7 @@
 #endif
 
 #include "Common/Config/Config.h"
+#include "Common/HttpRequest.h"
 #include "Common/FileUtil.h"
 #include "Common/ScopeGuard.h"
 #include "Common/Version.h"
@@ -68,6 +72,7 @@
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiUtils.h"
+#include "Core/HW/EXI/EXI_Device.h"
 
 #include "DiscIO/DirectoryBlob.h"
 #include "DiscIO/NANDImporter.h"
@@ -80,6 +85,7 @@
 #include "DolphinQt/Config/LogConfigWidget.h"
 #include "DolphinQt/Config/LogWidget.h"
 #include "DolphinQt/Config/Mapping/MappingWindow.h"
+#include "DolphinQt/Config/PropertiesDialog.h"
 #include "DolphinQt/Config/SettingsWindow.h"
 #include "DolphinQt/Debugger/AssemblerWidget.h"
 #include "DolphinQt/Debugger/BreakpointWidget.h"
@@ -101,6 +107,7 @@
 #include "DolphinQt/Host.h"
 #include "DolphinQt/HotkeyScheduler.h"
 #include "DolphinQt/InfinityBase/InfinityBaseWindow.h"
+#include "DolphinQt/MarioPartyNetplay/UpdateDialog.h"
 #include "DolphinQt/MenuBar.h"
 #include "DolphinQt/NKitWarningDialog.h"
 #include "DolphinQt/NetPlay/NetPlayBrowser.h"
@@ -112,6 +119,7 @@
 #include "DolphinQt/QtUtils/ParallelProgressDialog.h"
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/QtUtils/WindowActivationEventFilter.h"
 #include "DolphinQt/RenderWidget.h"
 #include "DolphinQt/ResourcePackManager.h"
@@ -214,7 +222,8 @@ static std::vector<std::string> StringListToStdVector(const QStringList& list)
 }
 
 MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
-                       const std::string& movie_path)
+                       const std::string& movie_path, const bool netplay_join,
+                       const std::optional<UICommon::GameFile> netplay_host)
     : QMainWindow(nullptr), m_system(system)
 {
   setWindowTitle(QString::fromStdString(Common::GetScmRevStr()));
@@ -326,7 +335,15 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
 
   Host::GetInstance()->SetMainWindowHandle(reinterpret_cast<void*>(winId()));
 
-  if (m_pending_boot != nullptr)
+  if (netplay_join)
+  {
+    NetPlayJoin();
+  }
+  else if (netplay_host)
+  {
+    NetPlayHost(netplay_host.value());
+  }
+  else if (m_pending_boot != nullptr)
   {
     StartGame(std::move(m_pending_boot));
     m_pending_boot.reset();
@@ -600,6 +617,7 @@ void MainWindow::ConnectMenuBar()
           &GameList::OnGameListVisibilityChanged);
 
   connect(m_menu_bar, &MenuBar::ShowAboutDialog, this, &MainWindow::ShowAboutDialog);
+  connect(m_menu_bar, &MenuBar::ShowUpdateDialog, this, &MainWindow::ShowUpdateDialog);
 
   connect(m_game_list, &GameList::SelectionChanged, m_menu_bar, &MenuBar::SelectionChanged);
   connect(this, &MainWindow::ReadOnlyModeChanged, m_menu_bar, &MenuBar::ReadOnlyModeChanged);
@@ -696,8 +714,9 @@ void MainWindow::ConnectToolBar()
   connect(m_tool_bar, &ToolBar::ScreenShotPressed, this, &MainWindow::ScreenShot);
   connect(m_tool_bar, &ToolBar::SettingsPressed, this, &MainWindow::ShowSettingsWindow);
   connect(m_tool_bar, &ToolBar::ControllersPressed, this, &MainWindow::ShowControllersWindow);
+  connect(m_tool_bar, &ToolBar::StartNetPlayPressed, this, &MainWindow::ShowNetPlaySetupDialog);
   connect(m_tool_bar, &ToolBar::GraphicsPressed, this, &MainWindow::ShowGraphicsWindow);
-
+  connect(m_tool_bar, &ToolBar::ViewGeckoCodes, this, &MainWindow::ShowGeckoCodes);
   connect(m_tool_bar, &ToolBar::StepPressed, m_code_widget, &CodeWidget::Step);
   connect(m_tool_bar, &ToolBar::StepOverPressed, m_code_widget, &CodeWidget::StepOver);
   connect(m_tool_bar, &ToolBar::StepOutPressed, m_code_widget, &CodeWidget::StepOut);
@@ -1217,6 +1236,7 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
   // We need the render widget before booting.
   ShowRenderWidget();
 
+
   // Boot up, show an error if it fails to load the game.
   if (!BootManager::BootCore(m_system, std::move(parameters),
                              ::GetWindowSystemInfo(m_render_widget->windowHandle())))
@@ -1407,6 +1427,82 @@ void MainWindow::ShowAboutDialog()
 {
   AboutDialog about{this};
   about.exec();
+}
+
+void MainWindow::ShowUpdateDialog()
+{
+    Common::HttpRequest httpRequest;
+
+    // Make the GET request
+    auto response = httpRequest.Get("https://api.github.com/repos/MarioPartyNetplay/Dolphin-MPN/releases/latest");
+
+    if (response)
+    {
+        // Access the underlying vector and convert it to QByteArray
+        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+        // Parse the JSON response
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+        QJsonObject jsonObject = jsonDoc.object();
+      
+        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
+        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+        if (currentVersion != latestVersion)
+        {
+          // Create and show the UpdateDialog with the fetched data
+          bool forced = false; // Set this based on your logic
+          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+#ifdef _WIN32
+          QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
+          updater.exec();
+        } else {
+          QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
+        }
+    }
+    else
+    {
+        // Handle error
+        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+    }
+}
+
+void MainWindow::CheckForUpdatesAuto()
+{
+    Common::HttpRequest httpRequest;
+
+    // Make the GET request
+    auto response = httpRequest.Get("https://api.github.com/repos/MarioPartyNetplay/Dolphin-MPN/releases/latest");
+
+    if (response)
+    {
+        // Access the underlying vector and convert it to QByteArray
+        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+        // Parse the JSON response
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+        QJsonObject jsonObject = jsonDoc.object();
+      
+        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
+        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+        if (currentVersion != latestVersion)
+        {
+          // Create and show the UpdateDialog with the fetched data
+          bool forced = false; // Set this based on your logic
+          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+#ifdef _WIN32
+          QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
+          updater.exec();
+        }
+    }
+    else
+    {
+        // Handle error
+        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+    }
 }
 
 void MainWindow::ShowHotkeyDialog()
@@ -1751,6 +1847,7 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   Settings::Instance().GetNetPlayServer()->ChangeGame(game.GetSyncIdentifier(),
                                                       m_game_list->GetNetPlayName(game));
 
+
   // Join our local server
   return NetPlayJoin();
 }
@@ -2067,7 +2164,7 @@ void MainWindow::OnConnectWiiRemote(int id)
   const Core::CPUThreadGuard guard(m_system);
   if (const auto bt = WiiUtils::GetBluetoothEmuDevice())
   {
-    const auto wm = bt->AccessWiimoteByIndex(id);
+    if (const auto wm = bt->AccessWiimoteByIndex(id))
     wm->Activate(!wm->IsConnected());
   }
 }
@@ -2167,4 +2264,16 @@ void MainWindow::ShowRiivolutionBootWidget(const UICommon::GameFile& game)
 
   AddRiivolutionPatches(boot_params.get(), std::move(w.GetPatches()));
   StartGame(std::move(boot_params));
+}
+
+void MainWindow::ShowGeckoCodes()
+{
+  if (!m_gecko_dialog)
+  {
+    m_gecko_dialog = new GeckoDialog(this);
+    InstallHotkeyFilter(m_gecko_dialog);
+  }
+  m_gecko_dialog->show();
+  m_gecko_dialog->raise();
+  m_gecko_dialog->activateWindow();
 }

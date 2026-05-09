@@ -12,6 +12,7 @@
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Core.h"
 #include "VideoCommon/VideoConfig.h"
+#include "Core/MarioPartyNetplay/Gamestate.h"
 
 PerformanceMetrics::PerformanceMetrics()
 {
@@ -35,6 +36,7 @@ void PerformanceMetrics::Reset()
 
   m_frame_presentation_offset = DT{};
 }
+
 
 void PerformanceMetrics::CountFrame()
 {
@@ -128,7 +130,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   static ImVec2 last_display_size(-1.0f, -1.0f);
 
   // Change Color based on % Speed
-  float r = 0.0f, g = 1.0f, b = 1.0f;
+  float r = 1.0f, g = 0.55f, b = 0.00f;
+
   if (g_ActiveConfig.bShowSpeedColors)
   {
     r = 1.0 - (speed - 0.8) / 0.2;
@@ -136,7 +139,10 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     b = (speed - 0.9) / 0.1;
   }
 
-  const float window_padding = 8.f * backbuffer_scale;
+  // Get HUD scale for consistent scaling across all performance metrics
+  const float hud_scale = Config::Get(Config::GFX_MPN_HUD_SCALE);
+  const float window_padding = 8.f * backbuffer_scale * hud_scale;
+  const float window_width = 93.f * backbuffer_scale;
 
   const ImVec2& display_size = ImGui::GetIO().DisplaySize;
   const bool display_size_changed =
@@ -151,7 +157,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       display_size_changed ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
 
   float window_y = window_padding;
-  float window_x = display_size.x - window_padding;
+  float window_x = ImGui::GetIO().DisplaySize.x - window_padding;
 
   const auto clamp_window_position = [&] {
     const ImVec2 position = ImGui::GetWindowPos();
@@ -270,9 +276,18 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   if (g_ActiveConfig.bShowSpeed)
   {
     // Position in the top-right corner of the screen.
+    float window_height = 47.f * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
+
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
+
+    if (stack_vertically)
+      window_y += window_height + window_padding;
+    else
+      window_x -= scaled_window_width + window_padding;
 
     if (ImGui::Begin("SpeedStats", nullptr, imgui_flags))
     {
@@ -281,18 +296,31 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       else
         window_x -= ImGui::GetWindowWidth() + window_padding;
       clamp_window_position();
+      // Scale the text size using ImGui's font scaling
+      ImGui::SetWindowFontScale(hud_scale);
       ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Speed:%4.0lf%%", 100.0 * speed);
       ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Max:%6.0lf%%", 100.0 * GetMaxSpeed());
+      ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
     }
     ImGui::End();
   }
 
   if (g_ActiveConfig.bShowFPS || g_ActiveConfig.bShowFTimes)
   {
+    int count = g_ActiveConfig.bShowFPS + 2 * g_ActiveConfig.bShowFTimes;
+    float window_height = (12.f + 17.f * count) * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
+
     // Position in the top-right corner of the screen.
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
+
+    if (stack_vertically)
+      window_y += window_height + window_padding;
+    else
+      window_x -= scaled_window_width + window_padding;
 
     if (ImGui::Begin("FPSStats", nullptr, imgui_flags))
     {
@@ -301,6 +329,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       else
         window_x -= ImGui::GetWindowWidth() + window_padding;
       clamp_window_position();
+      // Scale the text size using ImGui's font scaling
+      ImGui::SetWindowFontScale(hud_scale);
       if (g_ActiveConfig.bShowFPS)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "FPS:%7.2lf", fps);
       if (g_ActiveConfig.bShowFTimes)
@@ -314,16 +344,72 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
             DT_ms(m_frame_presentation_offset.load(std::memory_order_relaxed)).count();
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "ofs:%5.1lfms", offset);
       }
+      ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
     }
     ImGui::End();
   }
 
+  if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board && CurrentState.Boards)
+  {
+    // Apply HUD scale to the turn counter
+    float window_height = (30.f) * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;  // Scale the width as well
+
+    // Position in the top-left corner of the screen, below the FPS stats.
+    ImGui::SetNextWindowPos(ImVec2(100.0f, window_y), ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
+    ImGui::SetNextWindowBgAlpha(bg_alpha);
+   
+    if (ImGui::Begin("MPStats", nullptr, imgui_flags))
+    {
+      if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board && CurrentState.Boards)
+      {
+        // Use safe turn reading function
+        if (g_ActiveConfig.bShowMPTurn && CurrentState.IsMarioParty && CurrentState.Board &&
+            CurrentState.Boards)
+        {
+          // Scale the text size using ImGui's font scaling
+          ImGui::SetWindowFontScale(hud_scale);
+          if (CurrentState.Addresses != NULL)
+          {
+            ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Turn: %d/%d",
+                               mpn_read_value(CurrentState.Addresses->CurrentTurn, 1),
+                               mpn_read_value(CurrentState.Addresses->TotalTurns, 1));
+          }
+          else
+          {
+            ImGui::TextColored(ImVec4(r, g, b, 0.7f), "Turn: Loading...");
+          }
+          ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
+        }
+        else
+        {
+          // Show "Loading..." or similar when turn info isn't available
+          ImGui::SetWindowFontScale(hud_scale);
+          ImGui::TextColored(ImVec4(r, g, b, 0.7f), "Turn: Loading...");
+          ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
+        }
+      }
+      ImGui::End();
+    }
+  }
+
   if (g_ActiveConfig.bShowVPS || g_ActiveConfig.bShowVTimes)
   {
+    int count = g_ActiveConfig.bShowVPS + 2 * g_ActiveConfig.bShowVTimes;
+    float window_height = (12.f + 17.f * count) * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
+
     // Position in the top-right corner of the screen.
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
     ImGui::SetNextWindowBgAlpha(bg_alpha);
+
+    if (stack_vertically)
+      window_y += window_height + window_padding;
+    else
+      window_x -= scaled_window_width + window_padding;
 
     if (ImGui::Begin("VPSStats", nullptr, imgui_flags))
     {
@@ -332,6 +418,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       else
         window_x -= ImGui::GetWindowWidth() + window_padding;
       clamp_window_position();
+      // Scale the text size using ImGui's font scaling
+      ImGui::SetWindowFontScale(hud_scale);
       if (g_ActiveConfig.bShowVPS)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), "VPS:%7.2lf", vps);
       if (g_ActiveConfig.bShowVTimes)
@@ -341,6 +429,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         ImGui::TextColored(ImVec4(r, g, b, 1.0f), " ±:%6.2lfms",
                            DT_ms(m_vps_counter.GetDtStd()).count());
       }
+      ImGui::SetWindowFontScale(1.0f);  // Reset to normal scale
     }
     ImGui::End();
   }

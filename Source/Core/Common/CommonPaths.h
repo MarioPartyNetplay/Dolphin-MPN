@@ -12,13 +12,13 @@
 
 // The normal user directory
 #ifdef _WIN32
-#define NORMAL_USER_DIR "Dolphin Emulator"
+#define NORMAL_USER_DIR "Dolphin MPN"
 #elif defined(__APPLE__)
-#define NORMAL_USER_DIR "Library/Application Support/Dolphin"
+#define NORMAL_USER_DIR "Library/Application Support/Dolphin MPN"
 #elif defined(ANDROID)
-#define NORMAL_USER_DIR "/sdcard/dolphin-emu"
+#define NORMAL_USER_DIR "/sdcard/dolphin-mpn"
 #else
-#define NORMAL_USER_DIR "dolphin-emu"
+#define NORMAL_USER_DIR "dolphin-mpn"
 #endif
 
 // The portable user directory
@@ -97,7 +97,7 @@
 #define SHADERCACHE_LEGACY_DIR "ShaderCache"
 
 // The theme directory used by default
-#define DEFAULT_THEME_DIR "Clean"
+#define DEFAULT_THEME_DIR "Mario Party Netplay"
 
 // Filenames
 // Files in the directory returned by GetUserPath(D_CONFIG_IDX)
@@ -110,6 +110,7 @@
 #define DUALSHOCKUDPCLIENT_CONFIG "DSUClient.ini"
 #define FREELOOK_CONFIG "FreeLook.ini"
 #define RETROACHIEVEMENTS_CONFIG "RetroAchievements.ini"
+#define IMGUI_CONFIG "ImGui.ini"
 
 // Files in the directory returned by GetUserPath(D_LOGS_IDX)
 #define MAIN_LOG "dolphin.log"
@@ -153,6 +154,7 @@
 #define WII_SETTING "setting.txt"
 
 #define GECKO_CODE_HANDLER "codehandler.bin"
+#define GECKO_CODE_HANDLER_MPN "codehandler.bin"
 
 // Subdirs in Sys
 #define GC_SYS_DIR "GC"

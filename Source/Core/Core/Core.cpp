@@ -570,7 +570,11 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
     }
   }};
 
-  // Wiimote input config is loaded in OnESTitleChanged
+  // Load Wiimotes - only if we are booting in Wii mode
+  if (system.IsWii() && !Config::Get(Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED))
+  {
+    Wiimote::LoadConfig();
+  }
 
   FreeLook::LoadInputConfig();
 
@@ -607,6 +611,8 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
     PanicAlertFmt("Failed to initialize video backend!");
     return;
   }
+
+
 
   if (cpu_info.HTT)
     Config::SetBaseOrCurrent(Config::MAIN_DSP_THREAD, cpu_info.num_cores > 4);
@@ -695,14 +701,6 @@ void SetState(Core::System& system, State state, bool report_state_change,
 #ifdef USE_RETRO_ACHIEVEMENTS
       if (!override_achievement_restrictions && !AchievementManager::GetInstance().CanPause())
         return;
-#endif  // USE_RETRO_ACHIEVEMENTS
-      // NOTE: GetState() will return State::Paused immediately, even before anything has
-      //   stopped (including the CPU).
-      system.GetCPU().SetStepping(true);  // Break
-      Wiimote::Pause();
-      ResetRumble();
-#ifdef USE_RETRO_ACHIEVEMENTS
-      AchievementManager::GetInstance().DoIdle();
 #endif  // USE_RETRO_ACHIEVEMENTS
       break;
     case State::Running:
@@ -1037,17 +1035,25 @@ void UpdateInputGate(bool require_focus, bool require_full_focus)
   ControlReference::SetInputGate(focus_passes && full_focus_passes);
 }
 
-CPUThreadGuard::CPUThreadGuard(Core::System& system)
+Core::CPUThreadGuard::CPUThreadGuard(Core::System& system)
     : m_system(system), m_was_cpu_thread(IsCPUThread())
 {
   if (!m_was_cpu_thread)
     m_was_unpaused = PauseAndLock(system);
 }
 
-CPUThreadGuard::~CPUThreadGuard()
+Core::CPUThreadGuard::~CPUThreadGuard()
 {
   if (!m_was_cpu_thread)
     RestoreStateAndUnlock(m_system, m_was_unpaused);
 }
 
+static GameName mGameBeingPlayed = GameName::UnknownGame;
+const std::map<std::string, GameName> mGameMap = {{"GMPE01", GameName::MarioParty4},
+                                                  {"GP5E01", GameName::MarioParty5},
+                                                  {"GP6E01", GameName::MarioParty6},
+                                                  {"GP7E01", GameName::MarioParty7},
+                                                  {"RM8E01", GameName::MarioParty8},
+                                                  {"GMPEDX", GameName::MarioParty4},
+                                                  {"GMPDX2", GameName::MarioParty4}};
 }  // namespace Core

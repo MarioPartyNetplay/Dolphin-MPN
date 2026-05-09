@@ -132,15 +132,6 @@ void RenderWidget::dropEvent(QDropEvent* event)
 
 void RenderWidget::OnHandleChanged(void* handle)
 {
-  if (handle)
-  {
-#ifdef _WIN32
-    // Remove rounded corners from the render window on Windows 11
-    const DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_DONOTROUND;
-    DwmSetWindowAttribute(static_cast<HWND>(handle), DWMWA_WINDOW_CORNER_PREFERENCE,
-                          &corner_preference, sizeof(corner_preference));
-#endif
-  }
   Host::GetInstance()->SetRenderHandle(handle);
 }
 
@@ -370,7 +361,8 @@ bool RenderWidget::event(QEvent* event)
 
     // The render window might flicker on some platforms because Qt tries to change focus to a new
     // element when there is none (?) Handling this event before it reaches QWidget fixes the issue.
-    if (ke->key() == Qt::Key_Tab)
+    // Only block Tab during NetPlay to allow pause/speedup hotkeys when not in NetPlay
+    if (ke->key() == Qt::Key_Tab && Settings::Instance().GetNetPlayClient())
       return true;
 
     break;

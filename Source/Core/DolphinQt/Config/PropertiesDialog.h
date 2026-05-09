@@ -29,3 +29,13 @@ signals:
 private:
   const std::string m_filepath;
 };
+
+class GeckoDialog final : public StackedSettingsWindow
+{
+  Q_OBJECT
+public:
+  explicit GeckoDialog(QWidget* parent);
+
+signals:
+  void OpenGeneralSettings();
+};

@@ -149,6 +149,64 @@ class TvMainActivity : FragmentActivity(), MainView, OnRefreshListener {
         GridOptionDialogFragment().show(supportFragmentManager, "gridOptions")
     }
 
+    override fun showNetPlayDialog() {
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    override fun showNetPlayBrowser() {
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    private fun showMPNNetPlayBrowser() {
+        val dialog = org.dolphinemu.dolphinemu.dialogs.MPNNetPlayBrowserDialog()
+        dialog.show(supportFragmentManager, "MPNNetPlayBrowser")
+    }
+
+    /**
+     * Callback from AddDirectoryActivity. Applies any changes necessary to the GameGridActivity.
+     *
+     * @param requestCode An int describing whether the Activity that is returning did so successfully.
+     * @param resultCode  An int describing what Activity is giving us this callback.
+     * @param result      The information the returning Activity is providing us.
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, result: Intent?) {
+        super.onActivityResult(requestCode, resultCode, result)
+
+        // If the user picked a file, as opposed to just backing out.
+        if (resultCode == RESULT_OK) {
+            val uri = result!!.data
+            when (requestCode) {
+                MainPresenter.REQUEST_DIRECTORY -> {
+                    if (DirectoryInitialization.preferOldFolderPicker(this)) {
+                        presenter.onDirectorySelected(FileBrowserHelper.getSelectedPath(result))
+                    } else {
+                        presenter.onDirectorySelected(result)
+                    }
+                }
+
+                MainPresenter.REQUEST_GAME_FILE -> FileBrowserHelper.runAfterExtensionCheck(
+                    this, uri, FileBrowserHelper.GAME_LIKE_EXTENSIONS
+                ) { EmulationActivity.launch(this, result.data.toString(), false) }
+
+                MainPresenter.REQUEST_WAD_FILE -> FileBrowserHelper.runAfterExtensionCheck(
+                    this, uri, FileBrowserHelper.WAD_EXTENSION
+                ) { presenter.installWAD(result.data.toString()) }
+
+                MainPresenter.REQUEST_WII_SAVE_FILE -> FileBrowserHelper.runAfterExtensionCheck(
+                    this, uri, FileBrowserHelper.BIN_EXTENSION
+                ) { presenter.importWiiSave(result.data.toString()) }
+
+                MainPresenter.REQUEST_NAND_BIN_FILE -> FileBrowserHelper.runAfterExtensionCheck(
+                    this, uri, FileBrowserHelper.BIN_EXTENSION
+                ) { presenter.importNANDBin(result.data.toString()) }
+            }
+        } else {
+            MainPresenter.skipRescanningLibrary()
+        }
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,

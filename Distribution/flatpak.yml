@@ -1,0 +1,94 @@
+app-id: org.DolphinEmu.dolphin-mpn
+runtime: org.kde.Platform
+runtime-version: '6.9'
+sdk: org.kde.Sdk
+command: dolphin-mpn-wrapper
+rename-desktop-file: dolphin-mpn.desktop
+rename-icon: dolphin-mpn
+finish-args:
+  - --device=all
+  # the file picker uses portals but the set
+  # game directory feature still needs this
+  - --filesystem=host:ro
+  - --socket=pulseaudio
+  - --env=QT_QPA_PLATFORM=xcb
+  - --socket=x11
+  - --share=network
+  - --share=ipc
+  # required for the emulated bluetooth adapter feature to work.
+  - --allow=bluetooth
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
+  # required for screensaver inhibition on desktops with
+  # old or defective portal implementations.
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.xfce.ScreenSaver
+  - --talk-name=org.mate.ScreenSaver
+  # required for Gamescope on Steam Deck
+  - --filesystem=xdg-run/gamescope-0:ro
+modules:
+  # needed for the bluetooth passthrough feature to work
+  - name: libusb
+    config-opts:
+      - --disable-static
+    cleanup:
+      - /include
+      - /lib/*.la
+      - /lib/pkgconfig
+    sources:
+      - type: archive
+        url: https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2
+        sha256: 5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85
+        x-checker-data:
+          type: anitya
+          project-id: 1749
+          stable-only: true
+          url-template: https://github.com/libusb/libusb/releases/download/v$version/libusb-$version.tar.bz2
+
+  # enables motion controls on non-wii controllers (switch, ps4, etc)
+  # requires a udev rule enabling Motion Sensors access
+  - name: libevdev
+    buildsystem: meson
+    config-opts:
+      - -Dtests=disabled
+      - -Ddocumentation=disabled
+    sources:
+      - type: archive
+        url: https://www.freedesktop.org/software/libevdev/libevdev-1.13.6.tar.xz
+        sha256: 73f215eccbd8233f414737ac06bca2687e67c44b97d2d7576091aa9718551110
+        x-checker-data:
+          type: anitya
+          project-id: 20540
+          stable-only: true
+          url-template: https://www.freedesktop.org/software/libevdev/libevdev-$version.tar.xz
+
+  - name: dolphin-mpn
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_ALSA=OFF
+      - -DENABLE_SDL=ON
+      - -DENABLE_EVDEV=ON
+      - -DDISTRIBUTOR=Mario Party Netplay
+      - -DCPACK_PACKAGE_CONTACT=Mario Party Netplay
+      - -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+      - -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
+    cleanup:
+      - /share/man
+    post-install:
+      - install -D -t ${FLATPAK_DEST}/bin/ dolphin-mpn-wrapper
+      - desktop-file-edit --set-key=Exec --set-value='/app/bin/dolphin-mpn-wrapper'
+        /app/share/applications/dolphin-mpn.desktop
+      - desktop-file-edit --set-key=Name --set-value='Dolphin MPN'
+        /app/share/applications/dolphin-mpn.desktop
+    sources:
+      - type: git
+        url: https://github.com/MarioPartyNetplay/Dolphin-MPN-src.git
+      - type: script
+        commands:
+          - |
+            for i in {0..9}; do
+              test -S $XDG_RUNTIME_DIR/discord-ipc-$i ||
+                ln -sf {app/com.discordapp.Discord,$XDG_RUNTIME_DIR}/discord-ipc-$i;
+            done
+            dolphin-mpn "$@"
+        dest-filename: dolphin-mpn-wrapper

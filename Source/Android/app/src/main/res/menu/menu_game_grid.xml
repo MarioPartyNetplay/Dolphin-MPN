@@ -53,7 +53,7 @@
 
     <item
         android:id="@+id/menu_netplay"
-        android:title="@string/grid_menu_netplay"
+        android:title="@string/grid_menu_netplay_combined"
         app:showAsAction="never"/>
 
     <item

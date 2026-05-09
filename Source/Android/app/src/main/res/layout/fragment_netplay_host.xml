@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Host Server"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Server Name -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Name:"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="8dp"
+            android:minWidth="80dp" />
+
+        <EditText
+            android:id="@+id/edit_server_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Enter server name"
+            android:inputType="text" />
+
+    </LinearLayout>
+
+    <!-- Port -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Port:"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="8dp"
+            android:minWidth="80dp" />
+
+        <EditText
+            android:id="@+id/edit_host_port"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="2626"
+            android:inputType="number"
+            android:text="2626" />
+
+    </LinearLayout>
+
+    <!-- UPnP Checkbox -->
+    <CheckBox
+        android:id="@+id/checkbox_upnp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Forward port (UPnP)"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Chunked Upload -->
+    <CheckBox
+        android:id="@+id/checkbox_chunked_upload"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Limit chunked upload speed"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Chunked Upload Limit -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Limit:"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="8dp"
+            android:minWidth="80dp" />
+
+        <EditText
+            android:id="@+id/edit_chunked_upload_limit"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="1024"
+            android:inputType="number"
+            android:text="1024" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="KB/s"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
+    <!-- Game Selection -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Select Game to Host:"
+            android:textStyle="bold"
+            android:layout_gravity="center_vertical" />
+
+        <Button
+            android:id="@+id/button_select_game"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Browse Games"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler_games"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/rounded_background" />
+
+    <!-- Host Button -->
+    <Button
+        android:id="@+id/button_host"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Host Server"
+        android:layout_marginTop="16dp" />
+
+    <!-- Info Text -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Select a game and configure server settings to host a NetPlay session."
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginTop="16dp"
+        android:gravity="center" />
+
+</LinearLayout>

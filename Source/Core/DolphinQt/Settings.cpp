@@ -331,7 +331,12 @@ void Settings::ApplyStyle()
   // Unfortunately it doesn't seem trivial to load a palette based on the stylesheet itself.
   else if (style_type == StyleType::Dark || (style_type != StyleType::Light && IsSystemDark()))
   {
-    if (stylesheet_contents.isEmpty())
+    // No theme selected or found. Usually we would just fallthrough and set an empty stylesheet
+    // which would select Qt's default theme, but unlike other OSes we don't automatically get a
+    // default dark theme on Windows when the user has selected dark mode in the Windows settings.
+    // So manually check if the user wants dark mode and, if yes, load our embedded dark theme.
+    QString productName = QSysInfo::prettyProductName();
+    if (!productName.contains(QStringLiteral("Windows 11"), Qt::CaseInsensitive) && IsSystemDark())
     {
       QFile file(QStringLiteral(":/dolphin_dark_win/dark.qss"));
       if (file.open(QFile::ReadOnly))
@@ -697,6 +702,15 @@ void Settings::ResetNetPlayServer(NetPlay::NetPlayServer* server)
 bool Settings::GetCheatsEnabled() const
 {
   return Config::Get(Config::MAIN_ENABLE_CHEATS);
+}
+
+void Settings::SetCheatsEnabled(bool enabled)
+{
+  if (Config::Get(Config::MAIN_ENABLE_CHEATS) != enabled)
+  {
+    Config::SetBaseOrCurrent(Config::MAIN_ENABLE_CHEATS, enabled);
+    emit EnableCheatsChanged(enabled);
+  }
 }
 
 void Settings::SetDebugModeEnabled(bool enabled)

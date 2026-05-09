@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -56,12 +57,11 @@ PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& ga
   connect(graphics_mod_list, &GraphicsModListWidget::OpenGraphicsSettings, this,
           &PropertiesDialog::OpenGraphicsSettings);
 
-  // Note: Intentional selective use of AddWrappedPane for a sensible dialog "minimumSize".
   AddWrappedPane(info, tr("Info"));
-  AddPane(game_config, tr("Game Config"));
-  AddPane(patches, tr("Patches"));
-  AddPane(ar, tr("AR Codes"));
-  AddPane(gecko, tr("Gecko Codes"));
+  AddWrappedPane(game_config, tr("Game Config"));
+  AddWrappedPane(patches, tr("Patches"));
+  AddWrappedPane(ar, tr("AR Codes"));
+  AddWrappedPane(gecko, tr("Gecko Codes"));
   AddWrappedPane(graphics_mod_list, tr("Graphics Mods"));
 
   if (game.GetPlatform() != DiscIO::Platform::ELFOrDOL)
@@ -81,6 +81,61 @@ PropertiesDialog::PropertiesDialog(QWidget* parent, const UICommon::GameFile& ga
   }
 
   connect(this, &QDialog::rejected, graphics_mod_list, &GraphicsModListWidget::SaveToDisk);
+
+  QDialogButtonBox* close_box = new QDialogButtonBox(QDialogButtonBox::Close);
+
+  connect(close_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+  connect(close_box, &QDialogButtonBox::rejected, graphics_mod_list,
+          &GraphicsModListWidget::SaveToDisk);
+
+  // Get the layout from the base class and add the close button
+  auto* layout = qobject_cast<QHBoxLayout*>(this->layout());
+  if (layout)
+  {
+    auto* right_side = qobject_cast<QVBoxLayout*>(layout->itemAt(1)->layout());
+    if (right_side)
+    {
+      right_side->addWidget(close_box);
+    }
+  }
+
+  OnDoneCreatingPanes();
+}
+
+GeckoDialog::GeckoDialog(QWidget* parent) : StackedSettingsWindow(parent)
+{
+  setWindowTitle(QStringLiteral("%1").arg(QString::fromStdString("Modifications")));
+  setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+  resize(300, 400);
+
+  // Create Gecko code widgets for each Mario Party game
+  GeckoCodeWidget* mp4_gecko = new GeckoCodeWidget("GMPE01", "GMPE01", 0);
+  GeckoCodeWidget* mp4dx_gecko = new GeckoCodeWidget("GMPDX2", "GMPDX2", 0);
+  GeckoCodeWidget* mp5_gecko = new GeckoCodeWidget("GP5E01", "GP5E01", 0);
+  GeckoCodeWidget* mp6_gecko = new GeckoCodeWidget("GP6E01", "GP6E01", 0);
+  GeckoCodeWidget* mp7_gecko = new GeckoCodeWidget("GP7E01", "GP7E01", 0);
+  GeckoCodeWidget* mp8_gecko = new GeckoCodeWidget("RM8E01", "RM8E01", 0);
+
+  connect(mp4_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
+          &GeckoDialog::OpenGeneralSettings);
+  connect(mp4dx_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
+          &GeckoDialog::OpenGeneralSettings);
+  connect(mp5_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
+          &GeckoDialog::OpenGeneralSettings);
+  connect(mp6_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
+          &GeckoDialog::OpenGeneralSettings);
+  connect(mp7_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
+          &GeckoDialog::OpenGeneralSettings);
+  connect(mp8_gecko, &GeckoCodeWidget::OpenGeneralSettings, this,
+          &GeckoDialog::OpenGeneralSettings);
+
+  // Add each Mario Party game as a pane using the new list layout
+  AddWrappedPane(mp4_gecko, tr("Mario Party 4"));
+  AddWrappedPane(mp4dx_gecko, tr("Mario Party 4 DX"));
+  AddWrappedPane(mp5_gecko, tr("Mario Party 5"));
+  AddWrappedPane(mp6_gecko, tr("Mario Party 6"));
+  AddWrappedPane(mp7_gecko, tr("Mario Party 7"));
+  AddWrappedPane(mp8_gecko, tr("Mario Party 8"));
 
   OnDoneCreatingPanes();
 }

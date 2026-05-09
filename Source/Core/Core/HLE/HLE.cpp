@@ -8,7 +8,9 @@
 #include <map>
 
 #include "Common/CommonTypes.h"
+#include "Common/CommonPaths.h"
 
+#include "Core/ConfigManager.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
 #include "Core/GeckoCode.h"
@@ -65,18 +67,39 @@ constexpr std::array<Hook, 23> os_patches{{
 void Patch(Core::System& system, u32 addr, std::string_view func_name)
 {
   auto& ppc_state = system.GetPPCState();
-  auto& memory = system.GetMemory();
-  auto& jit_interface = system.GetJitInterface();
   for (u32 i = 1; i < os_patches.size(); ++i)
   {
     if (os_patches[i].name == func_name)
     {
       s_hooked_addresses[addr] = i;
-      ppc_state.iCache.Invalidate(memory, jit_interface, addr);
-      Host_JitCacheInvalidation();
+      ppc_state.iCache.Invalidate(addr);
       return;
     }
   }
+}
+
+const char* GetGeckoCodeHandlerPath()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER); // Get the integer value
+  switch (code_handler_value)
+  {
+    case 0: return GECKO_CODE_HANDLER; // Dolphin (Stock)
+    case 1: return GECKO_CODE_HANDLER_MPN; // MPN (Extended)
+    default:
+      return GECKO_CODE_HANDLER_MPN;  // Fallback
+  }
+}
+
+bool IsGeckoCodeHandlerEnabled()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER); // Get the integer value
+  return code_handler_value == 1; // Return true for 1 and 2
+}
+
+bool IsGeckoCodeHandlerMPN()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER); // Get the integer value
+  return code_handler_value == 1;
 }
 
 void PatchFixedFunctions(Core::System& system)
@@ -100,8 +123,16 @@ void PatchFixedFunctions(Core::System& system)
 
   // Not part of the binary itself, but either we or Gecko OS might insert
   // this, and it doesn't clear the icache properly.
-  Patch(system, Gecko::ENTRY_POINT, "GeckoCodehandler");
-  // This has to always be installed even if cheats are not enabled because of the possibility of
+
+  u32 codelist_hook = Gecko::ENTRY_POINT;
+
+
+  Patch(system, codelist_hook, "GeckoCodehandler");
+
+
+
+
+  // This has to always be installed even if cheats are not enabled because of the possiblity of
   // loading a savestate where PC is inside the code handler while cheats are disabled.
   Patch(system, Gecko::HLE_TRAMPOLINE_ADDRESS, "GeckoHandlerReturnTrampoline");
 }
@@ -110,8 +141,6 @@ void PatchFunctions(Core::System& system)
 {
   auto& power_pc = system.GetPowerPC();
   auto& ppc_state = power_pc.GetPPCState();
-  auto& memory = system.GetMemory();
-  auto& jit_interface = system.GetJitInterface();
   auto& ppc_symbol_db = power_pc.GetSymbolDB();
 
   // Remove all hooks that aren't fixed address hooks
@@ -119,7 +148,7 @@ void PatchFunctions(Core::System& system)
   {
     if (os_patches[i->second].flags != HookFlag::Fixed)
     {
-      ppc_state.iCache.Invalidate(memory, jit_interface, i->first);
+      ppc_state.iCache.Invalidate(i->first);
       i = s_hooked_addresses.erase(i);
     }
     else
@@ -139,13 +168,11 @@ void PatchFunctions(Core::System& system)
       for (u32 addr = symbol->address; addr < symbol->address + symbol->size; addr += 4)
       {
         s_hooked_addresses[addr] = i;
-        ppc_state.iCache.Invalidate(memory, jit_interface, addr);
+        ppc_state.iCache.Invalidate(addr);
       }
       INFO_LOG_FMT(OSHLE, "Patching {} {:08x}", os_patches[i].name, symbol->address);
     }
   }
-
-  Host_JitCacheInvalidation();
 }
 
 void Clear()
@@ -188,122 +215,122 @@ u32 GetHookByAddress(u32 address)
 
 u32 GetHookByFunctionAddress(PPCSymbolDB& ppc_symbol_db, u32 address)
 {
-  const u32 index = GetHookByAddress(address);
-  // Fixed hooks use a fixed address and don't patch the whole function
-  if (index == 0 || os_patches[index].flags == HookFlag::Fixed)
-    return index;
+    const u32 index = GetHookByAddress(address);
+    // Fixed hooks use a fixed address and don't patch the whole function
+    if (index == 0 || os_patches[index].flags == HookFlag::Fixed)
+        return index;
 
-  const Common::Symbol* const symbol = ppc_symbol_db.GetSymbolFromAddr(address);
-  return (symbol && symbol->address == address) ? index : 0;
+    const Common::Symbol* const symbol = ppc_symbol_db.GetSymbolFromAddr(address);
+    return (symbol && symbol->address == address) ? index : 0;
 }
 
-const char* GetHookNameByIndex(u32 index)
-{
-  return os_patches[index].name;
-}
-
-HookType GetHookTypeByIndex(u32 index)
-{
-  return os_patches[index].type;
-}
-
-HookFlag GetHookFlagsByIndex(u32 index)
-{
-  return os_patches[index].flags;
-}
-
-TryReplaceFunctionResult TryReplaceFunction(PPCSymbolDB& ppc_symbol_db, u32 address,
-                                            PowerPC::CoreMode mode)
-{
-  const u32 hook_index = GetHookByFunctionAddress(ppc_symbol_db, address);
-  if (hook_index == 0)
-    return {};
-
-  const HookType type = GetHookTypeByIndex(hook_index);
-  if (type != HookType::Start && type != HookType::Replace)
-    return {};
-
-  const HookFlag flags = GetHookFlagsByIndex(hook_index);
-  if (!IsEnabled(flags, mode))
-    return {};
-
-  return {type, hook_index};
-}
-
-bool IsEnabled(HookFlag flag, PowerPC::CoreMode mode)
-{
-  return flag != HLE::HookFlag::Debug || Config::IsDebuggingEnabled() ||
-         mode == PowerPC::CoreMode::Interpreter;
-}
-
-u32 UnPatch(Core::System& system, std::string_view patch_name)
-{
-  const auto patch = std::ranges::find(os_patches, patch_name, &Hook::name);
-  if (patch == std::end(os_patches))
-    return 0;
-
-  auto& power_pc = system.GetPowerPC();
-  auto& ppc_state = power_pc.GetPPCState();
-  auto& memory = system.GetMemory();
-  auto& jit_interface = system.GetJitInterface();
-
-  if (patch->flags == HookFlag::Fixed)
-  {
-    const u32 patch_idx = static_cast<u32>(std::distance(os_patches.begin(), patch));
-    u32 addr = 0;
-    // Reverse search by OSPatch key instead of address
-    for (auto i = s_hooked_addresses.begin(); i != s_hooked_addresses.end();)
+    const char* GetHookNameByIndex(u32 index)
     {
-      if (i->second == patch_idx)
-      {
-        addr = i->first;
-        ppc_state.iCache.Invalidate(memory, jit_interface, i->first);
-        i = s_hooked_addresses.erase(i);
-      }
-      else
-      {
-        ++i;
-      }
+        return os_patches[index].name;
     }
-    Host_JitCacheInvalidation();
-    return addr;
-  }
 
-  const auto symbols = power_pc.GetSymbolDB().GetSymbolsFromName(patch_name);
-  if (!symbols.empty())
-  {
-    const Common::Symbol* const symbol = symbols.front();
-    for (u32 addr = symbol->address; addr < symbol->address + symbol->size; addr += 4)
+    HookType GetHookTypeByIndex(u32 index)
     {
-      s_hooked_addresses.erase(addr);
-      ppc_state.iCache.Invalidate(memory, jit_interface, addr);
+        return os_patches[index].type;
     }
-    Host_JitCacheInvalidation();
-    return symbol->address;
-  }
 
-  return 0;
-}
+    HookFlag GetHookFlagsByIndex(u32 index)
+    {
+        return os_patches[index].flags;
+    }
 
-u32 UnpatchRange(Core::System& system, u32 start_addr, u32 end_addr)
-{
-  auto& ppc_state = system.GetPPCState();
-  auto& memory = system.GetMemory();
-  auto& jit_interface = system.GetJitInterface();
+    TryReplaceFunctionResult TryReplaceFunction(PPCSymbolDB& ppc_symbol_db, u32 address,
+                                                PowerPC::CoreMode mode)
+    {
+        const u32 hook_index = GetHookByFunctionAddress(ppc_symbol_db, address);
+        if (hook_index == 0)
+            return {};
 
-  u32 count = 0;
+        const HookType type = GetHookTypeByIndex(hook_index);
+        if (type != HookType::Start && type != HookType::Replace)
+            return {};
 
-  auto i = s_hooked_addresses.lower_bound(start_addr);
-  while (i != s_hooked_addresses.end() && i->first < end_addr)
-  {
-    INFO_LOG_FMT(OSHLE, "Unpatch HLE hooks [{:08x};{:08x}): {} at {:08x}", start_addr, end_addr,
-                 os_patches[i->second].name, i->first);
-    ppc_state.iCache.Invalidate(memory, jit_interface, i->first);
-    i = s_hooked_addresses.erase(i);
-    count += 1;
-  }
-  Host_JitCacheInvalidation();
+        const HookFlag flags = GetHookFlagsByIndex(hook_index);
+        if (!IsEnabled(flags, mode))
+            return {};
 
-  return count;
-}
+        return {type, hook_index};
+    }
+
+    bool IsEnabled(HookFlag flag, PowerPC::CoreMode mode)
+    {
+        return flag != HLE::HookFlag::Debug || Config::IsDebuggingEnabled() ||
+               mode == PowerPC::CoreMode::Interpreter;
+    }
+
+    u32 UnPatch(Core::System& system, std::string_view patch_name)
+    {
+        const auto patch = std::ranges::find(os_patches, patch_name, &Hook::name);
+        if (patch == std::end(os_patches))
+            return 0;
+
+        auto& power_pc = system.GetPowerPC();
+        auto& ppc_state = power_pc.GetPPCState();
+        auto& memory = system.GetMemory();
+        auto& jit_interface = system.GetJitInterface();
+
+        if (patch->flags == HookFlag::Fixed)
+        {
+            const u32 patch_idx = static_cast<u32>(std::distance(os_patches.begin(), patch));
+            u32 addr = 0;
+            // Reverse search by OSPatch key instead of address
+            for (auto i = s_hooked_addresses.begin(); i != s_hooked_addresses.end();)
+            {
+                if (i->second == patch_idx)
+                {
+                    addr = i->first;
+                    ppc_state.iCache.Invalidate(i->first);
+                    i = s_hooked_addresses.erase(i);
+                }
+                else
+                {
+                    ++i;
+                }
+            }
+            Host_JitCacheInvalidation();
+            return addr;
+        }
+
+        const auto symbols = power_pc.GetSymbolDB().GetSymbolsFromName(patch_name);
+        if (!symbols.empty())
+        {
+            const Common::Symbol* const symbol = symbols.front();
+            for (u32 addr = symbol->address; addr < symbol->address + symbol->size; addr += 4)
+            {
+                s_hooked_addresses.erase(addr);
+                ppc_state.iCache.Invalidate(addr);
+            }
+            Host_JitCacheInvalidation();
+            return symbol->address;
+        }
+
+        return 0;
+    }
+
+    u32 UnpatchRange(Core::System& system, u32 start_addr, u32 end_addr)
+    {
+        auto& ppc_state = system.GetPPCState();
+        auto& memory = system.GetMemory();
+        auto& jit_interface = system.GetJitInterface();
+
+        u32 count = 0;
+
+        auto i = s_hooked_addresses.lower_bound(start_addr);
+        while (i != s_hooked_addresses.end() && i->first < end_addr)
+        {
+            INFO_LOG_FMT(OSHLE, "Unpatch HLE hooks [{:08x};{:08x}): {} at {:08x}", start_addr, end_addr,
+                         os_patches[i->second].name, i->first);
+            ppc_state.iCache.Invalidate(i->first);
+            i = s_hooked_addresses.erase(i);
+            count += 1;
+        }
+        Host_JitCacheInvalidation();
+
+        return count;
+    }
 }  // namespace HLE

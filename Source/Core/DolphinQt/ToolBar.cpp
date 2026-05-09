@@ -118,9 +118,12 @@ void ToolBar::MakeActions()
 
   addSeparator();
 
-  m_pause_play_action = addAction(tr("Play"), this, &ToolBar::PlayPressed);
-
+  m_pause_play_action = addAction(tr("Local Play"), this, &ToolBar::PlayPressed);
+  m_start_netplay_action = addAction(tr("Online Play"), this, &ToolBar::StartNetPlayPressed);
   m_stop_action = addAction(tr("Stop"), this, &ToolBar::StopPressed);
+
+  addSeparator();
+
   m_fullscreen_action = addAction(tr("FullScr"), this, &ToolBar::FullScreenPressed);
   m_screenshot_action = addAction(tr("ScrShot"), this, &ToolBar::ScreenShotPressed);
 
@@ -129,7 +132,7 @@ void ToolBar::MakeActions()
   m_config_action = addAction(tr("Config"), this, &ToolBar::SettingsPressed);
   m_graphics_action = addAction(tr("Graphics"), this, &ToolBar::GraphicsPressed);
   m_controllers_action = addAction(tr("Controllers"), this, &ToolBar::ControllersPressed);
-
+  m_view_gecko_codes_action = addAction(tr("Modifications"), this, &ToolBar::ViewGeckoCodes);
   // Ensure every button has about the same width
   std::vector<QWidget*> items;
   for (const auto& action :
@@ -162,7 +165,7 @@ void ToolBar::UpdatePausePlayButtonState(const bool playing_state)
   else
   {
     disconnect(m_pause_play_action, nullptr, nullptr, nullptr);
-    m_pause_play_action->setText(tr("Play"));
+    m_pause_play_action->setText(tr("Local Play"));
     m_pause_play_action->setIcon(Resources::GetThemeIcon("play"));
     connect(m_pause_play_action, &QAction::triggered, this, &ToolBar::PlayPressed);
   }
@@ -192,5 +195,7 @@ void ToolBar::UpdateIcons()
   m_screenshot_action->setIcon(Resources::GetThemeIcon("screenshot"));
   m_config_action->setIcon(Resources::GetThemeIcon("config"));
   m_controllers_action->setIcon(Resources::GetThemeIcon("classic"));
+  m_view_gecko_codes_action->setIcon(Resources::GetThemeIcon("modifications"));
   m_graphics_action->setIcon(Resources::GetThemeIcon("graphics"));
+  m_start_netplay_action->setIcon(Resources::GetThemeIcon("wifi"));
 }

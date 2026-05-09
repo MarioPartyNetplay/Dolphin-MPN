@@ -149,6 +149,7 @@ LogManager::LogManager()
   m_log[LogType::SERIALINTERFACE_JVSIO] = {"SI_JVS", "JVS-I/O"};
   m_log[LogType::SP1] = {"SP1", "Serial Port 1"};
   m_log[LogType::SYMBOLS] = {"SYMBOLS", "Symbols"};
+  m_log[LogType::MPN] = {"MPN", "Mario Party Netplay"};
   m_log[LogType::VIDEO] = {"Video", "Video Backend"};
   m_log[LogType::VIDEOINTERFACE] = {"VI", "Video Interface"};
   m_log[LogType::WIIMOTE] = {"Wiimote", "Wii Remote"};

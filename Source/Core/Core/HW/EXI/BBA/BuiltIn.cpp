@@ -21,6 +21,8 @@
 #include "Common/Network.h"
 #include "Common/ScopeGuard.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
+#include "Core/CoreTiming.h"
+#include "Core/System.h"
 
 namespace
 {
@@ -790,6 +792,7 @@ void CEXIETHERNET::BuiltInBBAInterface::RecvStop()
   m_queue_read = 0;
   m_queue_write = 0;
 }
+
 }  // namespace ExpansionInterface
 
 BbaTcpSocket::BbaTcpSocket() = default;

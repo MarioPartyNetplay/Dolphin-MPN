@@ -7,6 +7,8 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <queue>
+#include <thread>
 
 #include "Common/HookableEvent.h"
 #include "Common/Matrix.h"
@@ -124,6 +126,7 @@ public:
 
 private:
   void ClearDevices();
+  void ProcessDeviceQueue();
 
   void InvokeDevicesChangedCallbacks();
 
@@ -140,6 +143,18 @@ private:
   std::atomic<bool> m_requested_mouse_centering = false;
 
   std::vector<std::unique_ptr<ciface::InputBackend>> m_input_backends;
+  
+  // Device queue for handling additions/removals during input updates
+  struct QueuedDeviceOperation
+  {
+    enum class Type { Add, Remove };
+    Type type;
+    std::shared_ptr<ciface::Core::Device> device;
+    std::function<bool(const ciface::Core::Device*)> remove_callback;
+    bool force_devices_release;
+  };
+  std::queue<QueuedDeviceOperation> m_device_queue;
+  mutable std::mutex m_device_queue_mutex;
 };
 
 namespace ciface
@@ -150,7 +165,7 @@ class RelativeInputState
 public:
   void Update()
   {
-    const auto channel = int(ControllerInterface::GetCurrentInputChannel());
+    const auto channel = int(::ControllerInterface::GetCurrentInputChannel());
 
     m_value[channel] = m_delta[channel];
     m_delta[channel] = {};
@@ -158,7 +173,7 @@ public:
 
   T GetValue() const
   {
-    const auto channel = int(ControllerInterface::GetCurrentInputChannel());
+    const auto channel = int(::ControllerInterface::GetCurrentInputChannel());
 
     return m_value[channel];
   }

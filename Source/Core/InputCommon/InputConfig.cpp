@@ -16,6 +16,7 @@
 #include "InputCommon/ControllerEmu/ControllerEmu.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/InputProfile.h"
+#include "VideoCommon/VideoConfig.h"
 
 InputConfig::InputConfig(std::string ini_name, std::string gui_name,
                          std::string profile_directory_name, std::string profile_key)
@@ -33,6 +34,8 @@ bool InputConfig::LoadConfig()
   bool useProfile[MAX_BBMOTES] = {false, false, false, false, false};
   static constexpr std::array<std::string_view, MAX_BBMOTES> num = {"1", "2", "3", "4", "BB"};
   std::string profile[MAX_BBMOTES];
+
+  m_dynamic_input_tex_config_manager.Load();
 
   if (SConfig::GetInstance().GetGameID() != "00000000")
   {
@@ -71,9 +74,12 @@ bool InputConfig::LoadConfig()
       !inifile.GetSections().empty())
   {
     int n = 0;
-
     for (auto& controller : m_controllers)
     {
+      if (n >= MAX_BBMOTES)  // Prevent out-of-bounds access
+        break;
+      if (!controller)
+        continue;
       Common::IniFile::Section config;
       // Load settings from ini
       if (useProfile[n])
@@ -97,19 +103,30 @@ bool InputConfig::LoadConfig()
       // Next profile
       n++;
     }
+
+    std::vector<std::string> controller_names;
+    for (const auto& controller : m_controllers)
+    {
+      if (controller)
+        controller_names.push_back(controller->GetName());
+    }
+
+    m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
     return true;
   }
   else
   {
     // Only load the default profile for the first controller and clear the others,
     // otherwise they would all share the same mappings on the same (default) device
-    if (m_controllers.size() > 0)
+    if (m_controllers.size() > 0 && m_controllers[0])
     {
       m_controllers[0]->LoadDefaults(g_controller_interface);
       m_controllers[0]->UpdateReferences(g_controller_interface);
     }
     for (size_t i = 1; i < m_controllers.size(); ++i)
     {
+      if (!m_controllers[i])
+        continue;
       // Calling the base version just clears all settings without overwriting them with a default
       m_controllers[i]->EmulatedController::LoadDefaults(g_controller_interface);
       m_controllers[i]->UpdateReferences(g_controller_interface);
@@ -130,11 +147,21 @@ void InputConfig::SaveConfig()
     controller->SaveConfig(inifile.GetOrCreateSection(controller->GetName()));
   }
 
+  std::vector<std::string> controller_names;
+  for (const auto& controller : m_controllers)
+  {
+    if (controller)
+      controller_names.push_back(controller->GetName());
+  }
+
+  m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
   inifile.Save(ini_filename);
 }
 
 ControllerEmu::EmulatedController* InputConfig::GetController(int index) const
 {
+  if (index < 0 || static_cast<size_t>(index) >= m_controllers.size() || !m_controllers[index])
+    return nullptr;
   return m_controllers.at(index).get();
 }
 
@@ -199,8 +226,6 @@ bool InputConfig::IsControllerControlledByGamepadDevice(int index) const
 
 void InputConfig::GenerateControllerTextures(const Common::IniFile& file)
 {
-  m_dynamic_input_tex_config_manager.Load();
-
   std::vector<std::string> controller_names;
   for (auto& controller : m_controllers)
   {

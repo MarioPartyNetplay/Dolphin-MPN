@@ -252,12 +252,16 @@ struct VideoConfig final
   bool bShowSpeed = false;
   bool bShowSpeedColors = false;
   int iPerfSampleUSec = 0;
+  bool bShowNetPlayPing = false;
+  bool bShowMPTurn = true;
+  bool bShowNetPlayMessages = false;
   bool bOverlayStats = false;
   bool bOverlayProjStats = false;
   bool bOverlayScissorStats = false;
   bool bTexFmtOverlayEnable = false;
   bool bTexFmtOverlayCenter = false;
   bool bLogRenderTimeToFile = false;
+  bool bLogTurnCountToFile = false;
 
   // Render
   bool bWireFrame = false;
@@ -268,6 +272,7 @@ struct VideoConfig final
   bool bDumpMipmapTextures = false;
   bool bDumpBaseTextures = false;
   bool bHiresTextures = false;
+  bool bHiresTextures1 = false;
   bool bCacheHiresTextures = false;
   bool bDumpEFBTarget = false;
   bool bDumpXFBTarget = false;

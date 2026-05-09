@@ -23,6 +23,11 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   target_sources(dolphin-nogui PRIVATE PlatformFBDev.cpp)
 endif()
 
+if(EMSCRIPTEN)
+  target_sources(dolphin-nogui PRIVATE PlatformWeb.cpp)
+endif()
+
+set_target_properties(dolphin-nogui PROPERTIES OUTPUT_NAME dolphin-emu-nogui)
 if (WIN32)
   target_sources(dolphin-nogui PRIVATE DolphinNoGUI.exe.manifest DolphinNoGUI.rc)
 

@@ -11,6 +11,8 @@
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
+#include <Common/CommonPaths.h>
+#include <Core/ConfigManager.h>
 
 namespace HLE_Misc
 {
@@ -22,6 +24,31 @@ void UnimplementedFunction(const Core::CPUThreadGuard& guard)
   auto& ppc_state = system.GetPPCState();
   ppc_state.npc = LR(ppc_state);
 }
+
+const char* GetGeckoCodeHandlerPath()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER); // Get the integer value
+  switch (code_handler_value)
+  {
+    case 0: return GECKO_CODE_HANDLER; // Dolphin (Stock)
+    case 1: return GECKO_CODE_HANDLER_MPN; // MPN (Extended)
+    default:
+      return GECKO_CODE_HANDLER_MPN;  // Fallback
+  }
+}
+
+bool IsGeckoCodeHandlerEnabled()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER); // Get the integer value
+  return code_handler_value == 1; // Return true for 1 and 2
+}
+
+bool IsGeckoCodeHandlerMPN()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER); // Get the integer value
+  return code_handler_value == 2; // Return true for 1 and 2
+}
+
 
 void HBReload(const Core::CPUThreadGuard& guard)
 {
@@ -35,7 +62,6 @@ void GeckoCodeHandlerICacheFlush(const Core::CPUThreadGuard& guard)
 {
   auto& system = guard.GetSystem();
   auto& ppc_state = system.GetPPCState();
-  auto& jit_interface = system.GetJitInterface();
 
   // Work around the codehandler not properly invalidating the icache, but
   // only the first few frames.
@@ -54,7 +80,7 @@ void GeckoCodeHandlerICacheFlush(const Core::CPUThreadGuard& guard)
   }
   PowerPC::MMU::HostWrite<u32>(guard, gch_gameid + 1, Gecko::INSTALLER_BASE_ADDRESS);
 
-  ppc_state.iCache.Reset(jit_interface);
+  ppc_state.iCache.Reset();
 }
 
 // Because Dolphin messes around with the CPU state instead of patching the game binary, we

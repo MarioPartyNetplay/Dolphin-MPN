@@ -3,14 +3,18 @@
 
 #include "VideoCommon/HiresTextures.h"
 
+#include <fmt/format.h>
+
+#include <algorithm>
+#include <filesystem>
+#include <iostream>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <xxhash.h>
-
-#include <fmt/format.h>
 
 #include "Common/CommonPaths.h"
 #include "Common/FileSearch.h"
@@ -78,22 +82,20 @@ void HiresTexture::Shutdown()
 
 void HiresTexture::Update()
 {
-  if (!g_ActiveConfig.bHiresTextures)
-  {
-    Clear();
-    return;
-  }
-
   const std::string& game_id = SConfig::GetInstance().GetGameID();
-  const std::set<std::string> texture_directories =
+  std::set<std::string> texture_directories =
       GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
-  constexpr auto extensions = std::to_array<std::string_view>({".png", ".dds"});
+
+  const std::set<std::string> additional_texture_directories =
+      GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/Textures/", game_id);
+
+  texture_directories.insert(additional_texture_directories.begin(),
+                             additional_texture_directories.end());
+
+  const std::vector<std::string_view> extensions{".png", ".dds"};
 
   for (const auto& texture_directory : texture_directories)
   {
-    // Watch this directory for any texture reloads
-    s_file_library->Watch(texture_directory);
-
     const auto texture_paths =
         Common::DoFileSearch(texture_directory, extensions, /*recursive*/ true);
 
@@ -118,11 +120,12 @@ void HiresTexture::Update()
         }
         else
         {
-          // Since this is just a texture (single file) the mapper doesn't really matter
-          // just provide a string
-          s_file_library->SetAssetIDMapData(filename, std::map<std::string, std::filesystem::path>{
-                                                          {"texture", StringToPath(path)}});
+          // Map the texture data
+          s_file_library->SetAssetIDMapData(
+              filename,
+              std::map<std::string, std::filesystem::path>{{"texture", StringToPath(path)}});
 
+          // Cache the texture if necessary
           if (g_ActiveConfig.bCacheHiresTextures)
           {
             auto hires_texture =
@@ -134,6 +137,7 @@ void HiresTexture::Update()
       }
     }
 
+    // Log if any textures failed to be inserted
     if (failed_insert)
     {
       ERROR_LOG_FMT(VIDEO, "One or more textures at path '{}' were already inserted",
@@ -141,6 +145,7 @@ void HiresTexture::Update()
     }
   }
 
+  // Display message depending on whether textures are being cached or not
   if (g_ActiveConfig.bCacheHiresTextures)
   {
     OSD::AddMessage(fmt::format("Loading '{}' custom textures", s_hires_texture_cache.size()),
@@ -148,8 +153,8 @@ void HiresTexture::Update()
   }
   else
   {
-    OSD::AddMessage(
-        fmt::format("Found '{}' custom textures", s_hires_texture_id_to_arbmipmap.size()), 10000);
+    OSD::AddMessage(fmt::format("Found '{}' custom textures", s_hires_texture_id_to_arbmipmap.size()),
+                    10000);
   }
 }
 

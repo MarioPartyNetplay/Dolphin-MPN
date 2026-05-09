@@ -115,6 +115,9 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
   // However, the devices that care about slots currently only go in A/B.
   const Slot slot = static_cast<Slot>(channel_num);
 
+  INFO_LOG_FMT(SP1, "EXIDevice_Create: channel={} (slot approx {}), device_type={}",
+               channel_num, static_cast<int>(slot), static_cast<int>(device_type));
+
   switch (device_type)
   {
   case EXIDeviceType::Dummy:

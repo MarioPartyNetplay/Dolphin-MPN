@@ -93,6 +93,7 @@ void GamecubeControllersWidget::CreateLayout()
     m_gc_layout->addWidget(gc_box, controller_row, 1);
     m_gc_layout->addWidget(gc_button, controller_row, 2);
   }
+
   m_gc_box->setLayout(m_gc_layout);
 
   auto* layout = new QVBoxLayout;

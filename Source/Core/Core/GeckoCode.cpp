@@ -20,6 +20,10 @@
 #include "Core/Host.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "ConfigManager.h"
+#include "Config/MainSettings.h"
+#include "VideoCommon/OnScreenDisplay.h"
+
 #include "Core/System.h"
 
 namespace Gecko
@@ -112,15 +116,40 @@ std::vector<GeckoCode> SetAndReturnActiveCodes(std::span<const GeckoCode> gcodes
   return s_active_codes;
 }
 
+const char* GetGeckoCodeHandlerPath()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER);
+  switch (code_handler_value)
+  {
+  case 0:
+    return GECKO_CODE_HANDLER;  // Dolphin (Stock)
+  case 1:
+    return GECKO_CODE_HANDLER_MPN;  // MPN (Extended)
+  default:
+    return GECKO_CODE_HANDLER_MPN;  // Fallback
+  }
+}
+
+bool IsGeckoCodeHandlerEnabled()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER);
+  return code_handler_value == 1;
+}
+
+bool IsGeckoCodeHandlerMPN()
+{
+  int code_handler_value = Config::Get(Config::MAIN_CODE_HANDLER);
+  return code_handler_value == 1;
+}
+
 // Requires s_active_codes_lock
 // NOTE: Refer to "codehandleronly.s" from Gecko OS.
 static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
 {
   std::string data;
-  if (!File::ReadFileToString(File::GetSysDirectory() + GECKO_CODE_HANDLER, data))
+  if (!File::ReadFileToString(File::GetSysDirectory() + GetGeckoCodeHandlerPath(), data))
   {
-    ERROR_LOG_FMT(ACTIONREPLAY,
-                  "Could not enable cheats because " GECKO_CODE_HANDLER " was missing.");
+    ERROR_LOG_FMT(ACTIONREPLAY, "Could not enable cheats because the selected codehandler was missing.");
     return Installation::Failed;
   }
 
@@ -152,9 +181,51 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
     }
   }
 
-  const u32 codelist_base_address =
-      INSTALLER_BASE_ADDRESS + static_cast<u32>(data.size()) - CODE_SIZE;
-  const u32 codelist_end_address = INSTALLER_END_ADDRESS;
+  const bool is_mpn_handler_and_game_id_gm4e01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GM4E01");
+  const bool is_mpn_handler_and_game_id_rm8e01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "RM8E01");
+  const bool is_mpn_handler_and_game_id_gp7e01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP7E01");
+  const bool is_mpn_handler_and_game_id_gp6e01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP6E01");
+  const bool is_mpn_handler_and_game_id_gp5e01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP5E01");
+  const bool is_mpn_handler_and_game_id_gmpe01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GMPE01") || (SConfig::GetInstance().GetGameID() == "GMPEDX" || SConfig::GetInstance().GetGameID() == "GMPDX2");
+
+  u32 codelist_base_address =
+      is_mpn_handler_and_game_id_gm4e01 ? INSTALLER_BASE_ADDRESS_MKDD :
+      is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_BASE_ADDRESS_MP8 :
+      is_mpn_handler_and_game_id_gp7e01 ? INSTALLER_BASE_ADDRESS_MP7 :
+      is_mpn_handler_and_game_id_gp6e01 ? INSTALLER_BASE_ADDRESS_MP6 :
+      is_mpn_handler_and_game_id_gp5e01 ? INSTALLER_BASE_ADDRESS_MP5 :
+      is_mpn_handler_and_game_id_gmpe01 ? INSTALLER_BASE_ADDRESS_MP4 :
+                                          INSTALLER_BASE_ADDRESS + static_cast<u32>(data.size()) -
+                                              CODE_SIZE;
+
+  u32 codelist_end_address = is_mpn_handler_and_game_id_gm4e01 ? INSTALLER_END_ADDRESS_MKDD :
+                             is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_END_ADDRESS_MP8 :
+                             is_mpn_handler_and_game_id_gp7e01 ? INSTALLER_END_ADDRESS_MP7 :
+                             is_mpn_handler_and_game_id_gp6e01 ? INSTALLER_END_ADDRESS_MP6 :
+                             is_mpn_handler_and_game_id_gp5e01 ? INSTALLER_END_ADDRESS_MP5 :
+                             is_mpn_handler_and_game_id_gmpe01 ? INSTALLER_END_ADDRESS_MP4 :
+                                                                 INSTALLER_END_ADDRESS;
+
+  if (is_mpn_handler_and_game_id_rm8e01 || is_mpn_handler_and_game_id_gp7e01 ||
+      is_mpn_handler_and_game_id_gp6e01 || is_mpn_handler_and_game_id_gp5e01 ||
+      is_mpn_handler_and_game_id_gmpe01 || is_mpn_handler_and_game_id_gm4e01)
+  {
+    // Move Gecko code handler to the free mem region
+    for (u32 addr = codelist_base_address; addr < codelist_end_address; addr += 4)
+    {
+      PowerPC::MMU::HostWrite<u32>(guard, 0x00000000, addr);
+    }
+    PowerPC::MMU::HostWrite<u32>(guard, ((codelist_base_address & 0xFFFF0000) >> 16) + 0x3DE00000,
+                                0x80001904);
+    PowerPC::MMU::HostWrite<u32>(guard, (codelist_base_address & 0x0000FFFF) + 0x61EF0000,
+                                0x80001908);
+  }
 
   // Write a magic value to 'gameid' (codehandleronly does not actually read this).
   // This value will be read back and modified over time by HLE_Misc::GeckoCodeHandlerICacheFlush.
@@ -180,6 +251,12 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
                      "not write: \"{}\". Need {} bytes, only {} remain.",
                      active_code.name, active_code.codes.size() * CODE_SIZE,
                      end_address - next_address);
+      OSD::AddMessage(
+          fmt::format("Too many GeckoCodes! Ran out of storage space in Game RAM. Could "
+                      "not write: \"{}\". Need {} bytes, only {} remain.",
+                      active_code.name, active_code.codes.size() * CODE_SIZE,
+                      end_address - next_address),
+          OSD::Duration::VERY_LONG);
       continue;
     }
 
@@ -194,6 +271,9 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
   WARN_LOG_FMT(ACTIONREPLAY, "GeckoCodes: Using {} of {} bytes", next_address - start_address,
                end_address - start_address);
 
+
+  OSD::AddMessage(fmt::format("Gecko Codes: Using {} of {} bytes", next_address - start_address, end_address - start_address));
+
   // Stop code. Tells the handler that this is the end of the list.
   PowerPC::MMU::HostWrite<u32>(guard, 0xF0000000, next_address);
   PowerPC::MMU::HostWrite<u32>(guard, 0x00000000, next_address + 4);
@@ -204,11 +284,9 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
 
   // Invalidate the icache and any asm codes
   auto& ppc_state = guard.GetSystem().GetPPCState();
-  auto& memory = guard.GetSystem().GetMemory();
-  auto& jit_interface = guard.GetSystem().GetJitInterface();
   for (u32 j = 0; j < (INSTALLER_END_ADDRESS - INSTALLER_BASE_ADDRESS); j += 32)
   {
-    ppc_state.iCache.Invalidate(memory, jit_interface, INSTALLER_BASE_ADDRESS + j);
+    ppc_state.iCache.Invalidate(INSTALLER_BASE_ADDRESS + j);
   }
   Host_JitCacheInvalidation();
   return Installation::Installed;

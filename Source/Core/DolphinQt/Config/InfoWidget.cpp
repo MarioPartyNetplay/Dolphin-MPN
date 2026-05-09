@@ -17,7 +17,7 @@
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/Volume.h"
-#include "DiscIO/WiiSaveBanner.h"
+#include "DiscIO/WiiBanner.h"
 
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/ImageConverter.h"
@@ -183,7 +183,7 @@ QWidget* InfoWidget::CreateBannerGraphic(const QPixmap& image)
 
   QLabel* banner = new QLabel();
   banner->setPixmap(image.scaled(image.size().boundedTo(
-      QSize{DiscIO::WiiSaveBanner::BANNER_WIDTH, DiscIO::WiiSaveBanner::BANNER_HEIGHT})));
+      QSize{DiscIO::WiiBanner::BANNER_WIDTH, DiscIO::WiiBanner::BANNER_HEIGHT})));
 
   QPushButton* save = new QPushButton(tr("Save as..."));
   connect(save, &QPushButton::clicked, this, &InfoWidget::SaveBanner);

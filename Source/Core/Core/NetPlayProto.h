@@ -108,6 +108,7 @@ struct NetSettings
   bool golf_mode = false;
   bool use_fma = false;
   bool hide_remote_gbas = false;
+  bool bba_mode = false;
 
   Sram sram;
 
@@ -190,6 +191,9 @@ enum class MessageID : u8
 
   SyncSaveData = 0xF1,
   SyncCodes = 0xF2,
+  
+  //MPN
+  SendCodes = 0xF3,
 };
 
 enum class ConnectionError : u8

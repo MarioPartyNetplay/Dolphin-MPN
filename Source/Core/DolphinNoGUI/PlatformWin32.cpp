@@ -177,17 +177,6 @@ LRESULT PlatformWin32::WndProc(const HWND hwnd, const UINT msg, const WPARAM wPa
     SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(platform));
     return DefWindowProc(hwnd, msg, wParam, lParam);
   }
-
-  case WM_CREATE:
-  {
-    if (hwnd)
-    {
-      // Remove rounded corners from the render window on Windows 11
-      constexpr DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_DONOTROUND;
-      DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner_preference,
-                            sizeof(corner_preference));
-    }
-  }
   break;
 
   case WM_SIZE:

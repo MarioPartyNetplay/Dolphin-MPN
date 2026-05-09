@@ -21,7 +21,7 @@ set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_SOURCE_DIR}/CMake/FlagsOverr
 # "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND: not found".
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-project(dolphin-emu)
+project(dolphin-mpn)
 
 if (CMAKE_VERSION VERSION_LESS "3.25" AND CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(LINUX TRUE)
@@ -120,7 +120,7 @@ if(WIN32)
 endif()
 
 # Enable SDL by default on operating systems that aren't Android.
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT EMSCRIPTEN)
   option(ENABLE_SDL "Enables SDL as a generic controller backend" ON)
 else()
   option(ENABLE_SDL "Enables SDL as a generic controller backend" OFF)
@@ -146,6 +146,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
+# Enable gamemode support on Linux and macOS Game Mode
+
+
 if(UNIX)
   # Builds a relocatable binary on Linux.
   # The Sys folder will need to be copied to the Binaries folder.
@@ -170,7 +173,7 @@ include(RemoveCompileFlag)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # Set up paths
-set(datadir ${CMAKE_INSTALL_FULL_DATADIR}/dolphin-emu CACHE PATH "datadir")
+set(datadir ${CMAKE_INSTALL_FULL_DATADIR}/dolphin-mpn CACHE PATH "datadir")
 add_definitions(-DDATA_DIR="${datadir}/")
 
 if(CMAKE_SYSROOT)
@@ -620,9 +623,8 @@ if (_M_X86_64)
 endif()
 add_subdirectory(Externals/cpp-optparse)
 
-dolphin_find_optional_system_library_pkgconfig(FMT
-  fmt>=10.1 fmt::fmt Externals/fmt
-)
+# Add fmt early since it's needed by multiple targets
+add_subdirectory(Externals/fmt)
 
 add_subdirectory(Externals/imgui)
 add_subdirectory(Externals/implot)
@@ -685,7 +687,10 @@ dolphin_find_optional_system_library(LZO Externals/LZO)
 
 dolphin_find_optional_system_library_pkgconfig(lz4 liblz4>=1.8 LZ4::LZ4 Externals/lz4)
 
-dolphin_find_optional_system_library_pkgconfig(SPNG spng spng::spng Externals/libspng)
+# Force SPNG to use bundled version to avoid linking issues
+dolphin_add_bundled_library(SPNG AUTO Externals/libspng)
+
+# libspng CMakeLists.txt already creates the spng::spng alias target
 
 # Using static FreeSurround from Externals
 # There is no system FreeSurround library.
@@ -713,6 +718,7 @@ if(ENABLE_SDL)
 endif()
 
 dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
+endif()
 
 if(USE_UPNP)
   dolphin_find_optional_system_library(MINIUPNPC Externals/miniupnpc 1.6)
@@ -768,6 +774,11 @@ if(WIN32 OR LINUX OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME S
   add_definitions(-DHAVE_CPPIPC)
 endif()
 
+# Add libzmq for non-Apple platforms that aren't Android
+if(NOT APPLE AND NOT ANDROID)
+  add_subdirectory(Externals/libzmq)
+endif()
+
 ########################################
 # Pre-build events: Define configuration variables and write SCM info header
 #
@@ -785,13 +796,6 @@ if(APPLE)
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Source/Core)
   if (NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/Source/Core/VersionInfo.plist)
     file(TOUCH ${CMAKE_CURRENT_BINARY_DIR}/Source/Core/VersionInfo.plist)
-  endif()
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Flatpak)
-  if (NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/Flatpak/org.DolphinEmu.dolphin-emu.metainfo.xml)
-    file(TOUCH ${CMAKE_CURRENT_BINARY_DIR}/Flatpak/org.DolphinEmu.dolphin-emu.metainfo.xml)
   endif()
 endif()
 
@@ -845,45 +849,92 @@ if(NOT CMAKE_SYSTEM_NAME MATCHES "Linux|FreeBSD|OpenBSD|Darwin")
 endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Linux|FreeBSD|OpenBSD")
   # Install the application icon and menu item
-  install(FILES Data/dolphin-emu.svg
-          DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps)
-  install(FILES Data/dolphin-emu.png
+  install(FILES Data/dolphin-mpn.png
           DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/256x256/apps)
-  install(FILES Data/dolphin-emu.desktop
+  install(FILES Data/dolphin-mpn.desktop
           DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
   # Install manpages
-  install(FILES Data/dolphin-emu.6
+  install(FILES Data/dolphin-mpn.6
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man6)
-  install(FILES Data/dolphin-emu-nogui.6
+  install(FILES Data/dolphin-mpn-nogui.6
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man6)
 endif()
 
-# packaging information
-set(CPACK_PACKAGE_NAME "dolphin-emu")
-set(CPACK_PACKAGE_VENDOR "Dolphin Team")
+# General package info
+set(CPACK_PACKAGE_NAME "dolphin-mpn")
+set(CPACK_PACKAGE_VENDOR "Mario Party Netplay")
 set(CPACK_PACKAGE_VERSION_MAJOR ${DOLPHIN_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${DOLPHIN_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${DOLPHIN_VERSION_PATCH})
 set(CPACK_PACKAGE_DESCRIPTION_FILE ${PROJECT_SOURCE_DIR}/Data/cpack_package_description.txt)
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A GameCube and Wii emulator")
 
-set(CPACK_RPM_PACKAGE_GROUP System/Emulators/Other)
-set(CPACK_RPM_PACKAGE_LICENSE GPL-2.0)
-# TODO: CPACK_RESOURCE_FILE_README
-# TODO: CPACK_RESOURCE_FILE_WELCOME
-# TODO: CPACK_PACKAGE_ICON
-# TODO: CPACK_NSIS_*
-# TODO: Use CPack components for DSPSpy, etc => cpack_add_component
+# RPM Specific
+# set(CPACK_RPM_PACKAGE_GROUP "System/Emulators/Other")
+# set(CPACK_RPM_PACKAGE_LICENSE "GPL-2.0")
+# set(CPACK_RPM_PACKAGE_ARCHITECTURE "x86_64")
+# set(CPACK_RPM_PACKAGE_REQUIRES "glibc, libstdc++, SDL2")
+# set(CPACK_RPM_PACKAGE_VENDOR "Mario Party Netplay")
+# set(CPACK_RPM_PACKAGE_MAINTAINER "Dolphin Team <team@dolphin-emu.org>")
 
-# Debian Specific. Install dpkg-dev for automatic deps generation
+# Debian Specific
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_SECTION "Games")
-
+set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_SET_DESTDIR ON)
-set(CPACK_SOURCE_GENERATOR "TGZ;TBZ2;ZIP")
-set(CPACK_SOURCE_IGNORE_FILES  "\\\\.#;/#;.*~;\\\\.swp;/\\\\.git")
-list(APPEND CPACK_SOURCE_IGNORE_FILES "${CMAKE_BINARY_DIR}")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Tabitha Hanegan <info@tabithahanegan.com>")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS 
+    "libasound2t64, libavcodec61, libavformat61, libavutil59, libbluetooth3, 
+    libbz2-1.0, libc6, libcubeb0, libcurl4t64, libegl1, libenet7, libevdev2, 
+    libfmt10, libgcc-s1, libglx0, libhidapi-hidraw0, liblz4-1, liblzma5, 
+    liblzo2-2, libmgba0.10t64, libminiupnpc18, libopengl0, libpugixml1v5, 
+    libpulse0, libqt6core6t64, libqt6dbus6, libqt6gui6, libqt6widgets6, 
+    libsdl2-2.0-0, libsfml-network2.6, libsfml-system2.6, libspng0, libstb0t64, 
+    libstdc++6, libswscale8, libtinygltf6d, libudev1, libusb-1.0-0, libx11-6, 
+    libxi6, libxrandr2, libxxhash0, libzstd1, zlib1g")
+# Check for Debian-based systems
+if(EXISTS "/etc/debian_version")
+    set(CPACK_GENERATOR "DEB")
+    if(EXISTS "/etc/os-release")
+        # Read Ubuntu version
+        file(STRINGS "/etc/os-release" OS_RELEASE_CONTENTS REGEX "^VERSION_ID=")
+        string(REGEX REPLACE "VERSION_ID=\"([0-9]+)\\.([0-9]+)\"" "\\1_\\2" UBUNTU_VERSION "${OS_RELEASE_CONTENTS}")
+    endif()
+    
+    # Ensure a default value if detection fails
+    if(NOT UBUNTU_VERSION)
+        set(UBUNTU_VERSION "unknown")
+    endif()
+    
+    set(CPACK_PACKAGE_FILE_NAME "DolphinMPN-ubuntu${UBUNTU_VERSION}")
+endif()
+
+# Arch Linux Specific
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_PACKAGE_CONTACT "Tabitha Hanegan <info@tabithahanegan.com>")
+# Check for Debian-based systems
+if(EXISTS "/etc/arch-release")
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "DolphinMPN-archLinux")
+endif()
+
+# Resource files (TODO items)
+set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/Readme.md)
+set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/Data/dolphin-mpn.png)
+
+# Disable MGBA Hack
+set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 
 # CPack must be included after the CPACK_* variables are set in order for those
 # variables to take effect.
-Include(CPack)
+include(InstallRequiredSystemLibraries)
+include(CPack)
+
+# Unhijack version from MGBA
+execute_process(
+    COMMAND git rev-parse --short=7 HEAD
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+set(VERSION "${GIT_COMMIT_HASH}")

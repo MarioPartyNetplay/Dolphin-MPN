@@ -214,7 +214,7 @@ void AdvancedWidget::ConnectWidgets()
     m_dump_base_textures->setEnabled(checked);
   });
   connect(m_enable_graphics_mods, &QCheckBox::toggled, this,
-          [](bool checked) { emit Settings::Instance().EnableGfxModsChanged(checked); });
+          [this](bool checked) { emit Settings::Instance().EnableGfxModsChanged(checked); });
 #if defined(HAVE_FFMPEG)
   connect(m_dump_use_lossless, &QCheckBox::toggled, this,
           [this](bool checked) { m_dump_bitrate->setEnabled(!checked); });

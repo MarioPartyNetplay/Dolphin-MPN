@@ -35,6 +35,7 @@ class GameCount;
 class GameList;
 class GBATASInputWindow;
 class GCTASInputWindow;
+class GeckoDialog;
 class HotkeyScheduler;
 class InfinityBaseWindow;
 class JITWidget;
@@ -58,6 +59,7 @@ class WiiTASInputWindow;
 class WiiSpeakWindow;
 class LogitechMicWindow;
 struct WindowSystemInfo;
+class ControllersPane;
 
 namespace Core
 {
@@ -85,7 +87,8 @@ class MainWindow final : public QMainWindow
 
 public:
   explicit MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
-                      const std::string& movie_path);
+                      const std::string& movie_path, const bool netplay_join,
+                      const std::optional<UICommon::GameFile> netplay_host);
   ~MainWindow() override;
 
   WindowSystemInfo GetWindowSystemInfo() const;
@@ -94,6 +97,7 @@ public:
   QMenu* createPopupMenu() override;
 
   void ShowTriforceWindow();
+  void CheckForUpdatesAuto();
 
 signals:
   void ReadOnlyModeChanged(bool read_only);
@@ -108,6 +112,7 @@ private:
 
   // May ask for confirmation. Returns whether or not it actually stopped.
   bool RequestStop();
+  bool RequestStopNetplay();
   void ForceStop();
   void Reset();
   void FrameAdvance();
@@ -174,6 +179,7 @@ private:
   void ShowGraphicsWindow();
   void ShowFreeLookWindow();
   void ShowAboutDialog();
+  void ShowUpdateDialog();
   void ShowHotkeyDialog();
   void ShowNetPlaySetupDialog();
   void ShowNetPlayBrowser();
@@ -230,6 +236,7 @@ private:
   void dragEnterEvent(QDragEnterEvent* event) override;
   void dropEvent(QDropEvent* event) override;
   QSize sizeHint() const override;
+  void ShowGeckoCodes();
 
   Core::System& m_system;
 
@@ -252,7 +259,8 @@ private:
   bool m_is_screensaver_inhibited = false;
   u32 m_state_slot = 1;
   std::unique_ptr<BootParameters> m_pending_boot;
-
+  GeckoDialog* m_gecko_dialog = nullptr;
+  ControllersPane* m_controllers_window = nullptr;
   SettingsWindow* m_settings_window = nullptr;
   // m_fifo_window doesn't set MainWindow as its parent so that the fifo can be focused without
   // raising the main window, so use a unique_ptr to make sure it gets destroyed.
@@ -263,7 +271,6 @@ private:
   LogitechMicWindow* m_logitech_mic_window = nullptr;
   MappingWindow* m_hotkey_window = nullptr;
   FreeLookWindow* m_freelook_window = nullptr;
-
   HotkeyScheduler* m_hotkey_scheduler;
   NetPlayDialog* m_netplay_dialog;
   DiscordHandler* m_netplay_discord;

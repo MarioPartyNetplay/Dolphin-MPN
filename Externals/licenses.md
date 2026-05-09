@@ -44,6 +44,8 @@ Dolphin includes or links code of the following third-party software projects:
    [University of Illinois/NCSA Open Source license](http://llvm.org/docs/DeveloperPolicy.html#license)
 - [LZO](http://www.oberhumer.com/opensource/lzo/):
    [GPLv2+](http://www.oberhumer.com/opensource/gpl.html)
+- [libzmq](https://github.com/zeromq/libzmq):
+   [MPL 2.0](https://github.com/zeromq/libzmq/blob/master/LICENSE)
 - [mGBA](http://mgba.io)
    [MPL 2.0](https://github.com/mgba-emu/mgba/blob/master/LICENSE)
 - [MiniUPnPc](http://miniupnp.free.fr/):

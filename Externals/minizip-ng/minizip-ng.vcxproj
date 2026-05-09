@@ -4,6 +4,7 @@
   <Import Project="$(VSPropsDir)Base.Targets.props" />
   <PropertyGroup Label="Globals">
     <ProjectGuid>{23114507-079A-4418-9707-CFA81A03CA99}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <Import Project="$(VSPropsDir)Configuration.StaticLibrary.props" />
@@ -21,6 +22,10 @@
       <AdditionalIncludeDirectories>minizip-ng;minizip-ng\compat;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>HAVE_ZLIB;ZLIB_COMPAT;MZ_ZIP_NO_CRYPTO;MZ_ZIP_NO_ENCRYPTION;HAVE_STDINT_H;HAVE_INTTYPES_H;NO_FSEEKO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <PreBuildEvent>
+      <Command>python "$(ProjectDir)fix_headers.py"</Command>
+      <Message>Running minizip-ng header fix script...</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="minizip-ng\mz_crypt.c" />

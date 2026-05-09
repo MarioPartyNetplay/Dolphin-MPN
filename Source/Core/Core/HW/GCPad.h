@@ -20,7 +20,6 @@ namespace Pad
 void Shutdown();
 void Initialize();
 void LoadConfig();
-void GenerateDynamicInputTextures();
 bool IsInitialized();
 
 InputConfig* GetConfig();

@@ -3,7 +3,7 @@ var oFS				= new ActiveXObject("Scripting.FileSystemObject");
 
 var outfile			= "./scmrev.h";
 var cmd_revision	= " rev-parse HEAD";
-var cmd_describe	= " describe --always --long --dirty";
+var cmd_describe	= " rev-parse --short=7 HEAD";
 var cmd_branch		= " rev-parse --abbrev-ref HEAD";
 var cmd_commits_ahead = " rev-list --count HEAD ^master";
 var cmd_get_tag       = " describe --exact-match HEAD";
@@ -100,7 +100,7 @@ var branch		= GetFirstStdOutLine(gitexe + cmd_branch);
 var commits_ahead = GetFirstStdOutLine(gitexe + cmd_commits_ahead);
 
 // Get environment information.
-var distributor = wshShell.ExpandEnvironmentStrings("%DOLPHIN_DISTRIBUTOR%");
+var distributor = "Mario Party Netplay";
 if (distributor == "%DOLPHIN_DISTRIBUTOR%") distributor = "None";
 var default_update_track = wshShell.ExpandEnvironmentStrings("%DOLPHIN_DEFAULT_UPDATE_TRACK%");
 if (default_update_track == "%DOLPHIN_DEFAULT_UPDATE_TRACK%") default_update_track = "";

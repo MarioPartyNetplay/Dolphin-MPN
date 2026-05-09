@@ -29,6 +29,8 @@ public:
   // Return false to abort the request
   using ProgressCallback = std::function<bool(s64 dltotal, s64 dlnow, s64 ultotal, s64 ulnow)>;
 
+  void SetProgressCallback(ProgressCallback callback);
+
   explicit HttpRequest(std::chrono::milliseconds timeout_ms = std::chrono::milliseconds{3000},
                        ProgressCallback callback = nullptr);
   ~HttpRequest();
@@ -56,12 +58,15 @@ public:
   Response Post(const std::string& url, std::string_view payload, const Headers& headers = {},
                 AllowedReturnCodes codes = AllowedReturnCodes::Ok_Only);
 
-  Response PostMultiform(const std::string& url, std::span<Multiform> multiform,
+  Response PostMultiform(const std::string& url, const std::vector<Multiform>& multiform,
                          const Headers& headers = {},
                          AllowedReturnCodes codes = AllowedReturnCodes::Ok_Only);
+
+  std::string GetFinalUrl() const;
 
 private:
   class Impl;
   std::unique_ptr<Impl> m_impl;
+  ProgressCallback m_callback;
 };
 }  // namespace Common

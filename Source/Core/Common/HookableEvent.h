@@ -88,6 +88,7 @@ public:
 private:
   struct Listener
   {
+    explicit Listener(CallbackType callback) : callback(std::move(callback)) {}
     const CallbackType callback;
     bool is_pending_removal{};
   };

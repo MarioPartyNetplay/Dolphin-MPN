@@ -13,6 +13,10 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include "DolphinQt/Config/ToolTipControls/ToolTipCheckBox.h"
+#include "DolphinQt/Config/ToolTipControls/ToolTipComboBox.h"
+#include "DolphinQt/Config/ToolTipControls/ToolTipPushButton.h"
+
 #include "Core/AchievementManager.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/UISettings.h"
@@ -20,29 +24,17 @@
 #include "Core/DolphinAnalytics.h"
 #include "Core/System.h"
 
-#include "DolphinQt/Config/ConfigControls/ConfigBool.h"
-#include "DolphinQt/Config/ToolTipControls/ToolTipCheckBox.h"
-#include "DolphinQt/Config/ToolTipControls/ToolTipComboBox.h"
-#include "DolphinQt/Config/ToolTipControls/ToolTipPushButton.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
+#include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
+#include "DolphinQt/QtUtils/SetWindowDecorations.h"
 #include "DolphinQt/QtUtils/SignalBlocking.h"
 #include "DolphinQt/Settings.h"
 
-#include "UICommon/AutoUpdate.h"
 #ifdef USE_DISCORD_PRESENCE
 #include "UICommon/DiscordPresence.h"
 #endif
 
-constexpr int AUTO_UPDATE_DISABLE_INDEX = 0;
-constexpr int AUTO_UPDATE_RELEASE_INDEX = 1;
-constexpr int AUTO_UPDATE_DEV_INDEX = 2;
-
-constexpr const char* AUTO_UPDATE_DISABLE_STRING = "";
-// Before the official switch to the rolling release cycle in 2407, de facto releases were called
-// beta builds. To maintain backward compatibility and let users update from those builds to current
-// releases the value of this string remains "beta".
-constexpr const char* AUTO_UPDATE_RELEASE_STRING = "beta";
-constexpr const char* AUTO_UPDATE_DEV_STRING = "dev";
+// Auto-update constants removed
 
 constexpr int FALLBACK_REGION_NTSCJ_INDEX = 0;
 constexpr int FALLBACK_REGION_NTSCU_INDEX = 1;
@@ -53,7 +45,6 @@ GeneralPane::GeneralPane(QWidget* parent) : QWidget(parent)
 {
   CreateLayout();
   LoadConfig();
-  AddDescriptions();
 
   ConnectLayout();
 
@@ -69,16 +60,9 @@ void GeneralPane::CreateLayout()
   m_main_layout = new QVBoxLayout;
   // Create layout here
   CreateBasic();
-
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-    CreateAutoUpdate();
-
   CreateFallbackRegion();
 
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-  CreateAnalytics();
-#endif
-
+  CreateCheats();
   m_main_layout->addStretch(1);
   setLayout(m_main_layout);
 }
@@ -88,9 +72,14 @@ void GeneralPane::OnEmulationStateChanged(Core::State state)
   const bool running = state != Core::State::Uninitialized;
 
   m_checkbox_dualcore->setEnabled(!running);
+#ifdef USE_RETRO_ACHIEVEMENTS
+  bool hardcore = AchievementManager::GetInstance().IsHardcoreModeActive();
+  m_checkbox_cheats->setEnabled(!running && !hardcore);
+#else   // USE_RETRO_ACHIEVEMENTS
   m_checkbox_cheats->setEnabled(!running);
   m_checkbox_load_games_into_memory->setEnabled(!running);
   m_checkbox_override_region_settings->setEnabled(!running);
+#endif  // USE_RETRO_ACHIEVEMENTS
 #ifdef USE_DISCORD_PRESENCE
   m_checkbox_discord_presence->setEnabled(!running);
 #endif
@@ -101,36 +90,25 @@ void GeneralPane::OnEmulationStateChanged(Core::State state)
 
 void GeneralPane::ConnectLayout()
 {
-  connect(m_checkbox_cheats, &QCheckBox::toggled, &Settings::Instance(),
-          &Settings::EnableCheatsChanged);
+  connect(m_checkbox_dualcore, &ToolTipCheckBox::toggled, this, &GeneralPane::OnSaveConfig);
+  connect(m_checkbox_cheats, &ToolTipCheckBox::toggled, this, &GeneralPane::OnSaveConfig);
+  connect(m_checkbox_override_region_settings, &ToolTipCheckBox::stateChanged, this,
+          &GeneralPane::OnSaveConfig);
+  connect(m_checkbox_auto_disc_change, &ToolTipCheckBox::toggled, this, &GeneralPane::OnSaveConfig);
 #ifdef USE_DISCORD_PRESENCE
-  connect(m_checkbox_discord_presence, &QCheckBox::toggled, this, &GeneralPane::OnSaveConfig);
+  connect(m_checkbox_discord_presence, &ToolTipCheckBox::toggled, this, &GeneralPane::OnSaveConfig);
 #endif
 
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    connect(m_combobox_update_track, &QComboBox::currentIndexChanged, this,
-            &GeneralPane::OnSaveConfig);
-    connect(&Settings::Instance(), &Settings::AutoUpdateTrackChanged, this,
-            &GeneralPane::LoadConfig);
-  }
-
   // Advanced
-  connect(m_combobox_speedlimit, &QComboBox::currentIndexChanged, [this] {
+  connect(m_combobox_speedlimit, &ToolTipComboBox::currentIndexChanged, [this] {
     Config::SetBaseOrCurrent(Config::MAIN_EMULATION_SPEED,
                              m_combobox_speedlimit->currentIndex() * 0.1f);
   });
 
-  connect(m_combobox_fallback_region, &QComboBox::currentIndexChanged, this,
+  connect(m_combobox_fallback_region, &ToolTipComboBox::currentIndexChanged, this,
           &GeneralPane::OnSaveConfig);
   connect(&Settings::Instance(), &Settings::FallbackRegionChanged, this, &GeneralPane::LoadConfig);
 
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-  connect(&Settings::Instance(), &Settings::AnalyticsToggled, this, &GeneralPane::LoadConfig);
-  connect(m_checkbox_enable_analytics, &QCheckBox::toggled, this, &GeneralPane::OnSaveConfig);
-  connect(m_button_generate_new_identity, &QPushButton::clicked, this,
-          &GeneralPane::GenerateNewIdentity);
-#endif
 }
 
 void GeneralPane::CreateBasic()
@@ -140,7 +118,7 @@ void GeneralPane::CreateBasic()
   basic_group->setLayout(basic_group_layout);
   m_main_layout->addWidget(basic_group);
 
-  m_checkbox_dualcore = new ConfigBool(tr("Enable Dual Core (speedhack)"), Config::MAIN_CPU_THREAD);
+  m_checkbox_dualcore = new ToolTipCheckBox(tr("Enable Dual Core (speed-hack)"));
   basic_group_layout->addWidget(m_checkbox_dualcore);
 
   m_checkbox_cheats = new ConfigBool(tr("Enable Cheats"), Config::MAIN_ENABLE_CHEATS);
@@ -155,12 +133,14 @@ void GeneralPane::CreateBasic()
          "<br>System memory requirements will be much higher with this setting enabled."
          "<br><br><dolphin_emphasis>If unsure, leave this unchecked.</dolphin_emphasis>"));
 
+  m_checkbox_cheats = new ConfigBool(tr("Enable Cheats"), Config::MAIN_ENABLE_CHEATS);
+  basic_group_layout->addWidget(m_checkbox_cheats);
+
   m_checkbox_override_region_settings =
       new ConfigBool(tr("Allow Mismatched Region Settings"), Config::MAIN_OVERRIDE_REGION_SETTINGS);
   basic_group_layout->addWidget(m_checkbox_override_region_settings);
 
-  m_checkbox_auto_disc_change =
-      new ConfigBool(tr("Change Discs Automatically"), Config::MAIN_AUTO_DISC_CHANGE);
+  m_checkbox_auto_disc_change = new ToolTipCheckBox(tr("Change Discs Automatically"));
   basic_group_layout->addWidget(m_checkbox_auto_disc_change);
 
 #ifdef USE_DISCORD_PRESENCE
@@ -190,29 +170,6 @@ void GeneralPane::CreateBasic()
   speed_limit_layout->addRow(tr("&Speed Limit:"), m_combobox_speedlimit);
 }
 
-void GeneralPane::CreateAutoUpdate()
-{
-  auto* auto_update_group = new QGroupBox(tr("Auto Update Settings"));
-  auto* auto_update_group_layout = new QFormLayout;
-  auto_update_group->setLayout(auto_update_group_layout);
-  m_main_layout->addWidget(auto_update_group);
-
-  auto_update_group_layout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
-  auto_update_group_layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-
-  m_combobox_update_track = new ToolTipComboBox();
-
-  auto_update_group_layout->addRow(tr("&Auto Update:"), m_combobox_update_track);
-
-  for (const QString& option :
-       {tr("Don't Update"),
-        // i18n: Releases is a noun.
-        tr("Releases (every few months)"), tr("Dev (multiple times a day)")})
-  {
-    m_combobox_update_track->addItem(option);
-  }
-}
-
 void GeneralPane::CreateFallbackRegion()
 {
   auto* fallback_region_group = new QGroupBox(tr("Fallback Region"));
@@ -230,45 +187,94 @@ void GeneralPane::CreateFallbackRegion()
 
   for (const QString& option : {tr("NTSC-J"), tr("NTSC-U"), tr("PAL"), tr("NTSC-K")})
     m_combobox_fallback_region->addItem(option);
+
+  auto* fallback_region_description =
+      new QLabel(tr("Dolphin will use this for titles whose region cannot be determined "
+                    "automatically."));
+  fallback_region_description->setWordWrap(true);
+  fallback_region_group_layout->addWidget(fallback_region_description);
 }
 
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-void GeneralPane::CreateAnalytics()
+/*void GeneralPane::CreateAutoUpdate()
 {
-  auto* analytics_group = new QGroupBox(tr("Usage Statistics Reporting Settings"));
-  auto* analytics_group_layout = new QVBoxLayout;
-  analytics_group->setLayout(analytics_group_layout);
-  m_main_layout->addWidget(analytics_group);
+  if (!AutoUpdateChecker::SystemSupportsAutoUpdates())
+    return;
 
-  m_checkbox_enable_analytics = new ToolTipCheckBox(tr("Enable Usage Statistics Reporting"));
-  m_button_generate_new_identity = new ToolTipPushButton(tr("Generate a New Statistics Identity"));
-  analytics_group_layout->addWidget(m_checkbox_enable_analytics);
-  analytics_group_layout->addWidget(m_button_generate_new_identity);
+  auto* auto_update_group = new QGroupBox(tr("Auto Update"));
+  auto* auto_update_group_layout = new QVBoxLayout;
+  auto_update_group->setLayout(auto_update_group_layout);
+  m_main_layout->addWidget(auto_update_group);
+
+  auto* auto_update_dropdown_layout = new QFormLayout;
+  auto_update_dropdown_layout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+  auto_update_dropdown_layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  auto_update_group_layout->addLayout(auto_update_dropdown_layout);
+
+  m_combobox_update_track = new ToolTipComboBox();
+
+  m_combobox_update_track->addItem(tr("Don't Auto-Update"));
+  m_combobox_update_track->addItem(tr("Release Updates"));
+  m_combobox_update_track->addItem(tr("Development Updates"));
+
+  auto_update_dropdown_layout->addRow(tr("Auto Update:"), m_combobox_update_track);
+
+  connect(m_combobox_update_track, QOverload<int>::of(&ToolTipComboBox::currentIndexChanged), this,
+          &GeneralPane::OnSaveConfig);
+}*/
+
+
+void GeneralPane::CreateCheats()
+{
+  auto* cheats_group = new QGroupBox(tr("Cheats Settings"));
+  auto* cheats_group_layout = new QVBoxLayout;
+  cheats_group->setLayout(cheats_group_layout);
+  m_main_layout->addWidget(cheats_group);
+
+  m_checkbox_cheats = new ToolTipCheckBox(tr("Enable Cheats"));
+  cheats_group_layout->addWidget(m_checkbox_cheats);
+
+  // Add dropdown for code handler selection
+  auto* code_handler_layout = new QFormLayout();
+  auto* code_handler_label = new QLabel(tr("Code Handler:"));
+  m_combobox_codehandler = new ToolTipComboBox();
+  
+  m_combobox_codehandler->addItem(tr("Dolphin (Stock)"), QVariant(0));
+  m_combobox_codehandler->addItem(tr("MPN (Extended)"), QVariant(1));
+
+  code_handler_layout->addRow(code_handler_label, m_combobox_codehandler);
+  cheats_group_layout->addLayout(code_handler_layout);
+
+  // Add a label to inform users about NetPlay settings
+  auto* netplay_info_label = new QLabel(tr("<b>Note:</b> Codehandler needs to be Extended if code limit is reached."));
+  cheats_group_layout->addWidget(netplay_info_label);
+
+  // Add a label to define the different code handlers
+  auto* code_handler_info_label = new QLabel(tr("<b>Dolphin (Stock)</b>: Compatibility with legacy and non Dolphin-MPN builds <br>(around 3,200 bytes / 400 lines of code.)<br><br>"
+    "<b>MPN (Extended)</b>: Enhanced code handler that uses hacks to give certain games<br>currently Mario Party 4, 5, 6, 7, and 8 way more code room<br>(around 30,000 bytes / 3,750 lines of codes)."));
+  
+  code_handler_info_label->setWordWrap(true);
+  cheats_group_layout->addWidget(code_handler_info_label);
+
+  cheats_group_layout->addSpacing(10);
+
+  connect(m_combobox_codehandler, QOverload<int>::of(&ToolTipComboBox::currentIndexChanged), this, &GeneralPane::OnCodeHandlerChanged);
+
+  code_handler_layout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+  code_handler_layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 }
-#endif
 
 void GeneralPane::LoadConfig()
 {
   const QSignalBlocker blocker(this);
 
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    const auto track = Settings::Instance().GetAutoUpdateTrack().toStdString();
 
-    // If the track doesn't match any known value, set to "beta" which is the
-    // default config value on Dolphin release builds.
-    if (track == AUTO_UPDATE_DISABLE_STRING)
-      SignalBlocking(m_combobox_update_track)->setCurrentIndex(AUTO_UPDATE_DISABLE_INDEX);
-    else if (track == AUTO_UPDATE_DEV_STRING)
-      SignalBlocking(m_combobox_update_track)->setCurrentIndex(AUTO_UPDATE_DEV_INDEX);
-    else
-      SignalBlocking(m_combobox_update_track)->setCurrentIndex(AUTO_UPDATE_RELEASE_INDEX);
-  }
-
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-  SignalBlocking(m_checkbox_enable_analytics)
-      ->setChecked(Settings::Instance().IsAnalyticsEnabled());
-#endif
+  SignalBlocking(m_checkbox_dualcore)->setChecked(Config::Get(Config::MAIN_CPU_THREAD));
+  SignalBlocking(m_checkbox_cheats)->setChecked(Settings::Instance().GetCheatsEnabled());
+  SignalBlocking(m_combobox_codehandler)->setCurrentIndex(Config::Get(Config::MAIN_CODE_HANDLER));
+  SignalBlocking(m_checkbox_override_region_settings)
+      ->setChecked(Config::Get(Config::MAIN_OVERRIDE_REGION_SETTINGS));
+  SignalBlocking(m_checkbox_auto_disc_change)
+      ->setChecked(Config::Get(Config::MAIN_AUTO_DISC_CHANGE));
 
 #ifdef USE_DISCORD_PRESENCE
   SignalBlocking(m_checkbox_discord_presence)
@@ -291,25 +297,7 @@ void GeneralPane::LoadConfig()
     SignalBlocking(m_combobox_fallback_region)->setCurrentIndex(FALLBACK_REGION_NTSCJ_INDEX);
 }
 
-static QString UpdateTrackFromIndex(int index)
-{
-  QString value;
-
-  switch (index)
-  {
-  case AUTO_UPDATE_DISABLE_INDEX:
-    value = QString::fromStdString(AUTO_UPDATE_DISABLE_STRING);
-    break;
-  case AUTO_UPDATE_RELEASE_INDEX:
-    value = QString::fromStdString(AUTO_UPDATE_RELEASE_STRING);
-    break;
-  case AUTO_UPDATE_DEV_INDEX:
-    value = QString::fromStdString(AUTO_UPDATE_DEV_STRING);
-    break;
-  }
-
-  return value;
-}
+// UpdateTrackFromIndex function removed
 
 static DiscIO::Region UpdateFallbackRegionFromIndex(int index)
 {
@@ -340,39 +328,28 @@ void GeneralPane::OnSaveConfig()
 {
   Config::ConfigChangeCallbackGuard config_guard;
 
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    Settings::Instance().SetAutoUpdateTrack(
-        UpdateTrackFromIndex(m_combobox_update_track->currentIndex()));
-  }
+  auto& settings = SConfig::GetInstance();
 
 #ifdef USE_DISCORD_PRESENCE
   Discord::SetDiscordPresenceEnabled(m_checkbox_discord_presence->isChecked());
 #endif
 
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-  Settings::Instance().SetAnalyticsEnabled(m_checkbox_enable_analytics->isChecked());
-  DolphinAnalytics::Instance().ReloadConfig();
-#endif
+  Config::SetBaseOrCurrent(Config::MAIN_CPU_THREAD, m_checkbox_dualcore->isChecked());
+  Settings::Instance().SetCheatsEnabled(m_checkbox_cheats->isChecked());
+  Config::SetBaseOrCurrent(Config::MAIN_OVERRIDE_REGION_SETTINGS,
+                           m_checkbox_override_region_settings->isChecked());
+  Config::SetBase(Config::MAIN_AUTO_DISC_CHANGE, m_checkbox_auto_disc_change->isChecked());
+  Config::SetBaseOrCurrent(Config::MAIN_ENABLE_CHEATS, m_checkbox_cheats->isChecked());
   Settings::Instance().SetFallbackRegion(
       UpdateFallbackRegionFromIndex(m_combobox_fallback_region->currentIndex()));
 }
 
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-void GeneralPane::GenerateNewIdentity()
-{
-  DolphinAnalytics::Instance().GenerateNewIdentity();
-  DolphinAnalytics::Instance().ReloadConfig();
-  ModalMessageBox message_box(this);
-  message_box.setIcon(QMessageBox::Information);
-  message_box.setWindowTitle(tr("Identity Generation"));
-  message_box.setText(tr("New identity generated."));
-  message_box.exec();
-}
-#endif
 
-void GeneralPane::AddDescriptions()
+void GeneralPane::OnCodeHandlerChanged(int index)
 {
+  int code_handler_value = m_combobox_codehandler->itemData(index).toInt();
+  Config::SetBaseOrCurrent(Config::MAIN_CODE_HANDLER, code_handler_value);
+  Config::Save();
   static constexpr char TR_DUALCORE_DESCRIPTION[] =
       QT_TR_NOOP("Separates CPU and GPU emulation work to separate threads. Reduces single-thread "
                  "burden by spreading Dolphin's heaviest load across two cores, which usually "
@@ -404,39 +381,10 @@ void GeneralPane::AddDescriptions()
                  "<br><br>This setting cannot be changed while emulation is active."
                  "<br><br><dolphin_emphasis>If unsure, leave this checked.</dolphin_emphasis>");
 #endif
-  static constexpr char TR_UPDATE_TRACK_DESCRIPTION[] = QT_TR_NOOP(
-      "Selects which update track Dolphin uses when checking for updates at startup. If a new "
-      "update is available, Dolphin will show a list of changes made since your current version "
-      "and ask you if you want to update."
-      "<br><br>The Dev track has the latest version of Dolphin which often updates multiple times "
-      "per day. Select this track if you want the newest features and fixes."
-      "<br><br>The Releases track has an update every few months. Some reasons you might prefer to "
-      "use this track:"
-      "<br>- You prefer using versions that have had additional testing."
-      "<br>- NetPlay requires players to have the same Dolphin version, and the latest Release "
-      "version will have the most players to match with."
-      "<br>- You frequently use Dolphin's savestate system, which doesn't guarantee backward "
-      "compatibility of savestates between Dolphin versions. If this applies to you, make sure you "
-      "make an in-game save before updating (i.e. save your game in the same way you would on a "
-      "physical GameCube or Wii), then load the in-game save after updating Dolphin and before "
-      "making any new savestates."
-      "<br><br>Selecting \"Don't Update\" will prevent Dolphin from automatically checking for "
-      "updates."
-      "<br><br><dolphin_emphasis>If unsure, select Releases.</dolphin_emphasis>");
+  // TR_UPDATE_TRACK_DESCRIPTION removed (auto-update functionality disabled)
   static constexpr char TR_FALLBACK_REGION_DESCRIPTION[] =
       QT_TR_NOOP("Sets the region used for titles whose region cannot be determined automatically."
                  "<br><br>This setting cannot be changed while emulation is active.");
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-  static constexpr char TR_ENABLE_ANALYTICS_DESCRIPTION[] = QT_TR_NOOP(
-      "If selected, Dolphin can collect data on its performance, feature usage, emulated games, "
-      "and configuration, as well as data on your system's hardware and operating system."
-      "<br><br>No private data is ever collected. This data helps us understand how people and "
-      "emulated games use Dolphin and prioritize our efforts. It also helps us identify rare "
-      "configurations that are causing bugs, performance and stability issues.");
-  static constexpr char TR_GENERATE_NEW_IDENTITY_DESCRIPTION[] =
-      QT_TR_NOOP("Generate a new anonymous ID for your usage statistics. This will cause any "
-                 "future statistics to be unassociated with your previous statistics.");
-#endif
 
   m_checkbox_dualcore->SetDescription(tr(TR_DUALCORE_DESCRIPTION));
 
@@ -452,21 +400,9 @@ void GeneralPane::AddDescriptions()
 
   m_combobox_speedlimit->SetTitle(tr("Speed Limit"));
 
-  if (AutoUpdateChecker::SystemSupportsAutoUpdates())
-  {
-    m_combobox_update_track->SetTitle(tr("Auto Update"));
-    m_combobox_update_track->SetDescription(tr(TR_UPDATE_TRACK_DESCRIPTION));
-  }
-
   m_combobox_fallback_region->SetTitle(tr("Fallback Region"));
   m_combobox_fallback_region->SetDescription(tr(TR_FALLBACK_REGION_DESCRIPTION));
 
-#if defined(USE_ANALYTICS) && USE_ANALYTICS
-  m_checkbox_enable_analytics->SetDescription(tr(TR_ENABLE_ANALYTICS_DESCRIPTION));
-
-  m_button_generate_new_identity->SetTitle(tr("Generate a New Statistics Identity"));
-  m_button_generate_new_identity->SetDescription(tr(TR_GENERATE_NEW_IDENTITY_DESCRIPTION));
-#endif
 }
 
 void GeneralPane::UpdateDescriptionsUsingHardcoreStatus()

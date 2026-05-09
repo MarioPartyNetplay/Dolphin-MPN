@@ -28,7 +28,7 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent)
 
   const QString text =
       QStringLiteral(R"(
-<p style='font-size:38pt; font-weight:400;'>Dolphin</p>
+<p style='font-size:38pt; font-weight:400;'>Dolphin MPN</p>
 
 <p style='font-size:18pt;'>%VERSION_STRING%</p>
 
@@ -70,7 +70,7 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent)
                    // is "free" as in "freedom" - it refers to certain properties of the
                    // software's license, not the software's price. (It is true that Dolphin
                    // can be downloaded at no cost, but that's not what this message says.)
-                   tr("Dolphin is a free and open-source GameCube and Wii emulator."))
+                   tr("Dolphin-MPN is a free and open-source GameCube and Wii emulator."))
           .replace(QStringLiteral("%GAMES_YOU_OWN%"),
                    tr("This software should not be used to play games you do not legally own."))
           .replace(QStringLiteral("%LICENSE%"), tr("License"))

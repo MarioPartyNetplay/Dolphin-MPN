@@ -276,7 +276,6 @@
     <ClInclude Include="SDL\src\video\SDL_pixels_c.h" />
     <ClInclude Include="SDL\src\video\SDL_rect_c.h" />
     <ClInclude Include="SDL\src\video\SDL_RLEaccel_c.h" />
-    <ClInclude Include="SDL\src\video\SDL_rotate.h" />
     <ClInclude Include="SDL\src\video\SDL_stb_c.h" />
     <ClInclude Include="SDL\src\video\SDL_surface_c.h" />
     <ClInclude Include="SDL\src\video\SDL_sysvideo.h" />
@@ -497,7 +496,6 @@
     <ClCompile Include="SDL\src\video\SDL_pixels.c" />
     <ClCompile Include="SDL\src\video\SDL_rect.c" />
     <ClCompile Include="SDL\src\video\SDL_RLEaccel.c" />
-    <ClCompile Include="SDL\src\video\SDL_rotate.c" />
     <ClCompile Include="SDL\src\video\SDL_stb.c" />
     <ClCompile Include="SDL\src\video\SDL_stretch.c" />
     <ClCompile Include="SDL\src\video\SDL_surface.c" />

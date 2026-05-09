@@ -3,6 +3,9 @@
 
 #include "UICommon/DiscordPresence.h"
 
+#include "Common/Hash.h"
+#include "Common/StringUtil.h"
+
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Config/UISettings.h"
 #include "Core/ConfigManager.h"
@@ -100,11 +103,11 @@ std::string ArtworkForGameId()
   const DiscIO::Region region = SConfig::GetInstance().m_region;
   const bool is_wii = Core::System::GetInstance().IsWii();
   const std::string region_code = SConfig::GetInstance().GetGameTDBImageRegionCode(is_wii, region);
-
+  
+  std::string tdbID = SConfig::GetInstance().GetGameTDBID();
   static constexpr char cover_url[] = "https://discord.dolphin-emu.org/cover-art/{}/{}.png";
-  return fmt::format(cover_url, region_code, SConfig::GetInstance().GetGameTDBID());
-}
-
+  return fmt::format(cover_url, region_code, tdbID);
+   }
 }  // namespace
 #endif
 
@@ -121,7 +124,8 @@ void Init()
   handlers.ready = HandleDiscordReady;
   handlers.joinRequest = HandleDiscordJoinRequest;
   handlers.joinGame = HandleDiscordJoin;
-  Discord_Initialize(DEFAULT_CLIENT_ID.c_str(), &handlers, 1, nullptr);
+  // The number is the client ID for Dolphin, it's used for images and the application name
+  Discord_Initialize("888655408623943731", &handlers, 1, nullptr);
   UpdateDiscordPresence();
 #endif
 }
@@ -214,24 +218,15 @@ void UpdateDiscordPresence(int party_size, SecretType type, const std::string& s
   DiscordRichPresence discord_presence = {};
   if (game_artwork.empty())
   {
-    discord_presence.largeImageKey = "dolphin_logo";
-    discord_presence.largeImageText = "Dolphin is an emulator for the GameCube and the Wii.";
+    discord_presence.largeImageKey = "dolphin";
   }
   else
   {
     discord_presence.largeImageKey = game_artwork.c_str();
     discord_presence.largeImageText = title.c_str();
-    discord_presence.smallImageKey = "dolphin_logo";
-    discord_presence.smallImageText = "Dolphin is an emulator for the GameCube and the Wii.";
+    discord_presence.smallImageKey = "dolphin";
   }
   discord_presence.details = title.empty() ? "Not in-game" : title.c_str();
-  if (reset_timer)
-  {
-    s_start_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
-  }
-  discord_presence.startTimestamp = s_start_timestamp;
 
 #ifdef USE_RETRO_ACHIEVEMENTS
   std::string state_string;
@@ -240,14 +235,12 @@ void UpdateDiscordPresence(int party_size, SecretType type, const std::string& s
   {
     if (party_size < 4)
     {
-      discord_presence.state = "In a party";
       discord_presence.partySize = party_size;
       discord_presence.partyMax = 4;
     }
     else
     {
       // others can still join to spectate
-      discord_presence.state = "In a full party";
       discord_presence.partySize = party_size;
       // Note: joining still works without partyMax
     }

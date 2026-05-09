@@ -453,6 +453,7 @@ void NetPlayClient::OnData(sf::Packet& packet)
     OnSyncCodes(packet);
     break;
 
+
   case MessageID::ComputeGameDigest:
     OnComputeGameDigest(packet);
     break;
@@ -526,12 +527,27 @@ void NetPlayClient::OnChatMessage(sf::Packet& packet)
   packet >> msg;
 
   // don't need lock to read in this thread
-  const Player& player = m_players[pid];
-
-  INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
-
-  // add to gui
-  m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
+  // PlayerId{0} is used for system/server messages
+  if (pid == 0)
+  {
+    INFO_LOG_FMT(NETPLAY, "System message: {}", msg);
+    m_dialog->AppendChat(fmt::format("System: {}", msg));
+  }
+  else
+  {
+    const auto it = m_players.find(pid);
+    if (it != m_players.end())
+    {
+      const Player& player = it->second;
+      INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
+      m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
+    }
+    else
+    {
+      INFO_LOG_FMT(NETPLAY, "Unknown player {} wrote: {}", pid, msg);
+      m_dialog->AppendChat(fmt::format("Unknown[{}]: {}", pid, msg));
+    }
+  }
 }
 
 void NetPlayClient::OnChunkedDataStart(sf::Packet& packet)
@@ -1991,6 +2007,16 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
+  // Check if BBA mode is enabled - if so, disable input synchronization
+  // In BBA mode, we only sync BBA packets, not controller inputs
+  if (m_net_settings.bba_mode)
+  {
+    // In BBA mode, everyone uses local pad 0 (first controller slot)
+    // since we're only syncing BBA packets, not controller inputs
+    *pad_status = Pad::GetStatus(0);
+    return true;
+  }
+
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
@@ -2136,6 +2162,21 @@ u64 NetPlayClient::GetInitialRTCValue() const
 // called from ---CPU--- thread
 bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entries)
 {
+  // Check if BBA mode is enabled - if so, disable Wiimote synchronization
+  // In BBA mode, we only sync BBA packets, not controller inputs
+  if (m_net_settings.bba_mode)
+  {
+    // In BBA mode, everyone gets a default Wiimote state
+    // since we're only syncing BBA packets, not controller inputs
+    for (const WiimoteDataBatchEntry& entry : entries)
+    {
+      // Create a default/empty Wiimote state for all Wiimote requests
+      WiimoteEmu::SerializedWiimoteState default_state{};
+      *entry.state = default_state;
+    }
+    return true;
+  }
+
   for (const WiimoteDataBatchEntry& entry : entries)
   {
     const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
@@ -2846,5 +2887,5 @@ int SerialInterface::CSIDevice_GCController::NetPlay_InGamePadToLocalPad(int pad
   if (NetPlay::netplay_client)
     return NetPlay::netplay_client->InGamePadToLocalPad(pad_num);
 
-  return pad_num;
+  return numPAD;
 }

@@ -10,11 +10,20 @@ class QLabel;
 class QDialogButtonBox;
 class QVBoxLayout;
 
+#include "Common/HookableEvent.h"
+#include "InputCommon/ControllerInterface/ControllerInterface.h"
+
+namespace ciface
+{
+class ControllerInterface;
+}
+
 class GCPadWiiUConfigDialog final : public QDialog
 {
   Q_OBJECT
 public:
   explicit GCPadWiiUConfigDialog(int port, QWidget* parent = nullptr);
+  ~GCPadWiiUConfigDialog();
 
 private:
   void LoadSettings();
@@ -25,6 +34,7 @@ private:
 
 private:
   void UpdateAdapterStatus();
+  bool IsGCAdapterAvailable() const;
 
   int m_port;
 
@@ -36,4 +46,7 @@ private:
   // Checkboxes
   QCheckBox* m_rumble;
   QCheckBox* m_simulate_bongos;
+
+  // ControllerInterface callback handle
+  Common::EventHook m_devices_changed_handle;
 };

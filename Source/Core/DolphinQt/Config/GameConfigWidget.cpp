@@ -28,6 +28,11 @@
 #include "DolphinQt/Config/ConfigControls/ConfigInteger.h"
 #include "DolphinQt/Config/ConfigControls/ConfigRadio.h"
 #include "DolphinQt/Config/GameConfigEdit.h"
+#include "DolphinQt/Config/Graphics/AdvancedWidget.h"
+#include "DolphinQt/Config/Graphics/EnhancementsWidget.h"
+#include "DolphinQt/Config/Graphics/GeneralWidget.h"
+#include "DolphinQt/Config/Graphics/HacksWidget.h"
+#include "DolphinQt/Config/MarioPartyNetplayWidget.h"
 #include "DolphinQt/Config/Graphics/GraphicsPane.h"
 #include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
@@ -208,7 +213,18 @@ void GameConfigWidget::CreateWidgets()
   auto* const gfx_widget = new GraphicsPane{nullptr, m_layer.get()};
   tab_widget->addTab(gfx_widget, tr("Graphics"));
 
-  const int editor_index = tab_widget->addTab(advanced_widget, tr("Editor"));
+  // Mario Party Netplay tab
+  tab_widget->addTab(GetWrappedWidget(new MarioPartyNetplayWidget(this, m_layer.get())), tr("MPN"));
+
+  // Advanced tab - contains default and local config tabs
+  tab_widget->addTab(advanced_widget, tr("Advanced"));
+
+  // Editor tab - create a GameConfigEdit widget for editing the game's INI file
+  auto* editor_widget = new GameConfigEdit(
+      nullptr,
+      QString::fromStdString(File::GetUserPath(D_GAMESETTINGS_IDX) + m_game_id + ".ini"),
+      false);
+  const int editor_index = tab_widget->addTab(editor_widget, tr("Editor"));
 
   connect(tab_widget, &QTabWidget::currentChanged, this, [this, editor_index](int index) {
     // Update the ini editor after editing other tabs.

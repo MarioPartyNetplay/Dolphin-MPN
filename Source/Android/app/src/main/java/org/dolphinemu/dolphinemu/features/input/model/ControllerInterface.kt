@@ -154,13 +154,8 @@ object ControllerInterface {
 
     @Keep
     @JvmStatic
-    private fun getVibratorManager(device: InputDevice): DolphinVibratorManager {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            DolphinVibratorManagerPassthrough(device.vibratorManager)
-        } else {
-            DolphinVibratorManagerCompat(device.vibrator)
-        }
-    }
+    private fun getDeviceVibratorManager(device: InputDevice): DolphinVibratorManager =
+        DolphinVibratorManagerFactory.getDeviceVibratorManager(device)
 
     @Keep
     @JvmStatic

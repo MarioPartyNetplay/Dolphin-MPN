@@ -19,22 +19,6 @@ namespace Common
 #define BUILD_TYPE_STR ""
 #endif
 
-const std::string& GetScmRevStr()
-{
-  static const std::string scm_rev_str = EMULATOR_NAME " "
-  // Note this macro can be empty if the master branch does not exist.
-#if 1 - SCM_COMMITS_AHEAD_MASTER - 1 != 0
-                                                       "[" SCM_BRANCH_STR "] "
-#endif
-
-#ifdef __INTEL_COMPILER
-      BUILD_TYPE_STR SCM_DESC_STR "-ICC";
-#else
-      BUILD_TYPE_STR SCM_DESC_STR;
-#endif
-  return scm_rev_str;
-}
-
 const std::string& GetScmRevGitStr()
 {
   static const std::string scm_rev_git_str = SCM_REV_STR;
@@ -45,6 +29,12 @@ const std::string& GetScmDescStr()
 {
   static const std::string scm_desc_str = SCM_DESC_STR;
   return scm_desc_str;
+
+}
+const std::string& GetScmRevStr()
+{
+  static const std::string scm_rev_str = std::string("Dolphin MPN (") + SCM_DESC_STR + ")";
+  return scm_rev_str;
 }
 
 const std::string& GetScmBranchStr()
@@ -73,12 +63,15 @@ const std::string& GetScmUpdateTrackStr()
 
 const std::string& GetNetplayDolphinVer()
 {
+#define LABEL "MPN"
 #ifdef _WIN32
-  static const std::string netplay_dolphin_ver = SCM_DESC_STR " Win";
+  static const std::string netplay_dolphin_ver = LABEL " Win";
 #elif __APPLE__
-  static const std::string netplay_dolphin_ver = SCM_DESC_STR " Mac";
+  static const std::string netplay_dolphin_ver = LABEL " Mac";
+#elif ANDROID
+  static const std::string netplay_dolphin_ver = LABEL " Android";
 #else
-  static const std::string netplay_dolphin_ver = SCM_DESC_STR " Lin";
+  static const std::string netplay_dolphin_ver = LABEL " Lin";
 #endif
   return netplay_dolphin_ver;
 }
