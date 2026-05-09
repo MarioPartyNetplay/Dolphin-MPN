@@ -234,10 +234,9 @@ void Jit64::lXXx(UGeckoInstruction inst)
 
 void Jit64::dcbx(UGeckoInstruction inst)
 {
-  FALLBACK_IF(m_accurate_cpu_cache_enabled);
-
   INSTRUCTION_START
   JITDISABLE(bJITLoadStoreOff);
+  FALLBACK_IF(m_accurate_cpu_cache_enabled);
 
   // Check if the next instructions match a known looping pattern:
   // - dcbx rX
@@ -305,25 +304,16 @@ void Jit64::dcbx(UGeckoInstruction inst)
     // Load the loop_counter register with the amount of invalidations to execute.
     LEA(32, loop_counter, MDisp(RSCRATCH2, 1));
 
-    if (IsDebuggingEnabled())
+    if (IsBranchWatchEnabled())
     {
-      const X64Reg bw_reg_a = reg_cycle_count, bw_reg_b = reg_downcount;
       const BitSet32 bw_caller_save = (CallerSavedRegistersInUse() | BitSet32{RSCRATCH2}) &
-                                      ~BitSet32{int(bw_reg_a), int(bw_reg_b)};
-
-      MOV(64, R(bw_reg_a), ImmPtr(&m_branch_watch));
-      MOVZX(32, 8, bw_reg_b, MDisp(bw_reg_a, Core::BranchWatch::GetOffsetOfRecordingActive()));
-      TEST(32, R(bw_reg_b), R(bw_reg_b));
-
-      FixupBranch branch_in = J_CC(CC_NZ, Jump::Near);
-      SwitchToFarCode();
-      SetJumpTarget(branch_in);
+                                      ~BitSet32{int(reg_cycle_count), int(reg_downcount)};
 
       // Assert RSCRATCH2 won't be clobbered before it is moved from.
       static_assert(RSCRATCH2 != ABI_PARAM1);
 
       ABI_PushRegistersAndAdjustStack(bw_caller_save, 0);
-      MOV(64, R(ABI_PARAM1), R(bw_reg_a));
+      MOV(64, R(ABI_PARAM1), ImmPtr(&m_branch_watch));
       // RSCRATCH2 holds the amount of faked branch watch hits. Move RSCRATCH2 first, because
       // ABI_PARAM2 clobbers RSCRATCH2 on Windows and ABI_PARAM3 clobbers RSCRATCH2 on Linux!
       MOV(32, R(ABI_PARAM4), R(RSCRATCH2));
@@ -333,10 +323,6 @@ void Jit64::dcbx(UGeckoInstruction inst)
       ABI_CallFunction(m_ppc_state.msr.IR ? &Core::BranchWatch::HitVirtualTrue_fk_n :
                                             &Core::BranchWatch::HitPhysicalTrue_fk_n);
       ABI_PopRegistersAndAdjustStack(bw_caller_save, 0);
-
-      FixupBranch branch_out = J(Jump::Near);
-      SwitchToNearCode();
-      SetJumpTarget(branch_out);
     }
   }
 
@@ -461,7 +447,8 @@ void Jit64::dcbz(UGeckoInstruction inst)
     end_dcbz_hack = J_CC(CC_L);
   }
 
-  bool emit_fast_path = (m_ppc_state.feature_flags & FEATURE_FLAG_MSR_DR) && m_jit.jo.fastmem_arena;
+  bool emit_fast_path = (m_ppc_state.feature_flags & FEATURE_FLAG_MSR_DR) &&
+                        m_jit.jo.fastmem_arena && !m_accurate_cpu_cache_enabled;
 
   if (emit_fast_path)
   {

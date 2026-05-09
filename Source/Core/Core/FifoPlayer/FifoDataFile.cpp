@@ -274,7 +274,8 @@ std::unique_ptr<FifoDataFile> FifoDataFile::Load(const std::string& filename, bo
   }
   else
   {
-    dataFile->m_game_id = std::string{header.gameid, DEFAULT_GAME_ID.size()};
+    const size_t gameid_length = strnlen(header.gameid, DEFAULT_GAME_ID.size());
+    dataFile->m_game_id = std::string{header.gameid, gameid_length};
   }
 
   if (flagsOnly)
@@ -388,8 +389,7 @@ bool FifoDataFile::GetFlag(u32 flag) const
   return !!(m_Flags & flag);
 }
 
-u64 FifoDataFile::WriteMemoryUpdates(const std::vector<MemoryUpdate>& memUpdates,
-                                     File::IOFile& file)
+u64 FifoDataFile::WriteMemoryUpdates(std::span<const MemoryUpdate> memUpdates, File::IOFile& file)
 {
   // Add space for memory update list
   u64 updateListOffset = file.Tell();

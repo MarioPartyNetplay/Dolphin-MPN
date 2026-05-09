@@ -127,6 +127,8 @@ add_library(common
   QoSSession.h
   Random.cpp
   Random.h
+  RangeSet.h
+  RangeSizeSet.h
   ScopeGuard.h
   SDCardUtil.cpp
   SDCardUtil.h
@@ -151,6 +153,7 @@ add_library(common
   Timer.h
   TimeUtil.cpp
   TimeUtil.h
+  TransferableSharedMutex.h
   TraversalClient.cpp
   TraversalClient.h
   TraversalProto.h
@@ -201,6 +204,7 @@ if (APPLE)
   PRIVATE
     ${APPKIT_LIBRARY}
     ${COREFOUNDATION_LIBRARY}
+    ${FOUNDATION_LIBRARY}
     ${IOK_LIBRARY}
   )
 elseif(WIN32)
@@ -236,6 +240,7 @@ elseif(WIN32)
   )
 elseif(APPLE)
   target_sources(common PRIVATE
+    CommonFuncsObjC.mm
     Logging/ConsoleListenerNix.cpp
     MemArenaDarwin.cpp
   )
@@ -326,13 +331,7 @@ elseif(ENABLE_X11 AND X11_FOUND)
   target_sources(common PRIVATE
     GL/GLX11Window.cpp
     GL/GLX11Window.h
-    GL/GLInterface/GLX.cpp
-    GL/GLInterface/GLX.h
   )
-
-  # GLX has a hard dependency on libGL.
-  # Make sure to link to it if using GLX.
-  target_link_libraries(common PUBLIC ${OPENGL_LIBRARIES})
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

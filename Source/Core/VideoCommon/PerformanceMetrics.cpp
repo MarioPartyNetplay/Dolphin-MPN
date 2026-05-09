@@ -8,11 +8,20 @@
 #include <imgui.h>
 #include <implot.h>
 
+#include "Common/HookableEvent.h"
 #include "Core/Config/GraphicsSettings.h"
+#include "Core/Core.h"
 #include "VideoCommon/VideoConfig.h"
 #include "Core/MarioPartyNetplay/Gamestate.h"
 
-PerformanceMetrics g_perf_metrics;
+PerformanceMetrics::PerformanceMetrics()
+{
+  const auto invalidate_counters_last_time = [this](Core::State) {
+    m_fps_counter.InvalidateLastTime();
+    m_vps_counter.InvalidateLastTime();
+  };
+  m_state_change_hook = Core::AddOnStateChangedCallback(invalidate_counters_last_time);
+}
 
 void PerformanceMetrics::Reset()
 {
@@ -37,12 +46,6 @@ void PerformanceMetrics::CountFrame()
 void PerformanceMetrics::CountVBlank()
 {
   m_vps_counter.Count();
-}
-
-void PerformanceMetrics::OnEmulationStateChanged([[maybe_unused]] Core::State state)
-{
-  m_fps_counter.InvalidateLastTime();
-  m_vps_counter.InvalidateLastTime();
 }
 
 void PerformanceMetrics::CountThrottleSleep(DT sleep)
@@ -149,6 +152,9 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   // the layout to default. Hopefully users aren't changing window sizes or resolutions too often.
   const ImGuiCond set_next_position_condition =
       (display_size_changed || !movable_overlays) ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+  // Reset the graph size when changing resolutions, and otherwise let the user manually resize it.
+  const ImGuiCond set_next_size_condition =
+      display_size_changed ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
 
   float window_y = window_padding;
   float window_x = ImGui::GetIO().DisplaySize.x - window_padding;
@@ -172,10 +178,12 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     if (window_needs_clamping)
       ImGui::SetWindowPos(ImVec2(clamped_window_x, clamped_window_y), ImGuiCond_Always);
   };
-  
-  const float graph_width = 50.f * backbuffer_scale + 3.f * window_width + 2.f * window_padding;
-  const float graph_height =
-      std::min(200.f * backbuffer_scale, display_size.y - 85.f * backbuffer_scale);
+
+  const float min_auto_graph_width = 200.f * backbuffer_scale + 2.f * window_padding;
+  const float min_auto_graph_height = 144.f * backbuffer_scale + 2.f * window_padding;
+
+  const float graph_width = std::max(min_auto_graph_width, display_size.x / 4.f);
+  const float graph_height = std::max(min_auto_graph_height, display_size.y / 4.f);
 
   const bool stack_vertically = !g_ActiveConfig.bShowGraphs;
 
@@ -194,7 +202,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
     // Position in the top-right corner of the screen.
     ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
                             ImVec2(1.0f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(graph_width, graph_height), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(graph_width, graph_height), set_next_size_condition);
     ImGui::SetNextWindowBgAlpha(bg_alpha);
     if (ImGui::Begin("PerformanceGraphs", nullptr, graph_flags))
     {
@@ -218,7 +226,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
                                                                    2000.0};
 
       clamp_window_position();
-      window_y += ImGui::GetWindowHeight();
+      window_y += ImGui::GetWindowHeight() + window_padding;
 
       const DT vblank_time = m_vps_counter.GetDtAvg() + 2 * m_vps_counter.GetDtStd();
       const DT frame_time = m_fps_counter.GetDtAvg() + 2 * m_fps_counter.GetDtStd();

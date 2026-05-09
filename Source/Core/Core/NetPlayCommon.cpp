@@ -9,6 +9,7 @@
 #include <lzo/lzo1x.h>
 
 #include "Common/FileUtil.h"
+#include "Common/HttpRequest.h"
 #include "Common/IOFile.h"
 #include "Common/MsgHandler.h"
 #include "Common/SFMLHelper.h"
@@ -116,7 +117,7 @@ bool CompressFolderIntoPacket(const std::string& folder_path, sf::Packet& packet
   return CompressFolderIntoPacketInternal(File::ScanDirectoryTree(folder_path, true), packet);
 }
 
-bool CompressBufferIntoPacket(const std::vector<u8>& in_buffer, sf::Packet& packet)
+bool CompressBufferIntoPacket(std::span<const u8> in_buffer, sf::Packet& packet)
 {
   const u64 size = in_buffer.size();
   packet << size;
@@ -231,10 +232,10 @@ static bool DecompressPacketIntoFolderInternal(sf::Packet& packet, const std::st
     std::string name;
     packet >> name;
 
-    if (name.find('/') != std::string::npos)
+    if (name.contains('/'))
       return false;
 #ifdef _WIN32
-    if (name.find('\\') != std::string::npos)
+    if (name.contains('\\'))
       return false;
 #endif
     if (std::ranges::all_of(name, [](char c) { return c == '.'; }))
@@ -297,4 +298,18 @@ std::optional<std::vector<u8>> DecompressPacketIntoBuffer(sf::Packet& packet)
 
   return out_buffer;
 }
+
+std::string GetExternalIPAddress()
+{
+  Common::HttpRequest request;
+  // ENet does not support IPv6, so IPv4 has to be used
+  request.UseIPv4();
+  Common::HttpRequest::Response response =
+      request.Get("https://ip.dolphin-emu.org/", {{"X-Is-Dolphin", "1"}});
+
+  if (response.has_value())
+    return std::string(response->begin(), response->end());
+  return "";
+}
+
 }  // namespace NetPlay

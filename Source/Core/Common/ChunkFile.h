@@ -264,9 +264,9 @@ public:
   }
 
   template <typename T>
+  requires(std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>)
   void Do(T& x)
   {
-    static_assert(std::is_trivially_copyable_v<T>, "Only sane for trivially copyable types");
     // Note:
     // Usually we can just use x = **ptr, etc.  However, this doesn't work
     // for unions containing BitFields (long story, stupid language rules)
@@ -298,6 +298,13 @@ public:
     {
       x = base + offset;
     }
+  }
+
+  void DoPointer(void*& x, void* const base)
+  {
+    auto* ptr = static_cast<u8*>(x);
+    DoPointer(ptr, static_cast<u8*>(base));
+    x = ptr;
   }
 
   void DoMarker(const std::string& prevName, u32 arbitraryNumber = 0x42)

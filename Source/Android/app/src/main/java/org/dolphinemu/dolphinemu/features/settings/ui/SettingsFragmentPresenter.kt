@@ -702,6 +702,38 @@ class SettingsFragmentPresenter(
                 MenuTag.CONFIG_SERIALPORT1
             )
         )
+
+        sl.add(HeaderSetting(context, R.string.gba_settings, 0))
+        sl.add(
+            FilePicker(
+                context,
+                StringSetting.MAIN_GBA_BIOS_PATH,
+                R.string.gba_bios_path,
+                0,
+                fragmentView.activityResultLaunchers.requestBinFile,
+                "/GBA/gba_bios.bin"
+            )
+        )
+        sl.add(
+            FilePicker(
+                context,
+                StringSetting.MAIN_GB_PLAYER_ROM,
+                R.string.gb_player_rom,
+                0,
+                fragmentView.activityResultLaunchers.requestGbaRomFile,
+                null
+            )
+        )
+        sl.add(
+            DirectoryPicker(
+                context,
+                StringSetting.MAIN_GBA_SAVES_PATH,
+                R.string.gba_saves_path,
+                0,
+                fragmentView.activityResultLaunchers.requestDirectory,
+                "/GBA/Saves/"
+            )
+        )
     }
 
     private fun addWiiSettings(sl: ArrayList<SettingsItem>) {
@@ -1169,7 +1201,7 @@ class SettingsFragmentPresenter(
                 R.string.overclock_title,
                 R.string.overclock_title_description,
                 0f,
-                400f,
+                500f,
                 "%",
                 1f,
                 false
@@ -1276,7 +1308,17 @@ class SettingsFragmentPresenter(
     }
 
     private fun addSerialPortSubSettings(sl: ArrayList<SettingsItem>, serialPort1Type: Int) {
-        if (serialPort1Type == 10) {
+        if (serialPort1Type == 6) {
+            // Triforce Baseboard
+            sl.add(
+                InputStringSetting(
+                    context,
+                    StringSetting.MAIN_TRIFORCE_IP_REDIRECTIONS,
+                    R.string.triforce_ip_redirections,
+                    0
+                )
+            )
+        } else if (serialPort1Type == 10) {
             // Broadband Adapter (XLink Kai)
             sl.add(HyperLinkHeaderSetting(context, R.string.xlink_kai_guide_header, 0))
             sl.add(
@@ -2176,6 +2218,14 @@ class SettingsFragmentPresenter(
         sl.add(
             InvertedSwitchSetting(
                 context,
+                BooleanSetting.MAIN_PAGE_TABLE_FASTMEM,
+                R.string.debug_page_table_fastmem,
+                0
+            )
+        )
+        sl.add(
+            InvertedSwitchSetting(
+                context,
                 BooleanSetting.MAIN_FASTMEM_ARENA,
                 R.string.debug_fastmem_arena,
                 0
@@ -2352,7 +2402,7 @@ class SettingsFragmentPresenter(
 
     private fun addGcPadSubSettings(sl: ArrayList<SettingsItem>, gcPadNumber: Int, gcPadType: Int) {
         when (gcPadType) {
-            6, 8, 9, 10 -> {
+            6, 8, 9, 10, 11 -> {
                 // Emulated
                 val gcPad = EmulatedController.getGcPad(gcPadNumber)
 

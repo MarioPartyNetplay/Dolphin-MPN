@@ -14,6 +14,7 @@ enum class BooleanSetting(
     MAIN_SKIP_IPL(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "SkipIPL", true),
     MAIN_DSP_HLE(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "DSPHLE", true),
     MAIN_FASTMEM(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "Fastmem", true),
+    MAIN_PAGE_TABLE_FASTMEM(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "PageTableFastmem", true),
     MAIN_FASTMEM_ARENA(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "FastmemArena", true),
     MAIN_LARGE_ENTRY_POINTS_MAP(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "LargeEntryPointsMap", true),
     MAIN_CPU_THREAD(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "CPUThread", true),
@@ -913,7 +914,7 @@ enum class BooleanSetting(
         Settings.FILE_ACHIEVEMENTS,
         Settings.SECTION_ACHIEVEMENTS,
         "HardcoreEnabled",
-        false
+        true
     ),
     ACHIEVEMENTS_UNOFFICIAL_ENABLED(
         Settings.FILE_ACHIEVEMENTS,
@@ -949,8 +950,9 @@ enum class BooleanSetting(
         Settings.FILE_ACHIEVEMENTS,
         Settings.SECTION_ACHIEVEMENTS,
         "ProgressEnabled",
-        true
-    );
+        false
+    ),
+    NETPLAY_USE_UPNP(Settings.FILE_DOLPHIN, Settings.SECTION_INI_NETPLAY, "UseUPNP", false);
 
     override val isOverridden: Boolean
         get() = NativeConfig.isOverridden(file, section, key)

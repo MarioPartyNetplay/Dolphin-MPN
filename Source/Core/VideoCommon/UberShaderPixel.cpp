@@ -398,9 +398,7 @@ ShaderCode GenPixelShader(APIType api_type, const ShaderHostConfig& host_config,
               "    D = D << scale;\n"
               "  }}\n"
               "\n"
-              "  // TODO: Is this rounding bias still added when the scale is divide by 2?  "
-              "Currently we "
-              "do not apply it.\n"
+              "  // This rounding bias is not added when the scale is divide by 2\n"
               "  if (scale != 3u)\n"
               "    lerp = lerp + (op ? 127 : 128);\n"
               "\n"
@@ -1007,7 +1005,8 @@ ShaderCode GenPixelShader(APIType api_type, const ShaderHostConfig& host_config,
 
   out.Write("  // Alpha Test\n");
 
-  if (early_depth && DriverDetails::HasBug(DriverDetails::BUG_BROKEN_DISCARD_WITH_EARLY_Z))
+  if (early_depth && DriverDetails::HasBug(DriverDetails::BUG_BROKEN_DISCARD_WITH_EARLY_Z) &&
+      host_config.backend_shader_framebuffer_fetch)
   {
     // Instead of using discard, fetch the framebuffer's color value and use it as the output
     // for this fragment.

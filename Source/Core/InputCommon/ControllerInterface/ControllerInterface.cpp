@@ -182,7 +182,7 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
   this->ProcessDeviceQueue();
 }
 
-void ControllerInterface::PlatformPopulateDevices(std::function<void()> callback)
+void ControllerInterface::PlatformPopulateDevices(const std::function<void()>& callback)
 {
   if (!m_is_init)
     return;

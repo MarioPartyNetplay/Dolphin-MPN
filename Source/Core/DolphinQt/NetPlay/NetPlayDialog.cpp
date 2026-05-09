@@ -23,13 +23,14 @@
 #include <QTextBrowser>
 
 #include <algorithm>
+#include <utility>
 
 #ifdef HAS_LIBMGBA
 #include <fmt/ranges.h>
 #endif
 
 #include "Common/Config/Config.h"
-#include "Common/HttpRequest.h"
+#include "Core/NetPlayCommon.h"
 #include "Common/Logging/Log.h"
 #include "Common/TraversalClient.h"
 
@@ -500,7 +501,7 @@ void NetPlayDialog::reject()
 
 void NetPlayDialog::show(std::string nickname, bool use_traversal)
 {
-  m_nickname = nickname;
+  m_nickname = std::move(nickname);
   m_use_traversal = use_traversal;
   m_buffer_size = 0;
   m_old_player_count = 0;
@@ -549,17 +550,8 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
 
 void NetPlayDialog::ResetExternalIP()
 {
-  m_external_ip_address = Common::Lazy<std::string>([]() -> std::string {
-    Common::HttpRequest request;
-    // ENet does not support IPv6, so IPv4 has to be used
-    request.UseIPv4();
-    Common::HttpRequest::Response response =
-        request.Get("https://ip.dolphin-emu.org/", {{"X-Is-Dolphin", "1"}});
-
-    if (response.has_value())
-      return std::string(response->begin(), response->end());
-    return "";
-  });
+  m_external_ip_address =
+      Common::Lazy<std::string>([]() -> std::string { return NetPlay::GetExternalIPAddress(); });
 }
 
 void NetPlayDialog::UpdateDiscordPresence()
@@ -1264,7 +1256,7 @@ void NetPlayDialog::AbortGameDigest()
 }
 
 void NetPlayDialog::ShowChunkedProgressDialog(const std::string& title, const u64 data_size,
-                                              const std::vector<int>& players)
+                                              std::span<const int> players)
 {
   QueueOnObject(this, [this, title, data_size, players] {
     if (m_chunked_progress_dialog->isVisible())

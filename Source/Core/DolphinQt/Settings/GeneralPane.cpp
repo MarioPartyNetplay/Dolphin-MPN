@@ -20,7 +20,6 @@
 #include "Core/AchievementManager.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/UISettings.h"
-#include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/DolphinAnalytics.h"
 #include "Core/System.h"
@@ -104,7 +103,6 @@ void GeneralPane::ConnectLayout()
   connect(m_combobox_speedlimit, &ToolTipComboBox::currentIndexChanged, [this] {
     Config::SetBaseOrCurrent(Config::MAIN_EMULATION_SPEED,
                              m_combobox_speedlimit->currentIndex() * 0.1f);
-    Config::Save();
   });
 
   connect(m_combobox_fallback_region, &ToolTipComboBox::currentIndexChanged, this,
@@ -344,8 +342,6 @@ void GeneralPane::OnSaveConfig()
   Config::SetBaseOrCurrent(Config::MAIN_ENABLE_CHEATS, m_checkbox_cheats->isChecked());
   Settings::Instance().SetFallbackRegion(
       UpdateFallbackRegionFromIndex(m_combobox_fallback_region->currentIndex()));
-
-  settings.SaveSettings();
 }
 
 

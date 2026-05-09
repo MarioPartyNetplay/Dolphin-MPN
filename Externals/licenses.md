@@ -66,8 +66,6 @@ Dolphin includes or links code of the following third-party software projects:
    [LGPLv2.1+](http://cgit.freedesktop.org/pulseaudio/pulseaudio/tree/LICENSE)
 - [Qt5](http://qt-project.org/):
    [LGPLv3 and other licenses](http://doc.qt.io/qt-5/licensing.html)
-- [rangeset](https://github.com/AdmiralCurtiss/rangeset)
-   [zlib license](https://github.com/AdmiralCurtiss/rangeset/blob/master/LICENSE)
 - [SDL](https://www.libsdl.org/):
    [zlib license](http://hg.libsdl.org/SDL/file/tip/COPYING.txt)
 - [SFML](http://www.sfml-dev.org/):
@@ -78,6 +76,8 @@ Dolphin includes or links code of the following third-party software projects:
    [MIT](https://github.com/microsoft/wil/blob/master/LICENSE)
 - [xxHash](https://github.com/Cyan4973/xxHash):
    [BSD 2-Clause](https://github.com/Cyan4973/xxHash/blob/master/LICENSE)
+- [YACardEmu](https://github.com/GXTX/YACardEmu)
+   [GPLv2+](https://github.com/GXTX/YACardEmu/blob/master/license.txt)
 - [zlib-ng](https://github.com/zlib-ng/zlib-ng):
    [zlib license](https://github.com/zlib-ng/zlib-ng/blob/develop/LICENSE.md)
 - [Zstandard](https://facebook.github.io/zstd/):

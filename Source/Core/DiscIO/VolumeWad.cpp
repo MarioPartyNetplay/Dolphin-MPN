@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -149,7 +150,7 @@ std::vector<u64> VolumeWAD::GetContentOffsets() const
 }
 
 bool VolumeWAD::CheckContentIntegrity(const IOS::ES::Content& content,
-                                      const std::vector<u8>& encrypted_data,
+                                      std::span<const u8> encrypted_data,
                                       const IOS::ES::TicketReader& ticket) const
 {
   if (encrypted_data.size() != Common::AlignUp(content.size, 0x40))
@@ -247,7 +248,7 @@ std::string VolumeWAD::GetMakerID(const Partition& partition) const
   if (!Common::IsPrintableCharacter(temp[0]) || !Common::IsPrintableCharacter(temp[1]))
     return "00";
 
-  return DecodeString(temp);
+  return FilterGameID(temp);
 }
 
 std::optional<u64> VolumeWAD::GetTitleID(const Partition& partition) const

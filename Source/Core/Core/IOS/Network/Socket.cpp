@@ -850,14 +850,14 @@ void WiiSocket::ResetTimeout()
   timeout.reset();
 }
 
-void WiiSocket::DoSock(Request request, NET_IOCTL type)
+void WiiSocket::DoSock(const Request& request, NET_IOCTL type)
 {
   sockop so = {request, false};
   so.net_type = type;
   pending_sockops.push_back(so);
 }
 
-void WiiSocket::DoSock(Request request, SSL_IOCTL type)
+void WiiSocket::DoSock(const Request& request, SSL_IOCTL type)
 {
   sockop so = {request, true};
   so.ssl_type = type;
@@ -893,11 +893,7 @@ s32 WiiSockMan::AddSocket(s32 fd, bool is_rw)
     sock.SetWiiFd(wii_fd);
     m_ios.GetSystem().GetPowerPC().GetDebugInterface().NetworkLogger()->OnNewSocket(fd);
 
-#ifdef __APPLE__
-    int opt_no_sigpipe = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &opt_no_sigpipe, sizeof(opt_no_sigpipe)) < 0)
-      ERROR_LOG_FMT(IOS_NET, "Failed to set SO_NOSIGPIPE on socket");
-#endif
+    Common::SetPlatformSocketOptions(fd);
 
     // Wii UDP sockets can use broadcast address by default
     if (!is_rw)

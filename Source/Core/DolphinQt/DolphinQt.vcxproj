@@ -92,8 +92,10 @@
     <ClCompile Include="Config\ConfigControls\ConfigText.cpp" />
     <ClCompile Include="Config\ConfigControls\ConfigUserPath.cpp" />
     <ClCompile Include="Config\ControllerInterface\ControllerInterfaceWindow.cpp" />
-    <ClCompile Include="Config\ControllerInterface\DualShockUDPClientAddServerDialog.cpp" />
+    <ClCompile Include="Config\SDLHints\SDLHintsWindow.cpp" />
+    <ClCompile Include="Config\ControllerInterface\DualShockUDPClientEditServerDialog.cpp" />
     <ClCompile Include="Config\ControllerInterface\DualShockUDPClientWidget.cpp" />
+    <ClCompile Include="Config\ControllerInterface\DualShockUDPSettings.cpp" />
     <ClCompile Include="Config\ControllerInterface\ServerStringValidator.cpp" />
     <ClCompile Include="Config\ControllersPane.cpp" />
     <ClCompile Include="Config\FilesystemWidget.cpp" />
@@ -190,6 +192,7 @@
     <ClCompile Include="EmulatedUSB\WiiSpeakWindow.cpp" />
     <ClCompile Include="FIFO\FIFOAnalyzer.cpp" />
     <ClCompile Include="FIFO\FIFOPlayerWindow.cpp" />
+    <ClCompile Include="GameCount.cpp" />
     <ClCompile Include="GameList\GameList.cpp" />
     <ClCompile Include="GameList\GameListModel.cpp" />
     <ClCompile Include="GameList\GameTracker.cpp" />
@@ -253,6 +256,7 @@
     <ClCompile Include="Settings\InterfacePane.cpp" />
     <ClCompile Include="Settings\MarioPartyNetplayPane.cpp" />
     <ClCompile Include="Settings\OnScreenDisplayPane.cpp" />
+    <ClCompile Include="Settings\TriforcePane.cpp" />
     <ClCompile Include="Settings\PathPane.cpp" />
     <ClCompile Include="Settings\USBDevicePicker.cpp" />
     <ClCompile Include="Settings\WiiPane.cpp" />
@@ -331,8 +335,10 @@
     <QtMoc Include="Config\ConfigControls\ConfigText.h" />
     <QtMoc Include="Config\ConfigControls\ConfigUserPath.h" />
     <QtMoc Include="Config\ControllerInterface\ControllerInterfaceWindow.h" />
-    <QtMoc Include="Config\ControllerInterface\DualShockUDPClientAddServerDialog.h" />
+    <QtMoc Include="Config\SDLHints\SDLHintsWindow.h" />
+    <QtMoc Include="Config\ControllerInterface\DualShockUDPClientEditServerDialog.h" />
     <QtMoc Include="Config\ControllerInterface\DualShockUDPClientWidget.h" />
+    <QtMoc Include="Config\ControllerInterface\DualShockUDPSettings.h" />
     <QtMoc Include="Config\ControllerInterface\ServerStringValidator.h" />
     <QtMoc Include="Config\ControllersPane.h" />
     <QtMoc Include="Config\FilesystemWidget.h" />
@@ -423,6 +429,7 @@
     <QtMoc Include="EmulatedUSB\WiiSpeakWindow.h" />
     <QtMoc Include="FIFO\FIFOAnalyzer.h" />
     <QtMoc Include="FIFO\FIFOPlayerWindow.h" />
+    <QtMoc Include="GameCount.h" />
     <QtMoc Include="GameList\GameList.h" />
     <QtMoc Include="GameList\GameListModel.h" />
     <QtMoc Include="GameList\GameTracker.h" />
@@ -474,6 +481,7 @@
     <QtMoc Include="Settings\InterfacePane.h" />
     <QtMoc Include="Settings\MarioPartyNetplayPane.h" />
     <QtMoc Include="Settings\PathPane.h" />
+    <QtMoc Include="Settings\TriforcePane.h" />
     <QtMoc Include="Settings\USBDevicePicker.h" />
     <QtMoc Include="Settings\WiiPane.h" />
     <QtMoc Include="SkylanderPortal\SkylanderPortalWindow.h" />

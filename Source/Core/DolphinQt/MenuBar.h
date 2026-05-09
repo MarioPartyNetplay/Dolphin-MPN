@@ -132,7 +132,7 @@ signals:
   void ExportRecording();
   void ShowTASInput();
 
-  void SelectionChanged(std::shared_ptr<const UICommon::GameFile> game_file);
+  void SelectionChanged(const std::shared_ptr<const UICommon::GameFile>& game_file);
   void RecordingStatusChanged(bool recording);
   void ReadOnlyModeChanged(bool read_only);
 
@@ -196,7 +196,7 @@ private:
   void LogInstructions();
   void SearchInstruction();
 
-  void OnSelectionChanged(std::shared_ptr<const UICommon::GameFile> game_file);
+  void OnSelectionChanged(const std::shared_ptr<const UICommon::GameFile>& game_file);
   void OnRecordingStatusChanged(bool recording);
   void OnReadOnlyModeChanged(bool read_only);
   void OnDebugModeToggled(bool enabled);
@@ -228,6 +228,7 @@ private:
   QAction* m_ntscj_ipl;
   QAction* m_ntscu_ipl;
   QAction* m_pal_ipl;
+  QAction* m_dev_ipl;
   QMenu* m_manage_nand_menu;
   QAction* m_import_backup;
   QAction* m_check_nand;
@@ -288,6 +289,7 @@ private:
   QAction* m_jit_block_linking;
   QAction* m_jit_disable_cache;
   QAction* m_jit_disable_fastmem;
+  QAction* m_jit_disable_page_table_fastmem;
   QAction* m_jit_disable_fastmem_arena;
   QAction* m_jit_disable_large_entry_points_map;
   QAction* m_jit_clear_cache;

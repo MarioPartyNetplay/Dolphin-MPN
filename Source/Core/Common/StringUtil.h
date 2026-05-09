@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <ranges>
 #include <span>
 #include <sstream>
 #include <string>
@@ -163,6 +164,11 @@ std::string ValueToString(Common::Enum auto value)
 // Generates an hexdump-like representation of a binary data blob.
 std::string HexDump(const u8* data, size_t size);
 
+inline auto HexDump(std::span<const u8> data)
+{
+  return HexDump(data.data(), data.size());
+}
+
 namespace Common
 {
 std::from_chars_result FromChars(std::string_view sv, std::integral auto& value, int base = 10)
@@ -181,6 +187,32 @@ std::from_chars_result FromChars(std::string_view sv, std::floating_point auto& 
 }  // namespace Common
 
 std::vector<std::string> SplitString(const std::string& str, char delim);
+
+// Returns `nullopt` if subject does not contain exactly (Count - 1) delim.
+template <std::size_t Count>
+requires(Count > 1)
+std::optional<std::array<std::string_view, Count>> SplitStringIntoArray(std::string_view subject,
+                                                                        char delim)
+{
+  std::optional<std::array<std::string_view, Count>> result;
+  result.emplace();
+
+  std::size_t index = 0;
+  for (auto&& item : subject | std::views::split(delim))
+  {
+    // Too many delim.
+    if (index == Count)
+      return std::nullopt;
+
+    (*result)[index++] = std::string_view{item};
+  }
+
+  // Too few delim.
+  if (index != Count)
+    return std::nullopt;
+
+  return result;
+}
 
 // "C:/Windows/winhelp.exe" to "C:/Windows/", "winhelp", ".exe"
 // This requires forward slashes to be used for the path separators, even on Windows.

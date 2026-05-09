@@ -332,7 +332,7 @@ static void CpuThread(Core::System& system, const std::optional<std::string>& sa
   DolphinAnalytics::Instance().ReportGameStart();
 
   // Clear performance data collected from previous threads.
-  g_perf_metrics.Reset();
+  system.GetPerfMetrics().Reset();
 
   // The JIT need to be able to intercept faults, both for fastmem and for the BLR optimization.
   const bool exception_handler = EMM::IsExceptionHandlerSupported();
@@ -823,16 +823,13 @@ static void RestoreStateAndUnlock(Core::System& system, const bool unpause_on_un
   system.GetCPU().RestoreStateAndUnlock(unpause_on_unlock);
 }
 
-void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> function,
-                    bool wait_for_completion)
+void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> function)
 {
   if (IsCPUThread())
   {
     function();
     return;
   }
-
-  Common::OneShotEvent cpu_thread_job_finished;
 
   // Pause the CPU (set it to stepping mode).
   const bool was_running = PauseAndLock(system);
@@ -841,15 +838,6 @@ void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> funct
   {
     // If the core hasn't been started, there is no active CPU thread we can race against.
     function();
-    wait_for_completion = false;
-  }
-  else if (wait_for_completion)
-  {
-    // Queue the job function followed by triggering the event.
-    system.GetCPU().AddCPUThreadJob([&function, &cpu_thread_job_finished] {
-      function();
-      cpu_thread_job_finished.Set();
-    });
   }
   else
   {
@@ -859,14 +847,6 @@ void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> funct
 
   // Release the CPU thread, and let it execute the callback.
   RestoreStateAndUnlock(system, was_running);
-
-  // If we're waiting for completion, block until the event fires.
-  if (wait_for_completion)
-  {
-    // Periodically yield to the UI thread, so we don't deadlock.
-    while (!cpu_thread_job_finished.WaitFor(std::chrono::milliseconds(10)))
-      Host_YieldToUI();
-  }
 }
 
 // --- Callbacks for backends / engine ---
@@ -874,11 +854,12 @@ void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> funct
 // Called from Renderer::Swap (GPU thread) when a frame is presented to the host screen.
 void Callback_FramePresented(const PresentInfo& present_info)
 {
-  g_perf_metrics.CountFrame();
+  auto& perf_metrics = Core::System::GetInstance().GetPerfMetrics();
+  perf_metrics.CountFrame();
 
   const auto presentation_offset =
       present_info.actual_present_time - present_info.intended_present_time;
-  g_perf_metrics.SetLatestFramePresentationOffset(presentation_offset);
+  perf_metrics.SetLatestFramePresentationOffset(presentation_offset);
 
   if (present_info.reason == PresentInfo::PresentReason::VideoInterfaceDuplicate)
     return;
@@ -947,10 +928,9 @@ Common::EventHook AddOnStateChangedCallback(StateChangedCallbackFunc callback)
   return s_state_changed_event.Register(std::move(callback));
 }
 
-void NotifyStateChanged(Core::State state)
+void NotifyStateChanged(const Core::State state)
 {
   s_state_changed_event.Trigger(state);
-  g_perf_metrics.OnEmulationStateChanged(state);
 }
 
 void UpdateWantDeterminism(Core::System& system, bool initial)

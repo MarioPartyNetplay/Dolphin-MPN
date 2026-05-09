@@ -41,7 +41,6 @@ private:
 enum class SettingsWindowPaneIndex : int
 {
   General = 0,
-  Graphics = 1,
   Controllers = 2,
   Interface = 3,
   MarioPartyNetplay = 4,
@@ -50,8 +49,8 @@ enum class SettingsWindowPaneIndex : int
   Paths = 7,
   GameCube = 8,
   Wii = 9,
-  Advanced = 10,
-};
+  Triforce = 10,
+  Advanced = 11,
 
 class SettingsWindow final : public StackedSettingsWindow
 {
@@ -60,4 +59,6 @@ public:
   explicit SettingsWindow(MainWindow* parent);
 
   void SelectPane(SettingsWindowPaneIndex);
+
+  void closeEvent(QCloseEvent* event) override;
 };

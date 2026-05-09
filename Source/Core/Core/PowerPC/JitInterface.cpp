@@ -77,6 +77,16 @@ CPUCoreBase* JitInterface::GetCore() const
   return m_jit.get();
 }
 
+#ifndef _ARCH_32
+bool JitInterface::WantsPageTableMappings() const
+{
+  if (!m_jit)
+    return false;
+
+  return m_jit->WantsPageTableMappings();
+}
+#endif
+
 void JitInterface::UpdateMembase()
 {
   if (!m_jit)
@@ -185,10 +195,10 @@ void JitInterface::WipeBlockProfilingData(const Core::CPUThreadGuard& guard)
 }
 
 void JitInterface::RunOnBlocks(const Core::CPUThreadGuard& guard,
-                               std::function<void(const JitBlock&)> f) const
+                               const std::function<void(const JitBlock&)>& f) const
 {
   if (m_jit)
-    m_jit->GetBlockCache()->RunOnBlocks(guard, std::move(f));
+    m_jit->GetBlockCache()->RunOnBlocks(guard, f);
 }
 
 std::size_t JitInterface::GetBlockCount() const

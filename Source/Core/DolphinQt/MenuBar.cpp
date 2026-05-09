@@ -315,6 +315,9 @@ void MenuBar::AddToolsMenu()
   m_pal_ipl =
       gc_ipl->addAction(tr("PAL"), this, [this] { emit BootGameCubeIPL(DiscIO::Region::PAL); });
 
+  m_dev_ipl = gc_ipl->addAction(tr("Triforce"), this,
+                                [this] { emit BootGameCubeIPL(DiscIO::Region::Unknown); });
+
   tools_menu->addAction(tr("Memory Card Manager"), this, [this] { emit ShowMemcardManager(); });
 
   tools_menu->addSeparator();
@@ -587,6 +590,13 @@ void MenuBar::AddViewMenu()
   view_menu->addSeparator();
   AddShowPlatformsMenu(view_menu);
   AddShowRegionsMenu(view_menu);
+
+  view_menu->addSeparator();
+  QAction* const show_game_count = view_menu->addAction(tr("Show Game Count"));
+  show_game_count->setCheckable(true);
+  show_game_count->setChecked(Settings::Instance().IsGameCountVisible());
+  connect(show_game_count, &QAction::toggled, &Settings::Instance(),
+          &Settings::SetGameCountVisible);
 
   view_menu->addSeparator();
   QAction* const purge_action =
@@ -899,6 +909,13 @@ void MenuBar::AddJITMenu()
   connect(m_jit_disable_fastmem, &QAction::toggled,
           [](bool enabled) { Config::SetBaseOrCurrent(Config::MAIN_FASTMEM, !enabled); });
 
+  m_jit_disable_page_table_fastmem = m_jit->addAction(tr("Disable Page Table Fastmem"));
+  m_jit_disable_page_table_fastmem->setCheckable(true);
+  m_jit_disable_page_table_fastmem->setChecked(!Config::Get(Config::MAIN_PAGE_TABLE_FASTMEM));
+  connect(m_jit_disable_page_table_fastmem, &QAction::toggled, [](bool enabled) {
+    Config::SetBaseOrCurrent(Config::MAIN_PAGE_TABLE_FASTMEM, !enabled);
+  });
+
   m_jit_disable_fastmem_arena = m_jit->addAction(tr("Disable Fastmem Arena"));
   m_jit_disable_fastmem_arena->setCheckable(true);
   m_jit_disable_fastmem_arena->setChecked(!Config::Get(Config::MAIN_FASTMEM_ARENA));
@@ -1074,6 +1091,7 @@ void MenuBar::UpdateToolsMenu(const Core::State state)
   m_ntscj_ipl->setEnabled(is_uninitialized && File::Exists(Config::GetBootROMPath(JAP_DIR)));
   m_ntscu_ipl->setEnabled(is_uninitialized && File::Exists(Config::GetBootROMPath(USA_DIR)));
   m_pal_ipl->setEnabled(is_uninitialized && File::Exists(Config::GetBootROMPath(EUR_DIR)));
+  m_dev_ipl->setEnabled(is_uninitialized && File::Exists(Config::GetBootROMPath(DEV_DIR)));
   m_wad_install_action->setEnabled(is_uninitialized);
   m_import_backup->setEnabled(is_uninitialized);
   m_check_nand->setEnabled(is_uninitialized);
@@ -1391,7 +1409,7 @@ void MenuBar::NANDExtractCertificates()
   }
 }
 
-void MenuBar::OnSelectionChanged(std::shared_ptr<const UICommon::GameFile> game_file)
+void MenuBar::OnSelectionChanged(const std::shared_ptr<const UICommon::GameFile>& game_file)
 {
   m_game_selected = !!game_file;
 

@@ -156,7 +156,7 @@ void AdvancedPane::CreateLayout()
   cpu_clock_override_slider_layout->setContentsMargins(0, 0, 0, 0);
   clock_override_layout->addLayout(cpu_clock_override_slider_layout);
 
-  m_cpu_clock_override_slider = new ConfigFloatSlider(0.01f, 4.0f, Config::MAIN_OVERCLOCK, 0.01f);
+  m_cpu_clock_override_slider = new ConfigFloatSlider(0.01f, 5.0f, Config::MAIN_OVERCLOCK, 0.01f);
   cpu_clock_override_slider_layout->addWidget(m_cpu_clock_override_slider);
 
   m_cpu_label = new QLabel();
@@ -336,11 +336,12 @@ void AdvancedPane::ConnectLayout()
     Update();
   });
 
-  connect(m_custom_rtc_datetime, &QDateTimeEdit::dateTimeChanged, [this](QDateTime date_time) {
-    Config::SetBaseOrCurrent(Config::MAIN_CUSTOM_RTC_VALUE,
-                             static_cast<u32>(date_time.toSecsSinceEpoch()));
-    Update();
-  });
+  connect(m_custom_rtc_datetime, &QDateTimeEdit::dateTimeChanged,
+          [this](const QDateTime& date_time) {
+            Config::SetBaseOrCurrent(Config::MAIN_CUSTOM_RTC_VALUE,
+                                     static_cast<u32>(date_time.toSecsSinceEpoch()));
+            Update();
+          });
 }
 
 void AdvancedPane::Update()

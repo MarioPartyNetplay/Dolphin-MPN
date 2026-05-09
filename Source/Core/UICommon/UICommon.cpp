@@ -60,6 +60,7 @@
 namespace UICommon
 {
 static Config::ConfigChangedCallbackID s_config_changed_callback_id;
+static Common::HookableEvent<> s_flush_unsaved_data_event_hook;
 
 static void CreateDumpPath(std::string path)
 {
@@ -155,6 +156,17 @@ void Shutdown()
   g_Config.Shutdown();
   SConfig::Shutdown();
   Config::Shutdown();
+}
+
+[[nodiscard]] Common::EventHook AddFlushUnsavedDataCallback(std::function<void()> callback)
+{
+  return s_flush_unsaved_data_event_hook.Register(std::move(callback));
+}
+
+void FlushUnsavedData()
+{
+  INFO_LOG_FMT(CORE, "Flushing unsaved data...");
+  s_flush_unsaved_data_event_hook.Trigger();
 }
 
 void InitControllers(const WindowSystemInfo& wsi)
@@ -268,8 +280,10 @@ void CreateDirectories()
   File::CreateFullPath(File::GetUserPath(D_GCUSER_IDX) + USA_DIR DIR_SEP);
   File::CreateFullPath(File::GetUserPath(D_GCUSER_IDX) + EUR_DIR DIR_SEP);
   File::CreateFullPath(File::GetUserPath(D_GCUSER_IDX) + JAP_DIR DIR_SEP);
+  File::CreateFullPath(File::GetUserPath(D_TRIUSER_IDX));
   File::CreateFullPath(File::GetUserPath(D_HIRESTEXTURES_IDX));
   File::CreateFullPath(File::GetUserPath(D_GRAPHICSMOD_IDX));
+  File::CreateFullPath(File::GetUserPath(D_LOGS_IDX));
   File::CreateFullPath(File::GetUserPath(D_MAPS_IDX));
   File::CreateFullPath(File::GetUserPath(D_SCREENSHOTS_IDX));
   File::CreateFullPath(File::GetUserPath(D_SHADERS_IDX));

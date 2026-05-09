@@ -14,6 +14,7 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -52,6 +53,7 @@
 #include "Core/HW/GCPad.h"
 #include "Core/HW/SI/SI.h"
 #include "Core/HW/SI/SI_Device.h"
+#include "Core/HW/SI/SI_DeviceAMBaseboard.h"
 #include "Core/HW/SI/SI_DeviceGCController.h"
 #include "Core/HW/Sram.h"
 #include "Core/HW/WiiSave.h"
@@ -122,8 +124,8 @@ NetPlayClient::~NetPlayClient()
 
 // called from ---GUI--- thread
 NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog,
-                             const std::string& name, const NetTraversalConfig& traversal_config)
-    : m_dialog(dialog), m_player_name(name)
+                             std::string name, const NetTraversalConfig& traversal_config)
+    : m_dialog(dialog), m_player_name(std::move(name))
 {
   ClearBuffers();
 
@@ -1899,6 +1901,8 @@ void NetPlayClient::UpdateDevices()
   auto& si = Core::System::GetInstance().GetSerialInterface();
   for (auto player_id : m_pad_map)
   {
+    const SerialInterface::SIDevices si_device = Config::Get(Config::GetInfoForSIDevice(local_pad));
+
     if (m_gba_config[pad].enabled && player_id > 0)
     {
       si.ChangeDevice(SerialInterface::SIDEVICE_GC_GBA_EMULATED, pad);
@@ -1906,8 +1910,6 @@ void NetPlayClient::UpdateDevices()
     else if (player_id == m_local_player->pid)
     {
       // Use local controller types for local controllers if they are compatible
-      const SerialInterface::SIDevices si_device =
-          Config::Get(Config::GetInfoForSIDevice(local_pad));
       if (SerialInterface::SIDevice_IsGCController(si_device))
       {
         si.ChangeDevice(si_device, pad);
@@ -1925,7 +1927,8 @@ void NetPlayClient::UpdateDevices()
     }
     else if (player_id > 0)
     {
-      si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
+      if (si_device != SerialInterface::SIDEVICE_AM_BASEBOARD)
+        si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
     }
     else
     {
@@ -2575,7 +2578,8 @@ bool NetPlayClient::DoAllPlayersHaveGame()
   });
 }
 
-static std::string SHA1Sum(const std::string& file_path, std::function<bool(int)> report_progress)
+static std::string SHA1Sum(const std::string& file_path,
+                           const std::function<bool(int)>& report_progress)
 {
   std::vector<u8> data(8 * 1024 * 1024);
   u64 read_offset = 0;
@@ -2876,12 +2880,12 @@ u64 ExpansionInterface::CEXIIPL::NetPlay_GetEmulatedTime()
 
 // called from ---CPU--- thread
 // return the local pad num that should rumble given a ingame pad num
-int SerialInterface::CSIDevice_GCController::NetPlay_InGamePadToLocalPad(int numPAD)
+int SerialInterface::CSIDevice_GCController::NetPlay_InGamePadToLocalPad(int pad_num)
 {
   std::lock_guard lk(NetPlay::crit_netplay_client);
 
   if (NetPlay::netplay_client)
-    return NetPlay::netplay_client->InGamePadToLocalPad(numPAD);
+    return NetPlay::netplay_client->InGamePadToLocalPad(pad_num);
 
   return numPAD;
 }

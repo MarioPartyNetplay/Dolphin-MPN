@@ -57,6 +57,7 @@ add_custom_command(
 )
 
 add_library(core
+  AchievementApprovedHash.h
   AchievementManager.cpp
   AchievementManager.h
   ActionReplay.cpp
@@ -239,6 +240,8 @@ add_library(core
   HW/DSPLLE/DSPSymbols.h
   HW/DVD/DVDInterface.cpp
   HW/DVD/DVDInterface.h
+  HW/DVD/AMMediaboard.cpp
+  HW/DVD/AMMediaboard.h
   HW/DVD/DVDMath.cpp
   HW/DVD/DVDMath.h
   HW/DVD/DVDThread.cpp
@@ -306,10 +309,18 @@ add_library(core
   HW/HSP/HSP_Device.h
   HW/HSP/HSP_DeviceARAMExpansion.cpp
   HW/HSP/HSP_DeviceARAMExpansion.h
+  HW/HSP/HSP_DeviceGBPlayer.cpp
+  HW/HSP/HSP_DeviceGBPlayer.h
   HW/HSP/HSP_DeviceNull.cpp
   HW/HSP/HSP_DeviceNull.h
   HW/HW.cpp
   HW/HW.h
+  HW/MagCard/C1231BR.cpp
+  HW/MagCard/C1231BR.h
+  HW/MagCard/C1231LR.cpp
+  HW/MagCard/C1231LR.h
+  HW/MagCard/MagneticCardReader.cpp
+  HW/MagCard/MagneticCardReader.h
   HW/Memmap.cpp
   HW/Memmap.h
   HW/MemoryInterface.cpp
@@ -332,6 +343,8 @@ add_library(core
   HW/SI/SI_DeviceGCSteeringWheel.h
   HW/SI/SI_DeviceKeyboard.cpp
   HW/SI/SI_DeviceKeyboard.h
+  HW/SI/SI_DeviceAMBaseboard.cpp
+  HW/SI/SI_DeviceAMBaseboard.h
   HW/SI/SI_DeviceNull.cpp
   HW/SI/SI_DeviceNull.h
   HW/SI/SI.cpp
@@ -342,6 +355,22 @@ add_library(core
   HW/StreamADPCM.h
   HW/SystemTimers.cpp
   HW/SystemTimers.h
+  HW/Triforce/DeckReader.cpp
+  HW/Triforce/DeckReader.h
+  HW/Triforce/FZeroAX.cpp
+  HW/Triforce/FZeroAX.h
+  HW/Triforce/ICCardReader.cpp
+  HW/Triforce/ICCardReader.h
+  HW/Triforce/IOPorts.cpp
+  HW/Triforce/IOPorts.h
+  HW/Triforce/JVSIO.cpp
+  HW/Triforce/JVSIO.h
+  HW/Triforce/MarioKartGP.cpp
+  HW/Triforce/MarioKartGP.h
+  HW/Triforce/SerialDevice.cpp
+  HW/Triforce/SerialDevice.h
+  HW/Triforce/Touchscreen.cpp
+  HW/Triforce/Touchscreen.h
   HW/VideoInterface.cpp
   HW/VideoInterface.h
   HW/WII_IPC.cpp
@@ -717,7 +746,6 @@ PUBLIC
   inputcommon
   MbedTLS::mbedtls
   pugixml
-  RangeSet::RangeSet
   sfml-network
   videonull
   videoogl

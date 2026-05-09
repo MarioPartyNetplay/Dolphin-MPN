@@ -5,15 +5,15 @@
 
 #include <memory>
 
-#include "VideoCommon/VideoEvents.h"
-
 class GeometryShaderManager;
 class Interpreter;
 class JitInterface;
+class PerformanceMetrics;
 class PixelShaderManager;
 class SoundStream;
 struct Sram;
 class VertexShaderManager;
+struct VideoEvents;
 class XFStateManager;
 
 namespace AudioInterface
@@ -186,6 +186,7 @@ public:
   MemoryInterface::MemoryInterfaceManager& GetMemoryInterface() const;
   PowerPC::MMU& GetMMU() const;
   Movie::MovieManager& GetMovie() const;
+  PerformanceMetrics& GetPerfMetrics() const;
   PixelEngine::PixelEngineManager& GetPixelEngine() const;
   PixelShaderManager& GetPixelShaderManager() const;
   PowerPC::PowerPCManager& GetPowerPC() const;

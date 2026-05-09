@@ -34,6 +34,7 @@
     <ClInclude Include="Core\DSP\HermesText.h" />
     <ClInclude Include="Core\IOS\ES\TestBinaryData.h" />
     <ClInclude Include="Core\PowerPC\TestValues.h" />
+    <ClInclude Include="Core\StubJit.h" />
   </ItemGroup>
   <ItemGroup>
     <!--gtest is rather small, so just include it into the build here-->
@@ -76,6 +77,7 @@
     <ClCompile Include="Core\PageFaultTest.cpp" />
     <ClCompile Include="Core\PatchAllowlistTest.cpp" />
     <ClCompile Include="Core\PowerPC\DivUtilsTest.cpp" />
+    <ClCompile Include="Core\PowerPC\PageTableHostMappingTest.cpp" />
     <ClCompile Include="VideoCommon\VertexLoaderTest.cpp" />
     <ClCompile Include="StubHost.cpp" />
   </ItemGroup>

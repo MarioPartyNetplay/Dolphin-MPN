@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
+#include <vector>
 
 #include "Common/CommonTypes.h"
 
@@ -37,7 +38,7 @@ public:
   using SampleType = s16;
   using UnsignedSampleType = std::make_unsigned_t<SampleType>;
 
-  Microphone(const MicrophoneState& sampler, const std::string& worker_name);
+  Microphone(const MicrophoneState& sampler, std::string worker_name);
   virtual ~Microphone();
 
   void Initialize();

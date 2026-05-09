@@ -33,8 +33,8 @@ enum class AspectMode : int
 enum class StereoMode : int
 {
   Off,
-  SBS,
-  TAB,
+  SideBySide,
+  TopAndBottom,
   Anaglyph,
   QuadBuffer,
   Passive
@@ -369,7 +369,8 @@ struct VideoConfig final
   }
   bool UseGPUTextureDecoding() const
   {
-    return g_backend_info.bSupportsGPUTextureDecoding && bEnableGPUTextureDecoding;
+    return g_backend_info.bSupportsGPUTextureDecoding && bEnableGPUTextureDecoding &&
+           !bArbitraryMipmapDetection;
   }
   bool UseVertexRounding() const { return bVertexRounding && iEFBScale != 1; }
   bool ManualTextureSamplingWithCustomTextureSizes() const
