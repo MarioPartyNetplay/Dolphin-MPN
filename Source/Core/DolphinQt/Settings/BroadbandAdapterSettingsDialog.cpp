@@ -92,6 +92,14 @@ void BroadbandAdapterSettingsDialog::InitControls()
                       "href=\"https://www.teamxlink.co.uk/wiki/Dolphin\">refer to this page</a>."));
     window_title = tr("XLink Kai BBA Destination Address");
     break;
+
+  case Type::IPC:
+    address_label = new QLabel(tr("IPC-based BBA Interface"));
+    address_placeholder = QStringLiteral("");
+    current_address = QStringLiteral("");
+    description = new QLabel(tr("This interface uses IPC for communication. No configuration needed."));
+    window_title = tr("IPC BBA Interface");
+    break;
   }
 
   setWindowTitle(window_title);
@@ -150,6 +158,9 @@ void BroadbandAdapterSettingsDialog::SaveAddress()
     break;
   case Type::XLinkKai:
     Config::SetBaseOrCurrent(Config::MAIN_BBA_XLINK_IP, bba_new_address);
+    break;
+  case Type::IPC:
+    // IPC BBA doesn't need configuration
     break;
   }
 

@@ -5,6 +5,7 @@
 
 #include "Common/ChunkFile.h"
 #include "Core/Config/GraphicsSettings.h"
+#include "Core/Config/MainSettings.h"
 #include "Core/CoreTiming.h"
 #include "Core/HW/VideoInterface.h"
 #include "Core/Host.h"
@@ -94,8 +95,13 @@ static void TryToSnapToXFBSize(int& width, int& height, int xfb_width, int xfb_h
 
 Presenter::Presenter()
 {
+  auto& video_events = GetVideoEvents();
+
   m_config_changed =
-      ConfigChangedEvent::Register([this](u32 bits) { ConfigChanged(bits); }, "Presenter");
+      video_events.config_changed_event.Register([this](u32 bits) { ConfigChanged(bits); });
+
+  m_end_field_hook = video_events.vi_end_field_event.Register(
+      [this] { m_immediate_swap_happened_this_field.store(false, std::memory_order_relaxed); });
 }
 
 Presenter::~Presenter()
@@ -107,6 +113,8 @@ Presenter::~Presenter()
 bool Presenter::Initialize()
 {
   UpdateDrawRectangle();
+
+  m_immediate_swap_happened_this_field.store(false, std::memory_order_relaxed);
 
   if (!g_gfx->IsHeadless())
   {
@@ -162,9 +170,12 @@ void Presenter::ViSwap(u32 xfb_addr, u32 fb_width, u32 fb_stride, u32 fb_height,
 {
   bool is_duplicate = FetchXFB(xfb_addr, fb_width, fb_stride, fb_height, ticks);
 
-  PresentInfo present_info;
-  present_info.emulated_timestamp = ticks;
-  present_info.present_count = m_present_count++;
+  PresentInfo present_info{
+      .present_count = m_present_count++,
+      .emulated_timestamp = ticks,
+      .intended_present_time = presentation_time,
+  };
+
   if (is_duplicate)
   {
     present_info.frame_count = m_frame_count - 1;  // Previous frame
@@ -195,33 +206,53 @@ void Presenter::ViSwap(u32 xfb_addr, u32 fb_width, u32 fb_stride, u32 fb_height,
     }
   }
 
-  BeforePresentEvent::Trigger(present_info);
+  auto& video_events = GetVideoEvents();
+
+  video_events.before_present_event.Trigger(present_info);
 
   if (!is_duplicate || !g_ActiveConfig.bSkipPresentingDuplicateXFBs)
   {
-    Present(presentation_time);
+    Present(&present_info);
     ProcessFrameDumping(ticks);
 
-    AfterPresentEvent::Trigger(present_info);
+    video_events.after_present_event.Trigger(present_info);
   }
 }
 
-void Presenter::ImmediateSwap(u32 xfb_addr, u32 fb_width, u32 fb_stride, u32 fb_height, u64 ticks)
+void Presenter::ImmediateSwap(u32 xfb_addr, u32 fb_width, u32 fb_stride, u32 fb_height)
 {
+  if (m_immediate_swap_happened_this_field.exchange(true, std::memory_order_relaxed) &&
+      Config::Get(Config::GFX_HACK_CAP_IMMEDIATE_XFB))
+  {
+    return;
+  }
+
+  const u64 ticks = m_next_swap_estimated_ticks;
+
   FetchXFB(xfb_addr, fb_width, fb_stride, fb_height, ticks);
 
-  PresentInfo present_info;
-  present_info.emulated_timestamp = ticks;  // TODO: This should be the time of the next VI field
-  present_info.frame_count = m_frame_count++;
-  present_info.reason = PresentInfo::PresentReason::Immediate;
-  present_info.present_count = m_present_count++;
+  PresentInfo present_info{
+      .frame_count = m_frame_count++,
+      .present_count = m_present_count++,
+      .reason = PresentInfo::PresentReason::Immediate,
+      .emulated_timestamp = ticks,
+      .intended_present_time = m_next_swap_estimated_time,
+  };
 
-  BeforePresentEvent::Trigger(present_info);
+  auto& video_events = GetVideoEvents();
 
-  Present();
+  video_events.before_present_event.Trigger(present_info);
+
+  Present(&present_info);
   ProcessFrameDumping(ticks);
 
-  AfterPresentEvent::Trigger(present_info);
+  video_events.after_present_event.Trigger(present_info);
+}
+
+void Presenter::SetNextSwapEstimatedTime(u64 ticks, TimePoint host_time)
+{
+  m_next_swap_estimated_ticks = ticks;
+  m_next_swap_estimated_time = host_time;
 }
 
 void Presenter::ProcessFrameDumping(u64 ticks) const
@@ -325,7 +356,7 @@ void Presenter::OnBackbufferSet(bool size_changed, bool is_first_set)
   if (size_changed && !is_first_set && g_ActiveConfig.iEFBScale == EFB_SCALE_AUTO_INTEGRAL &&
       m_auto_resolution_scale != AutoIntegralScale())
   {
-    g_framebuffer_manager->RecreateEFBFramebuffer();
+    g_framebuffer_manager->RecreateEFBFramebuffer(g_ActiveConfig.iEFBScale);
   }
   if (size_changed || is_first_set)
   {
@@ -361,7 +392,7 @@ Presenter::ConvertStereoRectangle(const MathUtil::Rectangle<int>& rc) const
 {
   // Resize target to half its original size
   auto draw_rc = rc;
-  if (g_ActiveConfig.stereo_mode == StereoMode::TAB)
+  if (g_ActiveConfig.stereo_mode == StereoMode::TopAndBottom)
   {
     // The height may be negative due to flipped rectangles
     int height = rc.bottom - rc.top;
@@ -378,7 +409,7 @@ Presenter::ConvertStereoRectangle(const MathUtil::Rectangle<int>& rc) const
   // Create two target rectangle offset to the sides of the backbuffer
   auto left_rc = draw_rc;
   auto right_rc = draw_rc;
-  if (g_ActiveConfig.stereo_mode == StereoMode::TAB)
+  if (g_ActiveConfig.stereo_mode == StereoMode::TopAndBottom)
   {
     left_rc.top -= m_backbuffer_height / 4;
     left_rc.bottom -= m_backbuffer_height / 4;
@@ -394,6 +425,54 @@ Presenter::ConvertStereoRectangle(const MathUtil::Rectangle<int>& rc) const
   }
 
   return std::make_tuple(left_rc, right_rc);
+}
+
+MathUtil::Rectangle<int> Presenter::GetCustomCrop(const MathUtil::Rectangle<int>& rect) const
+{
+  if (!g_ActiveConfig.bCropCustom)
+    return MathUtil::Rectangle<int>(0, 0, 0, 0);
+
+  const int uncropped_source_width = rect.GetWidth();
+  const int uncropped_source_height = rect.GetHeight();
+  const int efb_scale = g_framebuffer_manager->GetEFBScale();
+
+  // Determine amount of pixels to crop from the source rect.
+  const int source_crop_left =
+      std::min(g_ActiveConfig.iCropCustomLeft * efb_scale, uncropped_source_width);
+  const int source_crop_right = std::min(g_ActiveConfig.iCropCustomRight * efb_scale,
+                                         uncropped_source_width - source_crop_left);
+  const int source_crop_top =
+      std::min(g_ActiveConfig.iCropCustomTop * efb_scale, uncropped_source_height);
+  const int source_crop_bottom = std::min(g_ActiveConfig.iCropCustomBottom * efb_scale,
+                                          uncropped_source_height - source_crop_top);
+
+  return MathUtil::Rectangle<int>(source_crop_left, source_crop_top, source_crop_right,
+                                  source_crop_bottom);
+}
+
+MathUtil::Rectangle<int> Presenter::AdjustForCustomCrop(const MathUtil::Rectangle<int>& rect) const
+{
+  const MathUtil::Rectangle<int> crop = GetCustomCrop(rect);
+  const MathUtil::Rectangle<int> cropped(rect.left + crop.left, rect.top + crop.top,
+                                         rect.right - crop.right, rect.bottom - crop.bottom);
+  return cropped;
+}
+
+float Presenter::AdjustAspectRatioForCustomCrop(float input_aspect_ratio) const
+{
+  if (!g_ActiveConfig.bCropCustom)
+    return input_aspect_ratio;
+
+  const MathUtil::Rectangle<int> rect = m_xfb_rect;
+  if (rect.GetWidth() <= 0 || rect.GetHeight() <= 0)
+    return input_aspect_ratio;
+
+  const MathUtil::Rectangle<int> cropped = AdjustForCustomCrop(rect);
+  const float relative_width_difference =
+      static_cast<float>(cropped.GetWidth()) / static_cast<float>(rect.GetWidth());
+  const float relative_height_difference =
+      static_cast<float>(cropped.GetHeight()) / static_cast<float>(rect.GetHeight());
+  return input_aspect_ratio * (relative_width_difference / relative_height_difference);
 }
 
 float Presenter::CalculateDrawAspectRatio(bool allow_stretch) const
@@ -414,7 +493,8 @@ float Presenter::CalculateDrawAspectRatio(bool allow_stretch) const
   {
     // The actual aspect ratio of the XFB texture is irrelevant, the VI one is the one that matters
     const auto& vi = Core::System::GetInstance().GetVideoInterface();
-    const float source_aspect_ratio = vi.GetAspectRatio();
+    const float vi_aspect_ratio = vi.GetAspectRatio();
+    const float source_aspect_ratio = AdjustAspectRatioForCustomCrop(vi_aspect_ratio);
 
     // This will scale up the source ~4:3 resolution to its equivalent ~16:9 resolution
     if (aspect_mode == AspectMode::ForceWide ||
@@ -446,13 +526,13 @@ float Presenter::CalculateDrawAspectRatio(bool allow_stretch) const
 
   if (g_ActiveConfig.stereo_per_eye_resolution_full)
   {
-    if (g_ActiveConfig.stereo_mode == StereoMode::SBS)
+    if (g_ActiveConfig.stereo_mode == StereoMode::SideBySide)
     {
       // Render twice as wide if using side-by-side 3D, since the 3D will halve the horizontal
       // resolution
       resulting_aspect_ratio *= 2.0;
     }
-    else if (g_ActiveConfig.stereo_mode == StereoMode::TAB)
+    else if (g_ActiveConfig.stereo_mode == StereoMode::TopAndBottom)
     {
       // Render twice as tall if using top-and-bottom 3D, since the 3D will halve the vertical
       // resolution
@@ -576,8 +656,11 @@ std::tuple<float, float> Presenter::ApplyStandardAspectCrop(float width, float h
   if (!allow_stretch && aspect_mode == AspectMode::Stretch)
     aspect_mode = AspectMode::Auto;
 
-  if (!g_ActiveConfig.bCrop || aspect_mode == AspectMode::Stretch || aspect_mode == AspectMode::Raw)
+  if (!g_ActiveConfig.bCropToAspectRatio || aspect_mode == AspectMode::Stretch ||
+      aspect_mode == AspectMode::Raw)
+  {
     return {width, height};
+  }
 
   // Force aspect ratios by cropping the image.
   const float current_aspect = width / height;
@@ -597,7 +680,7 @@ std::tuple<float, float> Presenter::ApplyStandardAspectCrop(float width, float h
   // For the custom (relative) case, we want to crop from the native aspect ratio
   // to the specific target one, as they likely have a small difference
   case AspectMode::Custom:
-  // There should be no cropping needed in the custom strech case,
+  // There should be no cropping needed in the custom stretch case,
   // as output should always exactly match the target aspect ratio
   case AspectMode::CustomStretch:
     expected_aspect = g_ActiveConfig.GetCustomAspectRatio();
@@ -663,7 +746,7 @@ void Presenter::UpdateDrawRectangle()
   // FIXME: this breaks at very low widget sizes
   // Make ControllerInterface aware of the render window region actually being used
   // to adjust mouse cursor inputs.
-  // This also fails to acknowledge "g_ActiveConfig.bCrop".
+  // This also doesn't handle the image cropping settings.
   g_controller_interface.SetAspectRatioAdjustment(draw_aspect_ratio / win_aspect_ratio);
 
   float draw_width = draw_aspect_ratio;
@@ -703,12 +786,12 @@ void Presenter::UpdateDrawRectangle()
         FindClosestIntegerResolution(draw_width, draw_height, updated_draw_aspect_ratio);
     int_draw_width = std::get<0>(int_draw_res);
     int_draw_height = std::get<1>(int_draw_res);
-    if (!g_ActiveConfig.bCrop)
+    if (!g_ActiveConfig.bCropToAspectRatio)
     {
       if (g_ActiveConfig.aspect_mode != AspectMode::Stretch)
       {
-        TryToSnapToXFBSize(int_draw_width, int_draw_height, m_xfb_rect.GetWidth(),
-                           m_xfb_rect.GetHeight());
+        const MathUtil::Rectangle<int> rect = AdjustForCustomCrop(m_xfb_rect);
+        TryToSnapToXFBSize(int_draw_width, int_draw_height, rect.GetWidth(), rect.GetHeight());
       }
       // We can't draw something bigger than the window, it will crop
       int_draw_width = std::min(int_draw_width, static_cast<int>(win_width));
@@ -717,8 +800,9 @@ void Presenter::UpdateDrawRectangle()
   }
   else
   {
-    int_draw_width = m_xfb_rect.GetWidth();
-    int_draw_height = m_xfb_rect.GetHeight();
+    const MathUtil::Rectangle<int> rect = AdjustForCustomCrop(m_xfb_rect);
+    int_draw_width = rect.GetWidth();
+    int_draw_height = rect.GetHeight();
   }
 
   m_target_rectangle.left = static_cast<int>(std::round(win_width / 2.0 - int_draw_width / 2.0));
@@ -760,7 +844,7 @@ std::tuple<int, int> Presenter::CalculateOutputDimensions(int width, int height,
   if (!allow_stretch && aspect_mode == AspectMode::Stretch)
     aspect_mode = AspectMode::Auto;
 
-  if (!g_ActiveConfig.bCrop && aspect_mode != AspectMode::Stretch)
+  if (!g_ActiveConfig.bCropToAspectRatio && aspect_mode != AspectMode::Stretch)
   {
     // Find the closest integer resolution for the aspect ratio,
     // this avoids a small black line from being drawn on one of the four edges
@@ -799,8 +883,8 @@ void Presenter::RenderXFBToScreen(const MathUtil::Rectangle<int>& target_rc,
 
     g_gfx->SelectMainBuffer();
   }
-  else if (g_ActiveConfig.stereo_mode == StereoMode::SBS ||
-           g_ActiveConfig.stereo_mode == StereoMode::TAB)
+  else if (g_ActiveConfig.stereo_mode == StereoMode::SideBySide ||
+           g_ActiveConfig.stereo_mode == StereoMode::TopAndBottom)
   {
     const auto [left_rc, right_rc] = ConvertStereoRectangle(target_rc);
 
@@ -815,7 +899,7 @@ void Presenter::RenderXFBToScreen(const MathUtil::Rectangle<int>& target_rc,
   }
 }
 
-void Presenter::Present(std::optional<TimePoint> presentation_time)
+void Presenter::Present(PresentInfo* present_info)
 {
   m_present_count++;
 
@@ -828,11 +912,12 @@ void Presenter::Present(std::optional<TimePoint> presentation_time)
     // So just show the XFB
     if (m_xfb_entry)
     {
-      g_gfx->ShowImage(m_xfb_entry->texture.get(), m_xfb_rect);
+      const MathUtil::Rectangle<int> rect = AdjustForCustomCrop(m_xfb_rect);
+      g_gfx->ShowImage(m_xfb_entry->texture.get(), rect);
 
       // Update the window size based on the frame that was just rendered.
       // Due to depending on guest state, we need to call this every frame.
-      SetSuggestedWindowSize(m_xfb_rect.GetWidth(), m_xfb_rect.GetHeight());
+      SetSuggestedWindowSize(rect.GetWidth(), rect.GetHeight());
     }
     return;
   }
@@ -851,8 +936,8 @@ void Presenter::Present(std::optional<TimePoint> presentation_time)
   if (backbuffer_bound && m_xfb_entry)
   {
     // Adjust the source rectangle instead of using an oversized viewport to render the XFB.
-    auto render_target_rc = GetTargetRectangle();
-    auto render_source_rc = m_xfb_rect;
+    MathUtil::Rectangle<int> render_target_rc = GetTargetRectangle();
+    MathUtil::Rectangle<int> render_source_rc = AdjustForCustomCrop(m_xfb_rect);
     AdjustRectanglesToFitBounds(&render_target_rc, &render_source_rc, m_backbuffer_width,
                                 m_backbuffer_height);
     RenderXFBToScreen(render_target_rc, m_xfb_entry->texture.get(), render_source_rc);
@@ -869,8 +954,16 @@ void Presenter::Present(std::optional<TimePoint> presentation_time)
   {
     std::lock_guard<std::mutex> guard(m_swap_mutex);
 
-    if (presentation_time.has_value())
-      Core::System::GetInstance().GetCoreTiming().SleepUntil(*presentation_time);
+    if (present_info != nullptr)
+    {
+      const auto present_time = GetUpdatedPresentationTime(present_info->intended_present_time);
+
+      Core::System::GetInstance().GetCoreTiming().SleepUntil(present_time);
+
+      // Perhaps in the future a more accurate time can be acquired from the various backends.
+      present_info->actual_present_time = Clock::now();
+      present_info->present_time_accuracy = PresentInfo::PresentTimeAccuracy::PresentInProgress;
+    }
 
     g_gfx->PresentBackbuffer();
   }
@@ -879,13 +972,42 @@ void Presenter::Present(std::optional<TimePoint> presentation_time)
   {
     // Update the window size based on the frame that was just rendered.
     // Due to depending on guest state, we need to call this every frame.
-    SetSuggestedWindowSize(m_xfb_rect.GetWidth(), m_xfb_rect.GetHeight());
+    const MathUtil::Rectangle<int> rect = AdjustForCustomCrop(m_xfb_rect);
+    SetSuggestedWindowSize(rect.GetWidth(), rect.GetHeight());
   }
 
   if (m_onscreen_ui)
     m_onscreen_ui->BeginImGuiFrame(m_backbuffer_width, m_backbuffer_height);
 
   g_gfx->EndUtilityDrawing();
+}
+
+TimePoint Presenter::GetUpdatedPresentationTime(TimePoint intended_presentation_time)
+{
+  const auto now = Clock::now();
+  const auto arrival_offset = std::min(now - intended_presentation_time, DT{});
+
+  if (!Config::Get(Config::MAIN_SMOOTH_EARLY_PRESENTATION))
+  {
+    m_presentation_time_offset = arrival_offset;
+
+    // When SmoothEarlyPresentation is off and ImmediateXFB or RushFramePresentation are on,
+    //  present as soon as possible as the goal is to achieve low input latency.
+    if (g_ActiveConfig.bImmediateXFB || Config::Get(Config::MAIN_RUSH_FRAME_PRESENTATION))
+      return now;
+
+    return intended_presentation_time;
+  }
+
+  // Adjust slowly backward in time but quickly forward in time.
+  // This keeps the pacing moderately smooth even if games produce regular sporadic bumps.
+  // This was tuned to handle the terrible pacing in Brawl with "Immediate XFB".
+  // Super Mario Galaxy 1 + 2 still perform poorly here in SingleCore mode.
+  const auto adjustment_divisor = (arrival_offset < m_presentation_time_offset) ? 100 : 2;
+
+  m_presentation_time_offset += (arrival_offset - m_presentation_time_offset) / adjustment_divisor;
+
+  return intended_presentation_time + m_presentation_time_offset;
 }
 
 void Presenter::SetKeyMap(const DolphinKeyMap& key_map)
@@ -925,10 +1047,14 @@ void Presenter::DoState(PointerWrap& p)
   if (p.IsReadMode() && m_last_xfb_stride != 0)
   {
     // This technically counts as the end of the frame
-    AfterFrameEvent::Trigger(Core::System::GetInstance());
+    GetVideoEvents().after_frame_event.Trigger(Core::System::GetInstance());
 
-    ImmediateSwap(m_last_xfb_addr, m_last_xfb_width, m_last_xfb_stride, m_last_xfb_height,
-                  m_last_xfb_ticks);
+    m_next_swap_estimated_ticks = m_last_xfb_ticks;
+    m_next_swap_estimated_time = Clock::now();
+
+    m_immediate_swap_happened_this_field.store(false, std::memory_order_relaxed);
+
+    ImmediateSwap(m_last_xfb_addr, m_last_xfb_width, m_last_xfb_stride, m_last_xfb_height);
   }
 }
 

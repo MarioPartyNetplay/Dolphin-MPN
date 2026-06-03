@@ -17,20 +17,24 @@
 #include <QSpacerItem>
 #include <QString>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #include "AudioCommon/AudioCommon.h"
-#include "AudioCommon/Enums.h"
 #include "AudioCommon/WASAPIStream.h"
 
+#ifdef HAVE_CUBEB
+#include "AudioCommon/CubebUtils.h"
+#endif
+
 #include "Core/Config/MainSettings.h"
+#include "Core/Config/WiimoteSettings.h"
 #include "Core/Core.h"
+#include "Core/HW/Wiimote.h"
 #include "Core/System.h"
 #include "DolphinQt/Config/ConfigControls/ConfigBool.h"
 #include "DolphinQt/Config/ConfigControls/ConfigChoice.h"
-#include "DolphinQt/Config/ConfigControls/ConfigRadio.h"
 #include "DolphinQt/Config/ConfigControls/ConfigSlider.h"
 
-#include "DolphinQt/Config/SettingsWindow.h"
 #include "DolphinQt/Settings.h"
 
 static QString GetVolumeLabelText(int volume_level)
@@ -89,7 +93,7 @@ void AudioPane::CreateWidgets()
   const QFontMetrics font_metrics{font()};
   const int label_width = font_metrics.boundingRect(GetVolumeLabelText(100)).width();
   // Ensure the label is at least as wide as the QGroupBox title.
-  // This prevents [-Volume] title uglyness on Windows.
+  // This prevents [-Volume] title ugliness on Windows.
   const int title_width = font_metrics.boundingRect(volume_box->title()).width();
   m_volume_indicator->setFixedWidth(std::max(label_width, title_width));
 
@@ -126,8 +130,9 @@ void AudioPane::CreateWidgets()
 
 #ifdef _WIN32
   std::vector<std::pair<QString, QString>> wasapi_options;
-  wasapi_options.push_back(
-      std::pair<QString, QString>{tr("Default Device"), QStringLiteral("default")});
+  const auto default_device_config_value =
+      QString::fromStdString(Config::MAIN_WASAPI_DEVICE.GetDefaultValue());
+  wasapi_options.emplace_back(tr("Default Device"), default_device_config_value);
 
   for (auto string : WASAPIStream::GetAvailableDevices())
   {
@@ -180,8 +185,12 @@ void AudioPane::CreateWidgets()
 
   // Set initial value display
   audio_buffer_size_label->setText(tr("%1 ms").arg(audio_buffer_size->value()));
+  audio_buffer_size_label->setFixedWidth(QFontMetrics(font()).boundingRect(tr(" 000 ms")).width());
 
   m_audio_fill_gaps = new ConfigBool(tr("Fill Audio Gaps"), Config::MAIN_AUDIO_FILL_GAPS);
+
+  m_audio_preserve_pitch =
+      new ConfigBool(tr("Preserve Audio Pitch"), Config::MAIN_AUDIO_PRESERVE_PITCH);
 
   m_speed_up_mute_enable = new ConfigBool(tr("Mute When Disabling Speed Limit"),
                                           Config::MAIN_AUDIO_MUTE_ON_DISABLED_SPEED_LIMIT);
@@ -194,15 +203,53 @@ void AudioPane::CreateWidgets()
 
   playback_layout->addLayout(buffer_layout, 0, 0);
   playback_layout->addWidget(m_audio_fill_gaps, 1, 0);
-  playback_layout->addWidget(m_speed_up_mute_enable, 2, 0);
-  playback_layout->setRowStretch(3, 1);
+  playback_layout->addWidget(m_audio_preserve_pitch, 2, 0);
+  playback_layout->addWidget(m_speed_up_mute_enable, 3, 0);
+  playback_layout->setRowStretch(4, 1);
   playback_box->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+  // Wiimote Audio Routing
+#ifdef HAVE_CUBEB
+  m_wiimote_routing_box = new QGroupBox(tr("Wii Remote Audio Routing"));
+  auto* wiimote_routing_layout = new QVBoxLayout;
+  m_wiimote_routing_box->setLayout(wiimote_routing_layout);
+
+  m_wiimote_routing_enable = new ConfigBool(tr("Enable Wii Remote Audio Routing"),
+                                            Config::MAIN_WIIMOTE_AUDIO_ROUTING_ENABLED);
+  wiimote_routing_layout->addWidget(m_wiimote_routing_enable);
+
+  // Build device list once for all wiimote dropdowns
+  std::vector<std::pair<QString, QString>> output_devices;
+  output_devices.emplace_back(tr("Default Device"), QStringLiteral(""));
+  for (const auto& [id, name] : CubebUtils::ListOutputDevices())
+    output_devices.emplace_back(QString::fromStdString(name), QString::fromStdString(id));
+
+  for (std::size_t i = 0; i < 4; ++i)
+  {
+    auto* row_widget = new QWidget;
+    auto* row_layout = new QHBoxLayout(row_widget);
+    row_layout->setContentsMargins(0, 0, 0, 0);
+
+    m_wiimote_output_enable[i] = new ConfigBool(tr("Wii Remote %1").arg(i + 1),
+                                                Config::MAIN_WIIMOTE_AUDIO_OUTPUT_ENABLED[i]);
+    m_wiimote_output_device[i] =
+        new ConfigStringChoice(output_devices, Config::MAIN_WIIMOTE_AUDIO_OUTPUT_DEVICE[i]);
+
+    row_layout->addWidget(m_wiimote_output_enable[i]);
+    row_layout->addWidget(m_wiimote_output_device[i], 1);
+
+    wiimote_routing_layout->addWidget(row_widget);
+  }
+#endif
 
   auto* const main_vbox_layout = new QVBoxLayout;
 
   main_vbox_layout->addWidget(dsp_box);
   main_vbox_layout->addWidget(backend_box);
   main_vbox_layout->addWidget(playback_box);
+#ifdef HAVE_CUBEB
+  main_vbox_layout->addWidget(m_wiimote_routing_box);
+#endif
 
   m_main_layout = new QHBoxLayout;
   m_main_layout->addLayout(main_vbox_layout);
@@ -225,6 +272,20 @@ void AudioPane::ConnectWidgets()
     connect(m_latency_slider, &QSlider::valueChanged, this,
             [this](int value) { m_latency_label->setText(tr("Latency: %1 ms").arg(value)); });
   }
+
+#ifdef HAVE_CUBEB
+  connect(m_wiimote_routing_enable, &ConfigBool::toggled, this,
+          [this](bool) { UpdateWiimoteRoutingEnabled(); });
+  for (std::size_t i = 0; i < 4; ++i)
+  {
+    connect(m_wiimote_output_enable[i], &ConfigBool::toggled, this,
+            [this](bool) { UpdateWiimoteRoutingEnabled(); });
+  }
+  // Also react to external config changes: wiimote source type, speaker data, BT passthrough.
+  connect(&Settings::Instance(), &Settings::ConfigChanged, this,
+          &AudioPane::UpdateWiimoteRoutingEnabled);
+  UpdateWiimoteRoutingEnabled();
+#endif
 }
 
 void AudioPane::OnDspChanged()
@@ -257,6 +318,10 @@ void AudioPane::OnBackendChanged()
 
   m_volume_slider->setEnabled(AudioCommon::SupportsVolumeChanges(backend));
   m_volume_indicator->setEnabled(AudioCommon::SupportsVolumeChanges(backend));
+
+#ifdef HAVE_CUBEB
+  UpdateWiimoteRoutingEnabled();
+#endif
 }
 
 void AudioPane::OnEmulationStateChanged(bool running)
@@ -280,6 +345,41 @@ void AudioPane::OnEmulationStateChanged(bool running)
 
 #ifdef _WIN32
   m_wasapi_device_combo->setEnabled(!running);
+#endif
+
+#ifdef HAVE_CUBEB
+  UpdateWiimoteRoutingEnabled();
+#endif
+}
+
+void AudioPane::UpdateWiimoteRoutingEnabled()
+{
+#ifdef HAVE_CUBEB
+  if (!m_wiimote_routing_box)
+    return;
+
+  const bool running = Core::GetState(Core::System::GetInstance()) != Core::State::Uninitialized;
+  const bool is_cubeb = Config::Get(Config::MAIN_AUDIO_BACKEND) == BACKEND_CUBEB;
+  const bool speaker_enabled = Config::Get(Config::MAIN_WIIMOTE_ENABLE_SPEAKER);
+  const bool bt_passthrough = Config::Get(Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED);
+
+  // The entire group requires Cubeb backend, speaker data enabled, no BT passthrough, and
+  // emulation not running.
+  const bool group_usable = !running && is_cubeb && speaker_enabled && !bt_passthrough;
+
+  m_wiimote_routing_enable->setEnabled(group_usable);
+
+  const bool routing_on = group_usable && m_wiimote_routing_enable->isChecked();
+
+  for (std::size_t i = 0; i < 4; ++i)
+  {
+    const WiimoteSource source = Config::Get(Config::GetInfoForWiimoteSource(static_cast<int>(i)));
+    const bool is_emulated = source == WiimoteSource::Emulated;
+
+    m_wiimote_output_enable[i]->setEnabled(routing_on && is_emulated);
+    m_wiimote_output_device[i]->setEnabled(routing_on && is_emulated &&
+                                           m_wiimote_output_enable[i]->isChecked());
+  }
 #endif
 }
 
@@ -319,6 +419,10 @@ void AudioPane::AddDescriptions()
   static const char TR_FILL_AUDIO_GAPS_DESCRIPTION[] = QT_TR_NOOP(
       "Repeat existing audio during lag spikes to prevent stuttering.<br><br><dolphin_emphasis>If "
       "unsure, leave this checked.</dolphin_emphasis>");
+  static const char TR_PRESERVE_AUDIO_PITCH_DESCRIPTION[] = QT_TR_NOOP(
+      "Keeps audio at normal pitch when changing emulation speed. Without this, audio pitch "
+      "changes proportionally with speed.<br><br><dolphin_emphasis>If unsure, leave this "
+      "unchecked.</dolphin_emphasis>");
   static const char TR_SPEED_UP_MUTE_DESCRIPTION[] =
       QT_TR_NOOP("Mutes the audio when overriding the emulation speed limit (default hotkey: Tab). "
                  "<br><br><dolphin_emphasis>If unsure, leave this unchecked.</dolphin_emphasis>");
@@ -359,4 +463,35 @@ void AudioPane::AddDescriptions()
 
   m_audio_fill_gaps->SetTitle(tr("Fill Audio Gaps"));
   m_audio_fill_gaps->SetDescription(tr(TR_FILL_AUDIO_GAPS_DESCRIPTION));
+
+  m_audio_preserve_pitch->SetTitle(tr("Preserve Audio Pitch"));
+  m_audio_preserve_pitch->SetDescription(tr(TR_PRESERVE_AUDIO_PITCH_DESCRIPTION));
+
+#ifdef HAVE_CUBEB
+  static const char TR_WIIMOTE_ROUTING_DESCRIPTION[] =
+      QT_TR_NOOP("Routes each Wii Remote's speaker audio to a separate audio output device. "
+                 "This setting cannot be changed while emulation is active."
+                 "<br><br>This setting is disabled when Enable Speaker Data is disabled, "
+                 "Passthrough a Bluetooth adapter is selected, or an audio backend other than "
+                 "Cubeb is selected."
+                 "<br><br><dolphin_emphasis>If unsure, leave this unchecked.</dolphin_emphasis>");
+  static const char TR_WIIMOTE_OUTPUT_ENABLE_DESCRIPTION[] =
+      QT_TR_NOOP("Enables routing this Wii Remote's speaker audio to a separate output device.");
+  static const char TR_WIIMOTE_OUTPUT_DEVICE_DESCRIPTION[] =
+      QT_TR_NOOP("Selects the audio output device for this Wii Remote's speaker audio."
+                 "<br><br>This setting is disabled when this Wii Remote is not set to Emulated "
+                 "Wii Remote.");
+
+  if (m_wiimote_routing_box)
+  {
+    m_wiimote_routing_enable->SetTitle(tr("Enable Wii Remote Audio Routing"));
+    m_wiimote_routing_enable->SetDescription(tr(TR_WIIMOTE_ROUTING_DESCRIPTION));
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+      m_wiimote_output_enable[i]->SetDescription(tr(TR_WIIMOTE_OUTPUT_ENABLE_DESCRIPTION));
+      m_wiimote_output_device[i]->SetTitle(tr("Wii Remote %1").arg(i + 1));
+      m_wiimote_output_device[i]->SetDescription(tr(TR_WIIMOTE_OUTPUT_DEVICE_DESCRIPTION));
+    }
+  }
+#endif
 }

@@ -67,7 +67,7 @@ void SpeakerLogic::SpeakerData(const u8* data, int length, float speaker_pan)
 
   // Potentially 40 resulting samples.
   std::array<s16, WiimoteCommon::OutputReportSpeakerData::DATA_SIZE * 2> samples;
-  assert(length * 2 <= samples.size());
+  assert(length * 2 <= static_cast<int>(samples.size()));
 
   unsigned int sample_rate_dividend, sample_length;
   u8 volume_divisor;
@@ -129,12 +129,13 @@ void SpeakerLogic::SpeakerData(const u8* data, int length, float speaker_pan)
   auto& system = Core::System::GetInstance();
   SoundStream* sound_stream = system.GetSoundStream();
 
-  sound_stream->GetMixer()->SetWiimoteSpeakerVolume(l_volume, r_volume);
+  sound_stream->GetMixer()->SetWiimoteSpeakerVolume(m_wiimote_index, l_volume, r_volume);
 
   // ADPCM sample rate is thought to be x2.(3000 x2 = 6000).
   const unsigned int sample_rate = sample_rate_dividend / reg_data.sample_rate;
   sound_stream->GetMixer()->PushWiimoteSpeakerSamples(
-      samples.data(), sample_length, Mixer::FIXED_SAMPLE_RATE_DIVIDEND / (sample_rate * 2));
+      m_wiimote_index, samples.data(), sample_length,
+      Mixer::FIXED_SAMPLE_RATE_DIVIDEND / (sample_rate * 2));
 }
 
 void SpeakerLogic::Reset()

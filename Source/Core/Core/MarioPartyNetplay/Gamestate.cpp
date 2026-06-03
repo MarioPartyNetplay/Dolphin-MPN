@@ -1,22 +1,21 @@
 /*
-*  Dolphin for Mario Party Netplay
-*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
-*/
+ *  Dolphin for Mario Party Netplay
+ *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+ */
 
 #include "Gamestate.h"
-#include "Core/System.h"
 #include "Core/ConfigManager.h"
+#include "Core/System.h"
 #include "TurnCountLogger.h"
 
 #include <chrono>
 static auto lastTriggerTime = std::chrono::steady_clock::now();
 static bool waiting = false;
-static int storedSceneId = -1; // Variable to store the previous scene ID
+static int storedSceneId = -1;  // Variable to store the previous scene ID
 static MarioPartyNetplay::TurnCountLogger s_turn_count_logger;
 static u32 s_last_current_turn = 0;
 static u32 s_last_total_turns = 0;
 mpn_state_t CurrentState;
-
 
 bool mpn_init_state()
 {
@@ -35,6 +34,15 @@ bool mpn_init_state()
     CurrentState.Scenes = MP4_GAMESTATES;
     CurrentState.Title = "Mario Party 4";
     break;
+  case MPN_GAMEID_MP4DX:
+    CurrentState.Addresses = &MP4_ADDRESSES;
+    CurrentState.Boards = MP4_BOARDS;
+    CurrentState.Image = "box-mp4dx";
+    CurrentState.IsMarioParty = true;
+    CurrentState.Scenes = MP4_GAMESTATES;
+    CurrentState.Title = "Mario Party 4";
+    break;
+
   case MPN_GAMEID_MP5:
     CurrentState.Addresses = &MP5_ADDRESSES;
     CurrentState.Boards = MP5_BOARDS;
@@ -52,8 +60,8 @@ bool mpn_init_state()
     CurrentState.Title = "Mario Party 6";
     break;
   case MPN_GAMEID_MP7:
-    CurrentState.Addresses    = &MP7_ADDRESSES;
-    CurrentState.Boards       = MP7_BOARDS;
+    CurrentState.Addresses = &MP7_ADDRESSES;
+    CurrentState.Boards = MP7_BOARDS;
     CurrentState.Image = "box-mp7";
     CurrentState.IsMarioParty = true;
     CurrentState.Scenes = MP7_GAMESTATES;
@@ -143,6 +151,9 @@ bool mpn_update_state()
   if (!memory.IsInitialized())
     return false;
 
+  if (CurrentState.Addresses == NULL)
+    return false;
+
   CurrentState.PreviousSceneId = CurrentState.CurrentSceneId;
   CurrentState.CurrentSceneId = mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2);
 
@@ -163,48 +174,61 @@ bool mpn_update_state()
 #define OSD_PUSH(a) mpn_push_osd_message("Adjusting #a for " + CurrentState.Scene->Name);
 void mpn_per_frame()
 {
-  
-  if (SConfig::GetInstance().GetGameID() == "GMPE01" || SConfig::GetInstance().GetGameID() == "GP5E01" || SConfig::GetInstance().GetGameID() == "GP6E01" || SConfig::GetInstance().GetGameID() == "GP7E01" || SConfig::GetInstance().GetGameID() == "RM8E01" || SConfig::GetInstance().GetGameID() == "GMPEDX")
+  if (SConfig::GetInstance().GetGameID() == "GMPE01" ||
+      SConfig::GetInstance().GetGameID() == "GP5E01" ||
+      SConfig::GetInstance().GetGameID() == "GP6E01" ||
+      SConfig::GetInstance().GetGameID() == "GP7E01" ||
+      SConfig::GetInstance().GetGameID() == "RM8E01" ||
+      SConfig::GetInstance().GetGameID() == "GMPEDX" ||
+      SConfig::GetInstance().GetGameID() == "GMPDX2")
   {
     uint8_t Needs = 0;
 
     // Initialize turn count logger if not already done
     s_turn_count_logger.Initialize();
 
-    if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId) {
-      if (!waiting) {
-          lastTriggerTime = std::chrono::steady_clock::now();
-          storedSceneId = CurrentState.PreviousSceneId;
-          waiting = true;
+    if (!mpn_update_state() || CurrentState.PreviousSceneId == CurrentState.CurrentSceneId)
+    {
+      if (!waiting)
+      {
+        lastTriggerTime = std::chrono::steady_clock::now();
+        storedSceneId = CurrentState.PreviousSceneId;
+        waiting = true;
       }
 
-      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.05)) {
-          return;
+      if (std::chrono::steady_clock::now() - lastTriggerTime < std::chrono::duration<double>(0.05))
+      {
+        return;
       }
       waiting = false;
     }
 
     mpn_update_board();
+#ifdef USE_DISCORD_PRESENCE
     mpn_update_discord();
+#endif
 
     // Log turn count changes
     if (CurrentState.IsMarioParty && CurrentState.Addresses)
     {
       u32 current_turn = mpn_read_value(CurrentState.Addresses->CurrentTurn, 1);
       u32 total_turns = mpn_read_value(CurrentState.Addresses->TotalTurns, 1);
-      
+
       // Log if turn count has changed
       if (current_turn != s_last_current_turn || total_turns != s_last_total_turns)
       {
         // Log turn count in simple format
         s_turn_count_logger.LogTurnCount(current_turn, total_turns);
-        
+
         s_last_current_turn = current_turn;
         s_last_total_turns = total_turns;
       }
     }
 
-    Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
+    if (CurrentState.Addresses == NULL)
+      Needs = MPN_NEEDS_NOTHING;
+    else
+      Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
     if (Needs != MPN_NEEDS_NOTHING)
     {

@@ -9,6 +9,7 @@
 #include "Core/CheatSearch.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/System.h"
 
 #include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
@@ -32,6 +33,8 @@ CheatsManager::CheatsManager(Core::System& system, QWidget* parent)
 
   CreateWidgets();
   ConnectWidgets();
+
+  OnStateChanged(Core::GetState(system));
 
   QtUtils::AdjustSizeWithinScreen(this);
 
@@ -78,7 +81,8 @@ void CheatsManager::UpdateAllCheatSearchWidgetCurrentValues()
 
 void CheatsManager::RegisterAfterFrameEventCallback()
 {
-  m_VI_end_field_event = VIEndFieldEvent::Register([this] { OnFrameEnd(); }, "CheatsManager");
+  m_VI_end_field_event =
+      m_system.GetVideoEvents().vi_end_field_event.Register([this] { OnFrameEnd(); });
 }
 
 void CheatsManager::RemoveAfterFrameEventCallback()

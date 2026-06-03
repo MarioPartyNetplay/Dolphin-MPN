@@ -10,7 +10,7 @@ constexpr float DEFAULT_WINDOW_HEIGHT = 400.0f;
 
 constexpr size_t MAX_BACKLOG_SIZE = 100;
 
-std::unique_ptr<NetPlayChatUI> g_netplay_chat_ui;
+std::atomic<std::shared_ptr<NetPlayChatUI>> g_netplay_chat_ui;
 
 NetPlayChatUI::NetPlayChatUI(std::function<void(const std::string&)> callback)
     : m_message_callback{std::move(callback)}
@@ -59,7 +59,7 @@ void NetPlayChatUI::Display()
   if (ImGui::InputText("##NetplayMessageBuffer", m_message_buf, IM_ARRAYSIZE(m_message_buf),
                        ImGuiInputTextFlags_EnterReturnsTrue))
   {
-    SendMessage();
+    SendChatMessage();
   }
 
   if (m_activate)
@@ -73,7 +73,7 @@ void NetPlayChatUI::Display()
   ImGui::SameLine();
 
   if (ImGui::Button("Send"))
-    SendMessage();
+    SendChatMessage();
 
   ImGui::End();
 }
@@ -90,7 +90,7 @@ void NetPlayChatUI::AppendChat(std::string message, Color color)
     m_scroll_to_bottom = true;
 }
 
-void NetPlayChatUI::SendMessage()
+void NetPlayChatUI::SendChatMessage()
 {
   // Check whether the input field is empty
   if (m_message_buf[0] != '\0')

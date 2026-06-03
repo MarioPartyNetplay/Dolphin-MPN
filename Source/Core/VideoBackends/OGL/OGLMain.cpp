@@ -54,16 +54,15 @@ Make AA apply instantly during gameplay if possible
 #include "VideoBackends/OGL/ProgramShaderCache.h"
 #include "VideoBackends/OGL/SamplerCache.h"
 
-#include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/TextureCacheBase.h"
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 
 namespace OGL
 {
-std::string VideoBackend::GetName() const
+std::string VideoBackend::GetConfigName() const
 {
-  return NAME;
+  return CONFIG_NAME;
 }
 
 std::string VideoBackend::GetDisplayName() const
@@ -77,7 +76,7 @@ std::string VideoBackend::GetDisplayName() const
 void VideoBackend::InitBackendInfo(const WindowSystemInfo& wsi)
 {
   std::unique_ptr<GLContext> temp_gl_context =
-      GLContext::Create(wsi, g_Config.stereo_mode == StereoMode::QuadBuffer, true, false,
+      GLContext::Create(wsi, g_Config.stereo_mode == StereoMode::QuadBuffer, true,
                         Config::Get(Config::GFX_PREFER_GLES));
 
   if (!temp_gl_context)
@@ -133,7 +132,7 @@ bool VideoBackend::FillBackendInfo(GLContext* context)
   g_backend_info.bSupportsPipelineCacheData = false;
   g_backend_info.bSupportsLodBiasInSampler = true;
   g_backend_info.bSupportsPartialMultisampleResolve = true;
-  // Unneccessary since OGL doesn't use pipelines
+  // Unnecessary since OGL doesn't use pipelines
   g_backend_info.bSupportsDynamicVertexLoader = false;
 
   // TODO: There is a bug here, if texel buffers or SSBOs/atomics are not supported the graphics
@@ -196,7 +195,7 @@ bool VideoBackend::FillBackendInfo(GLContext* context)
 bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
 {
   std::unique_ptr<GLContext> main_gl_context =
-      GLContext::Create(wsi, g_Config.stereo_mode == StereoMode::QuadBuffer, true, false,
+      GLContext::Create(wsi, g_Config.stereo_mode == StereoMode::QuadBuffer, true,
                         Config::Get(Config::GFX_PREFER_GLES));
   if (!main_gl_context)
     return false;

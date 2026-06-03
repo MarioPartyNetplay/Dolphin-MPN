@@ -6,7 +6,6 @@
 #include <map>
 #include <string>
 
-#include "Common/Assert.h"
 #include "Common/Common.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
@@ -408,7 +407,7 @@ std::string GetSysMenuVersionString(u16 title_version, bool is_vwii)
   case Region::NTSC_K:
     region_letter = 'K';
     break;
-  case Region::Unknown:
+  default:
     WARN_LOG_FMT(DISCIO, "Unknown region for Wii Menu version {}", title_version);
     break;
   }

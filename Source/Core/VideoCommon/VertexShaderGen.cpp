@@ -74,6 +74,28 @@ VertexShaderUid GetVertexShaderUid()
   return out;
 }
 
+static void WritePrimitiveExpand(APIType api_type, const ShaderHostConfig& host_config,
+                                 const vertex_shader_uid_data* uid_data, ShaderCode& out)
+{
+  if (uid_data->vs_expand == VSExpand::None)
+    return;
+
+  out.Write("InputData dolphin_primitive_expand_data(int index_offset)\n");
+  out.Write("{{\n");
+  if (api_type == APIType::D3D)
+  {
+    // D3D doesn't include the base vertex in SV_VertexID
+    // See comment in UberShaderVertex for details
+    out.Write("\tuint vertex_id = (gl_VertexID >> 2) + base_vertex;\n");
+  }
+  else
+  {
+    out.Write("\tuint vertex_id = uint(gl_VertexID) >> 2u;\n");
+  }
+  out.Write("\treturn input_buffer[vertex_id + index_offset];\n");
+  out.Write("}}\n\n");
+}
+
 static void WriteTransformMatrices(APIType api_type, const ShaderHostConfig& host_config,
                                    const vertex_shader_uid_data* uid_data, ShaderCode& out)
 {
@@ -82,6 +104,11 @@ static void WriteTransformMatrices(APIType api_type, const ShaderHostConfig& hos
   out.Write("\tmat3x4 result;\n");
   if ((uid_data->components & VB_HAS_POSMTXIDX) != 0)
   {
+    if (uid_data->vs_expand != VSExpand::None)
+    {
+      out.Write("\tInputData i = dolphin_primitive_expand_data(0);\n");
+      out.Write("\tuvec4 posmtx = unpack_ubyte4(i.posmtx);\n");
+    }
     // Vertex format has a per-vertex matrix
     out.Write("\tint posidx = int(posmtx.r);\n"
               "\tresult[0] = " I_TRANSFORMMATRICES "[posidx];\n"
@@ -108,6 +135,11 @@ static void WriteTransformMatrices(APIType api_type, const ShaderHostConfig& hos
   out.Write("\tmat3 result;\n");
   if ((uid_data->components & VB_HAS_POSMTXIDX) != 0)
   {
+    if (uid_data->vs_expand != VSExpand::None)
+    {
+      out.Write("\tInputData i = dolphin_primitive_expand_data(0);\n");
+      out.Write("\tuvec4 posmtx = unpack_ubyte4(i.posmtx);\n");
+    }
     // Vertex format has a per-vertex matrix
     out.Write("\tint posidx = int(posmtx.r);\n");
     out.Write("\tint normidx = posidx & 31;\n"
@@ -401,7 +433,8 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
     if (uid_data->components & VB_HAS_POSMTXIDX)
     {
       out.Write("  uint posmtx;\n");
-      input_extract.Write("uint4 posmtx = unpack_ubyte4(i.posmtx);\n");
+      // Note: posmtx is handled in the matrix transform functions and
+      // doesn't need to be added to 'input_extract'
     }
     if (uid_data->position_has_3_elems)
     {
@@ -507,6 +540,7 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
   }
 
   // Note: this is done after to ensure above global variables are accessible
+  WritePrimitiveExpand(api_type, host_config, uid_data, out);
   WriteTransformMatrices(api_type, host_config, uid_data, out);
   WriteTexCoordTransforms(api_type, host_config, uid_data, out);
   WriteVertexDefines(api_type, host_config, uid_data, out);
@@ -532,15 +566,7 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
 
   if (uid_data->vs_expand != VSExpand::None)
   {
-    out.Write("bool is_bottom = (gl_VertexID & 2) != 0;\n"
-              "bool is_right = (gl_VertexID & 1) != 0;\n");
-    // D3D doesn't include the base vertex in SV_VertexID
-    // See comment in UberShaderVertex for details
-    if (api_type == APIType::D3D)
-      out.Write("uint vertex_id = (gl_VertexID >> 2) + base_vertex;\n");
-    else
-      out.Write("uint vertex_id = uint(gl_VertexID) >> 2u;\n");
-    out.Write("InputData i = input_buffer[vertex_id];\n"
+    out.Write("InputData i = dolphin_primitive_expand_data(0);\n"
               "{}",
               input_extract.GetBuffer());
   }
@@ -691,14 +717,15 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
 
   if (uid_data->vs_expand == VSExpand::Line)
   {
+    out.Write("bool is_bottom = (gl_VertexID & 2) != 0;\n");
     out.Write("// Line expansion\n"
-              "uint other_id = vertex_id;\n"
+              "int id_offset = 0;\n"
               "if (is_bottom) {{\n"
-              "  other_id -= 1u;\n"
+              "  id_offset -= 1;\n"
               "}} else {{\n"
-              "  other_id += 1u;\n"
+              "  id_offset += 1;\n"
               "}}\n"
-              "InputData other = input_buffer[other_id];\n");
+              "InputData other = dolphin_primitive_expand_data(id_offset);\n");
     if (uid_data->position_has_3_elems)
       out.Write("float4 other_pos = float4(other.pos0, other.pos1, other.pos2, 1.0f);\n");
     else
@@ -716,10 +743,16 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
     {
       out.Write("other_pos = vec4(other_pos * dolphin_position_matrix(), 1.0);\n");
     }
+
+    // Variable needed by GenerateVSLineExpansion
+    out.Write("bool is_right = (gl_VertexID & 1) != 0;\n");
     GenerateVSLineExpansion(out, "", uid_data->numTexGens);
   }
   else if (uid_data->vs_expand == VSExpand::Point)
   {
+    // Variables needed by GenerateVSPointExpansion
+    out.Write("bool is_bottom = (gl_VertexID & 2) != 0;\n");
+    out.Write("bool is_right = (gl_VertexID & 1) != 0;\n");
     out.Write("// Point expansion\n");
     GenerateVSPointExpansion(out, "", uid_data->numTexGens);
   }
@@ -759,7 +792,7 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
   // There are two different ways to do this, when the depth range is oversized, we process
   // the depth range in the vertex shader, if not we let the host driver handle it.
   //
-  // Adjust z for the depth range. We're using an equation which incorperates a depth inversion,
+  // Adjust z for the depth range. We're using an equation which incorporates a depth inversion,
   // so we can map the console -1..0 range to the 0..1 range used in the depth buffer.
   // We have to handle the depth range in the vertex shader instead of after the perspective
   // divide, because some games will use a depth range larger than what is allowed by the
@@ -771,7 +804,7 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
   if (!host_config.backend_clip_control)
   {
     // If the graphics API doesn't support a depth range of 0..1, then we need to map z to
-    // the -1..1 range. Unfortunately we have to use a substraction, which is a lossy floating-point
+    // the -1..1 range. Unfortunately we have to use a subtraction, which is a lossy floating-point
     // operation that can introduce a round-trip error.
     out.Write("o.pos.z = o.pos.z * 2.0 - o.pos.w;\n");
   }

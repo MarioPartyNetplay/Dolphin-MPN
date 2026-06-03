@@ -1,8 +1,3 @@
-if(POLICY CMP0084)
-  # Disable trying to search for Qt3/4 if what we actually want is not found
-  cmake_policy(SET CMP0084 NEW)
-endif()
-
 if (MSVC)
   if(_M_ARM_64)
     list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.8.0/ARM64")
@@ -15,6 +10,23 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
+
+if (Qt6_VERSION VERSION_GREATER_EQUAL 6.10.0)
+  # GuiPrivate is needed to #include qplatformnativeinterface.h in MainWindow.cpp with Qt 6.10+.
+  # On some systems, GuiPrivate is automatically created with Qt6::Gui, not as a separate component.
+  if (TARGET Qt6::GuiPrivate)
+    set(NEED_QT_GUI_PRIVATE_COMPONENT ON)
+  else()
+    # Try to find it as a component (for systems that require it)
+    find_package(Qt6 QUIET COMPONENTS GuiPrivate)
+    if (Qt6GuiPrivate_FOUND AND TARGET Qt6::GuiPrivate)
+      set(NEED_QT_GUI_PRIVATE_COMPONENT ON)
+    else()
+      message(WARNING "Qt6::GuiPrivate not found. Some features may not work with Qt 6.10+")
+    endif()
+  endif()
+endif()
+
 message(STATUS "Found Qt version ${Qt6_VERSION}")
 
 set_property(TARGET Qt6::Core PROPERTY INTERFACE_COMPILE_FEATURES "")
@@ -61,12 +73,20 @@ add_executable(dolphin-mpn
   Config/ConfigControls/ConfigFloatSlider.h
   Config/ConfigControls/ConfigSlider.cpp
   Config/ConfigControls/ConfigSlider.h
+  Config/ConfigControls/ConfigText.cpp
+  Config/ConfigControls/ConfigText.h
+  Config/ConfigControls/ConfigUserPath.cpp
+  Config/ConfigControls/ConfigUserPath.h
   Config/ControllerInterface/ControllerInterfaceWindow.cpp
   Config/ControllerInterface/ControllerInterfaceWindow.h
-  Config/ControllerInterface/DualShockUDPClientAddServerDialog.cpp
-  Config/ControllerInterface/DualShockUDPClientAddServerDialog.h
+  Config/SDLHints/SDLHintsWindow.cpp
+  Config/SDLHints/SDLHintsWindow.h
+  Config/ControllerInterface/DualShockUDPClientEditServerDialog.cpp
+  Config/ControllerInterface/DualShockUDPClientEditServerDialog.h
   Config/ControllerInterface/DualShockUDPClientWidget.cpp
   Config/ControllerInterface/DualShockUDPClientWidget.h
+  Config/ControllerInterface/DualShockUDPSettings.cpp
+  Config/ControllerInterface/DualShockUDPSettings.h
   Config/ControllerInterface/ServerStringValidator.cpp
   Config/ControllerInterface/ServerStringValidator.h
   Config/ControllersPane.cpp
@@ -93,8 +113,8 @@ add_executable(dolphin-mpn
   Config/Graphics/EnhancementsWidget.h
   Config/Graphics/GeneralWidget.cpp
   Config/Graphics/GeneralWidget.h
-  Config/Graphics/GraphicsWindow.cpp
-  Config/Graphics/GraphicsWindow.h
+  Config/Graphics/GraphicsPane.cpp
+  Config/Graphics/GraphicsPane.h
   Config/Graphics/HacksWidget.cpp
   Config/Graphics/HacksWidget.h
   Config/Graphics/ColorCorrectionConfigWindow.cpp
@@ -253,10 +273,14 @@ add_executable(dolphin-mpn
   DiscordJoinRequestDialog.h
   EmulatedUSB/WiiSpeakWindow.cpp
   EmulatedUSB/WiiSpeakWindow.h
+  EmulatedUSB/LogitechMicWindow.cpp
+  EmulatedUSB/LogitechMicWindow.h
   FIFO/FIFOAnalyzer.cpp
   FIFO/FIFOAnalyzer.h
   FIFO/FIFOPlayerWindow.cpp
   FIFO/FIFOPlayerWindow.h
+  GameCount.cpp
+  GameCount.h
   GameList/GameList.cpp
   GameList/GameList.h
   GameList/GameListModel.cpp
@@ -294,6 +318,8 @@ add_executable(dolphin-mpn
   NetPlay/GameDigestDialog.h
   NetPlay/GameListDialog.cpp
   NetPlay/GameListDialog.h
+  NetPlay/ClickBlurLabel.cpp
+  NetPlay/ClickBlurLabel.h
   NetPlay/NetPlayBrowser.cpp
   NetPlay/NetPlayBrowser.h
   NetPlay/NetPlayDialog.cpp
@@ -306,6 +332,8 @@ add_executable(dolphin-mpn
   NANDRepairDialog.h
   NKitWarningDialog.cpp
   NKitWarningDialog.h
+  QtUtils/AnalyticsPrompt.cpp
+  QtUtils/AnalyticsPrompt.h
   QtUtils/AspectRatioWidget.cpp
   QtUtils/AspectRatioWidget.h
   QtUtils/BlockUserInputFilter.cpp
@@ -370,10 +398,14 @@ add_executable(dolphin-mpn
   Settings/InterfacePane.h
   Settings/MarioPartyNetplayPane.cpp
   Settings/MarioPartyNetplayPane.h
+	Settings/OnScreenDisplayPane.cpp
+	Settings/OnScreenDisplayPane.h
   Settings/PathPane.cpp
   Settings/PathPane.h
-  Settings/USBDeviceAddToWhitelistDialog.cpp
-  Settings/USBDeviceAddToWhitelistDialog.h
+  Settings/TriforcePane.cpp
+  Settings/TriforcePane.h
+  Settings/USBDevicePicker.cpp
+  Settings/USBDevicePicker.h
   Settings/WiiPane.cpp
   Settings/WiiPane.h
   SkylanderPortal/SkylanderModifyDialog.cpp
@@ -441,17 +473,32 @@ PRIVATE
 
 target_link_libraries(dolphin-mpn
 PRIVATE
-  core
   Qt6::Widgets
   uicommon
   imgui
   implot
-  minizip-ng::minizip-ng
+  MINIZIP::minizip-ng
+  core
 )
+
+# Link discio with WHOLE_ARCHIVE on MSVC to ensure all symbols are included
+# This helps resolve circular dependency issues between discio and core
+if(MSVC)
+  target_link_libraries(dolphin-mpn PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,discio>)
+else()
+  target_link_libraries(dolphin-mpn PRIVATE discio)
+endif()
 
 target_include_directories(dolphin-mpn PRIVATE
   ${CMAKE_SOURCE_DIR}/Externals/minizip-ng
 )
+
+if (NEED_QT_GUI_PRIVATE_COMPONENT)
+  target_link_libraries(dolphin-mpn
+  PRIVATE
+    Qt6::GuiPrivate
+  )
+endif()
 
 if (WIN32)
   target_link_libraries(dolphin-mpn
@@ -509,6 +556,13 @@ if(WIN32)
   add_custom_command(TARGET dolphin-mpn POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/qt.conf.win" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/qt.conf"
   )
+
+  if (ENABLE_AUTOUPDATE)
+    # Copy build_info.txt
+    add_custom_command(TARGET dolphin-emu POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/build_info.txt" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/build_info.txt"
+    )
+  endif()
 
   # Delegate to Qt's official deployment binary on Windows to copy over the necessary Qt-specific libraries, etc.
   get_target_property(MOC_EXECUTABLE_LOCATION Qt6::moc IMPORTED_LOCATION)
@@ -586,7 +640,7 @@ if(GETTEXT_MSGFMT_EXECUTABLE)
     else()
       add_custom_command(OUTPUT ${mo}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${mo_dir}
-        COMMAND ${GETTEXT_MSGMERGE_EXECUTABLE} --quiet --update --backup=none -s ${po} ${pot_file}
+        COMMAND ${GETTEXT_MSGMERGE_EXECUTABLE} --quiet --update --backup=none ${po} ${pot_file}
         COMMAND ${GETTEXT_MSGFMT_EXECUTABLE} -o ${mo} ${po}
         DEPENDS ${po}
       )
@@ -657,7 +711,7 @@ if(APPLE)
     endif()
   endif()
 
-  if(NOT SKIP_POSTPROCESS_BUNDLE)
+  if(POSTPROCESS_BUNDLE)
     # Update library references to make the bundle portable
     include(DolphinPostprocessBundle)
     dolphin_postprocess_bundle(dolphin-mpn)

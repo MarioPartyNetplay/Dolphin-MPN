@@ -5,13 +5,13 @@
 
 #include <chrono>
 #include <numeric>
+#include <span>
 #include <string>
 
 #include <picojson.h>
 
 #include "Common/Common.h"
 #include "Common/HttpRequest.h"
-#include "Common/Thread.h"
 #include "Common/Version.h"
 
 #include "Core/Config/NetplaySettings.h"
@@ -24,14 +24,13 @@ NetPlayIndex::~NetPlayIndex()
     Remove();
 }
 
-static std::optional<picojson::value> ParseResponse(const std::vector<u8>& response)
+static std::optional<picojson::value> ParseResponse(std::span<const u8> response)
 {
-  const std::string response_string(reinterpret_cast<const char*>(response.data()),
-                                    response.size());
+  const char* data = reinterpret_cast<const char*>(response.data());
 
   picojson::value json;
 
-  const auto error = picojson::parse(json, response_string);
+  const auto error = picojson::parse(json, data, data + response.size());
 
   if (!error.empty())
     return {};
@@ -287,7 +286,7 @@ std::optional<std::string> NetPlaySession::DecryptID(std::string_view password) 
   if (password.empty())
     return {};
 
-  // If the length of an encrypted session id is not divisble by two, it's invalid
+  // If the length of an encrypted session id is not divisible by two, it's invalid
   if (server_id.empty() || server_id.size() % 2 != 0)
     return {};
 

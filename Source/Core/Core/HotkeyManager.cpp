@@ -11,16 +11,13 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include "Common/Assert.h"
 #include "Common/Common.h"
 #include "Common/CommonTypes.h"
-#include "Common/FileUtil.h"
-#include "Common/IniFile.h"
 
-#include "InputCommon/ControllerEmu/Control/Input.h"
 #include "InputCommon/ControllerEmu/ControlGroup/Buttons.h"
 #include "InputCommon/ControllerEmu/ControlGroup/ControlGroup.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
-#include "InputCommon/GCPadStatus.h"
 
 // clang-format off
 constexpr std::array<const char*, NUM_HOTKEYS> s_hotkey_labels{{
@@ -107,7 +104,8 @@ constexpr std::array<const char*, NUM_HOTKEYS> s_hotkey_labels{{
     _trans("Next Game Profile"),
     _trans("Previous Game Profile"),
 
-    _trans("Toggle Crop"),
+    _trans("Toggle Aspect Ratio Crop"),
+    _trans("Toggle Custom Crop"),
     _trans("Toggle Aspect Ratio"),
     _trans("Toggle Skip EFB Access"),
     _trans("Toggle EFB Copies"),
@@ -193,7 +191,6 @@ constexpr std::array<const char*, NUM_HOTKEYS> s_hotkey_labels{{
     _trans("Volume Down"),
     _trans("Volume Up"),
     _trans("Volume Toggle Mute"),
-      
     _trans("1x"),
     _trans("2x"),
     _trans("3x"),
@@ -254,43 +251,6 @@ bool IsPressed(int id, bool held)
   return false;
 }
 
-// This function exists to load the old "Keys" group so pre-existing configs don't break.
-// TODO: Remove this at a future date when we're confident most configs are migrated.
-static void LoadLegacyConfig(ControllerEmu::EmulatedController* controller)
-{
-  Common::IniFile inifile;
-  if (inifile.Load(File::GetUserPath(D_CONFIG_IDX) + "Hotkeys.ini"))
-  {
-    if (!inifile.Exists("Hotkeys") && inifile.Exists("Hotkeys1"))
-    {
-      auto sec = inifile.GetOrCreateSection("Hotkeys1");
-
-      {
-        std::string defdev;
-        sec->Get("Device", &defdev, "");
-        controller->SetDefaultDevice(defdev);
-      }
-
-      for (auto& group : controller->groups)
-      {
-        for (auto& control : group->controls)
-        {
-          std::string key("Keys/" + control->name);
-
-          if (sec->Exists(key))
-          {
-            std::string expression;
-            sec->Get(key, &expression, "");
-            control->control_ref->SetExpression(std::move(expression));
-          }
-        }
-      }
-
-      controller->UpdateReferences(g_controller_interface);
-    }
-  }
-}
-
 void Initialize()
 {
   if (s_config.ControllersNeedToBeCreated())
@@ -309,7 +269,6 @@ void Initialize()
 void LoadConfig()
 {
   s_config.LoadConfig();
-  LoadLegacyConfig(s_config.GetController(0));
 }
 
 ControllerEmu::ControlGroup* GetHotkeyGroup(HotkeyGroup group)
@@ -351,11 +310,11 @@ constexpr std::array<HotkeyGroupInfo, NUM_HOTKEY_GROUPS> s_groups_info = {
      {_trans("Controller Profile 2"), HK_NEXT_WIIMOTE_PROFILE_2, HK_PREV_GAME_WIIMOTE_PROFILE_2},
      {_trans("Controller Profile 3"), HK_NEXT_WIIMOTE_PROFILE_3, HK_PREV_GAME_WIIMOTE_PROFILE_3},
      {_trans("Controller Profile 4"), HK_NEXT_WIIMOTE_PROFILE_4, HK_PREV_GAME_WIIMOTE_PROFILE_4},
-     {_trans("Graphics Toggles"), HK_TOGGLE_CROP, HK_TOGGLE_TEXTURES},
+     {_trans("Graphics Toggles"), HK_TOGGLE_CROP_TO_ASPECT_RATIO, HK_TOGGLE_TEXTURES},
      {_trans("Internal Resolution"), HK_INCREASE_IR, HK_DECREASE_IR},
      {_trans("Freelook"), HK_FREELOOK_TOGGLE, HK_FREELOOK_TOGGLE},
      // i18n: Stereoscopic 3D
-     {_trans("3D"), HK_TOGGLE_STEREO_SBS, HK_TOGGLE_STEREO_ANAGLYPH},
+     {_trans("3D"), HK_TOGGLE_STEREO_SIDE_BY_SIDE, HK_TOGGLE_STEREO_ANAGLYPH},
      // i18n: Stereoscopic 3D
      {_trans("3D Depth"), HK_DECREASE_DEPTH, HK_INCREASE_CONVERGENCE},
      {_trans("Load State"), HK_LOAD_STATE_SLOT_1, HK_LOAD_STATE_SLOT_SELECTED},
@@ -398,17 +357,18 @@ InputConfig* HotkeyManager::GetConfig() const
 
 void HotkeyManager::GetInput(HotkeyStatus* kb, bool ignore_focus)
 {
+  std::array<u32, 32> bitmasks;
+  for (size_t key = 0; key < bitmasks.size(); key++)
+    bitmasks[key] = static_cast<u32>(1 << key);
+
   const auto lock = GetStateLock();
   for (std::size_t group = 0; group < s_groups_info.size(); group++)
   {
     if (s_groups_info[group].ignore_focus != ignore_focus)
       continue;
 
-    const int group_count = (s_groups_info[group].last - s_groups_info[group].first) + 1;
-    std::vector<u32> bitmasks(group_count);
-    for (size_t key = 0; key < bitmasks.size(); key++)
-      bitmasks[key] = static_cast<u32>(1 << key);
-
+    const size_t group_count = (s_groups_info[group].last - s_groups_info[group].first) + 1;
+    ASSERT(group_count <= bitmasks.size());
     kb->button[group] = 0;
     m_keys[group]->GetState(&kb->button[group], bitmasks.data());
   }

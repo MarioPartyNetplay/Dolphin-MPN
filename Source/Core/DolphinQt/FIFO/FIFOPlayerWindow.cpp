@@ -17,8 +17,6 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 
-#include <algorithm>
-
 #include "Core/Core.h"
 #include "Core/FifoPlayer/FifoDataFile.h"
 #include "Core/FifoPlayer/FifoPlayer.h"
@@ -83,6 +81,8 @@ FIFOPlayerWindow::FIFOPlayerWindow(FifoPlayer& fifo_player, FifoRecorder& fifo_r
 
 FIFOPlayerWindow::~FIFOPlayerWindow()
 {
+  Settings::GetQSettings().setValue(QStringLiteral("fifoplayerwindow/geometry"), saveGeometry());
+
   m_fifo_player.SetFileLoadedCallback({});
   m_fifo_player.SetFrameWrittenCallback({});
 }
@@ -168,6 +168,7 @@ void FIFOPlayerWindow::CreateWidgets()
   layout->addWidget(info_group);
   layout->addWidget(playback_group);
   layout->addWidget(recording_group);
+  layout->addStretch();
   layout->addWidget(m_button_box);
 
   m_main_widget = new QWidget(this);
@@ -188,6 +189,9 @@ void FIFOPlayerWindow::CreateWidgets()
 
 void FIFOPlayerWindow::LoadSettings()
 {
+  restoreGeometry(
+      Settings::GetQSettings().value(QStringLiteral("fifoplayerwindow/geometry")).toByteArray());
+
   m_early_memory_updates->setChecked(Config::Get(Config::MAIN_FIFOPLAYER_EARLY_MEMORY_UPDATES));
   m_loop->setChecked(Config::Get(Config::MAIN_FIFOPLAYER_LOOP_REPLAY));
 }

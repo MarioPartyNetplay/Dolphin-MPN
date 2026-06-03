@@ -4,7 +4,7 @@
 // IMPORTANT: UI etc should modify g_Config. Graphics code should read g_ActiveConfig.
 // The reason for this is to get rid of race conditions etc when the configuration
 // changes in the middle of a frame. This is done by copying g_Config to g_ActiveConfig
-// at the start of every frame. Noone should ever change members of g_ActiveConfig
+// at the start of every frame. No one should ever change members of g_ActiveConfig
 // directly.
 
 #pragma once
@@ -33,8 +33,8 @@ enum class AspectMode : int
 enum class StereoMode : int
 {
   Off,
-  SBS,
-  TAB,
+  SideBySide,
+  TopAndBottom,
   Anaglyph,
   QuadBuffer,
   Passive
@@ -180,6 +180,7 @@ struct BackendInfo
   bool bSupportsVSLinePointExpand = false;
   bool bSupportsGLLayerInFS = true;
   bool bSupportsHDROutput = false;
+  bool bSupportsUnrestrictedDepthRange = false;
 };
 
 extern BackendInfo g_backend_info;
@@ -190,6 +191,7 @@ struct VideoConfig final
   VideoConfig() = default;
   void Refresh();
   void VerifyValidity();
+  static void Init();
   static void Shutdown();
 
   // General
@@ -204,7 +206,12 @@ struct VideoConfig final
   float widescreen_heuristic_aspect_ratio_slop = 0.f;
   float widescreen_heuristic_standard_ratio = 0.f;
   float widescreen_heuristic_widescreen_ratio = 0.f;
-  bool bCrop = false;  // Aspect ratio controls.
+  bool bCropToAspectRatio = false;
+  bool bCropCustom = false;
+  int iCropCustomLeft = 0;
+  int iCropCustomTop = 0;
+  int iCropCustomRight = 0;
+  int iCropCustomBottom = 0;
   bool bShaderCache = false;
 
   // Enhancements
@@ -243,6 +250,7 @@ struct VideoConfig final
 
   // Information
   bool bShowFPS = false;
+  bool bShowInternalResolution = false;
   bool bShowFTimes = false;
   bool bShowVPS = false;
   bool bShowVTimes = false;
@@ -313,12 +321,10 @@ struct VideoConfig final
   // Stereoscopy
   StereoMode stereo_mode{};
   bool stereo_per_eye_resolution_full = false;
-  int iStereoDepth = 0;
-  int iStereoConvergence = 0;
-  int iStereoConvergencePercentage = 0;
+  float stereo_depth = 0;
+  float stereo_convergence = 0;
   bool bStereoSwapEyes = false;
   bool bStereoEFBMonoDepth = false;
-  int iStereoDepthPercentage = 0;
 
   // D3D only config, mostly to be merged into the above
   int iAdapter = 0;
@@ -369,7 +375,8 @@ struct VideoConfig final
   }
   bool UseGPUTextureDecoding() const
   {
-    return g_backend_info.bSupportsGPUTextureDecoding && bEnableGPUTextureDecoding;
+    return g_backend_info.bSupportsGPUTextureDecoding && bEnableGPUTextureDecoding &&
+           !bArbitraryMipmapDetection;
   }
   bool UseVertexRounding() const { return bVertexRounding && iEFBScale != 1; }
   bool ManualTextureSamplingWithCustomTextureSizes() const

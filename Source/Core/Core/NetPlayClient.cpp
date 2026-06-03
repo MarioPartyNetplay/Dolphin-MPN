@@ -7,7 +7,6 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
-#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -15,6 +14,7 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -31,7 +31,6 @@
 #include "Common/NandPaths.h"
 #include "Common/QoSSession.h"
 #include "Common/SFMLHelper.h"
-#include "Common/StringUtil.h"
 #include "Common/Timer.h"
 #include "Common/Version.h"
 
@@ -54,30 +53,25 @@
 #include "Core/HW/GCPad.h"
 #include "Core/HW/SI/SI.h"
 #include "Core/HW/SI/SI_Device.h"
+#include "Core/HW/SI/SI_DeviceAMBaseboard.h"
 #include "Core/HW/SI/SI_DeviceGCController.h"
 #include "Core/HW/Sram.h"
 #include "Core/HW/WiiSave.h"
 #include "Core/HW/WiiSaveStructs.h"
+#include "Core/HW/Wiimote.h"
 #include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
-#include "Core/HW/WiimoteEmu/WiimoteEmu.h"
-#include "Core/HW/WiimoteReal/WiimoteReal.h"
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/FS/HostBackend/FS.h"
-#include "Core/IOS/USB/Bluetooth/BTEmu.h"
 #include "Core/IOS/Uids.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayCommon.h"
-#include "Core/PowerPC/PowerPC.h"
 #include "Core/SyncIdentifier.h"
 #include "Core/System.h"
 #include "DiscIO/Blob.h"
 
-#include "InputCommon/ControllerEmu/ControlGroup/Attachments.h"
 #include "InputCommon/GCAdapter.h"
-#include "InputCommon/InputConfig.h"
 #include "UICommon/GameFile.h"
 #include "VideoCommon/OnScreenDisplay.h"
-#include "VideoCommon/VideoConfig.h"
 
 namespace NetPlay
 {
@@ -130,8 +124,8 @@ NetPlayClient::~NetPlayClient()
 
 // called from ---GUI--- thread
 NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog,
-                             const std::string& name, const NetTraversalConfig& traversal_config)
-    : m_dialog(dialog), m_player_name(name)
+                             std::string name, const NetTraversalConfig& traversal_config)
+    : m_dialog(dialog), m_player_name(std::move(name))
 {
   ClearBuffers();
 
@@ -459,6 +453,7 @@ void NetPlayClient::OnData(sf::Packet& packet)
     OnSyncCodes(packet);
     break;
 
+
   case MessageID::ComputeGameDigest:
     OnComputeGameDigest(packet);
     break;
@@ -532,12 +527,27 @@ void NetPlayClient::OnChatMessage(sf::Packet& packet)
   packet >> msg;
 
   // don't need lock to read in this thread
-  const Player& player = m_players[pid];
-
-  INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
-
-  // add to gui
-  m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
+  // PlayerId{0} is used for system/server messages
+  if (pid == 0)
+  {
+    INFO_LOG_FMT(NETPLAY, "System message: {}", msg);
+    m_dialog->AppendChat(fmt::format("System: {}", msg));
+  }
+  else
+  {
+    const auto it = m_players.find(pid);
+    if (it != m_players.end())
+    {
+      const Player& player = it->second;
+      INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
+      m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
+    }
+    else
+    {
+      INFO_LOG_FMT(NETPLAY, "Unknown player {} wrote: {}", pid, msg);
+      m_dialog->AppendChat(fmt::format("Unknown[{}]: {}", pid, msg));
+    }
+  }
 }
 
 void NetPlayClient::OnChunkedDataStart(sf::Packet& packet)
@@ -1931,8 +1941,6 @@ void NetPlayClient::UpdateDevices()
     else if (has_local_player)
     {
       // Use local controller types for local controllers if they are compatible
-      const SerialInterface::SIDevices si_device =
-          Config::Get(Config::GetInfoForSIDevice(local_pad));
       if (SerialInterface::SIDevice_IsGCController(si_device))
       {
         si.ChangeDevice(si_device, pad);
@@ -1950,7 +1958,8 @@ void NetPlayClient::UpdateDevices()
     }
     else if (has_any_player)
     {
-      si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
+      if (si_device != SerialInterface::SIDEVICE_AM_BASEBOARD)
+        si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
     }
     else
     {
@@ -2029,6 +2038,16 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
+  // Check if BBA mode is enabled - if so, disable input synchronization
+  // In BBA mode, we only sync BBA packets, not controller inputs
+  if (m_net_settings.bba_mode)
+  {
+    // In BBA mode, everyone uses local pad 0 (first controller slot)
+    // since we're only syncing BBA packets, not controller inputs
+    *pad_status = Pad::GetStatus(0);
+    return true;
+  }
+
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
@@ -2174,6 +2193,21 @@ u64 NetPlayClient::GetInitialRTCValue() const
 // called from ---CPU--- thread
 bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entries)
 {
+  // Check if BBA mode is enabled - if so, disable Wiimote synchronization
+  // In BBA mode, we only sync BBA packets, not controller inputs
+  if (m_net_settings.bba_mode)
+  {
+    // In BBA mode, everyone gets a default Wiimote state
+    // since we're only syncing BBA packets, not controller inputs
+    for (const WiimoteDataBatchEntry& entry : entries)
+    {
+      // Create a default/empty Wiimote state for all Wiimote requests
+      WiimoteEmu::SerializedWiimoteState default_state{};
+      *entry.state = default_state;
+    }
+    return true;
+  }
+
   for (const WiimoteDataBatchEntry& entry : entries)
   {
     const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
@@ -2378,6 +2412,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 void NetPlayClient::InvokeStop()
 {
   m_is_running.Clear();
+  NetPlay_Disable();
 
   // stop waiting for input
   m_gc_pad_event.Set();
@@ -2390,8 +2425,6 @@ void NetPlayClient::InvokeStop()
 bool NetPlayClient::StopGame()
 {
   InvokeStop();
-
-  NetPlay_Disable();
 
   // stop game
   m_dialog->StopGame();
@@ -2448,8 +2481,8 @@ void NetPlayClient::RequestGolfControl()
 std::string NetPlayClient::GetCurrentGolfer()
 {
   std::lock_guard lkp(m_crit.players);
-  if (m_players.contains(m_current_golfer))
-    return m_players[m_current_golfer].name;
+  if (const auto it = m_players.find(m_current_golfer); it != m_players.end())
+    return it->second.name;
   return "";
 }
 
@@ -2583,7 +2616,7 @@ void NetPlayClient::SendGameStatus()
     }
   }
 
-  packet << static_cast<u32>(result);
+  packet << result;
   Send(packet);
 }
 
@@ -2615,7 +2648,8 @@ bool NetPlayClient::DoAllPlayersHaveGame()
   });
 }
 
-static std::string SHA1Sum(const std::string& file_path, std::function<bool(int)> report_progress)
+static std::string SHA1Sum(const std::string& file_path,
+                           const std::function<bool(int)>& report_progress)
 {
   std::vector<u8> data(8 * 1024 * 1024);
   u64 read_offset = 0;
@@ -2949,12 +2983,12 @@ u64 ExpansionInterface::CEXIIPL::NetPlay_GetEmulatedTime()
 
 // called from ---CPU--- thread
 // return the local pad num that should rumble given a ingame pad num
-int SerialInterface::CSIDevice_GCController::NetPlay_InGamePadToLocalPad(int numPAD)
+int SerialInterface::CSIDevice_GCController::NetPlay_InGamePadToLocalPad(int pad_num)
 {
   std::lock_guard lk(NetPlay::crit_netplay_client);
 
   if (NetPlay::netplay_client)
-    return NetPlay::netplay_client->InGamePadToLocalPad(numPAD);
+    return NetPlay::netplay_client->InGamePadToLocalPad(pad_num);
 
-  return numPAD;
+  return pad_num;
 }

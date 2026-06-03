@@ -16,6 +16,7 @@
 #endif  // USE_RETRO_ACHIEVEMENTS
 
 #include "Core/Boot/Boot.h"
+#include "DolphinQt/FIFO/FIFOPlayerWindow.h"
 
 class QMenu;
 class QStackedWidget;
@@ -29,13 +30,12 @@ class CheatsManager;
 class CodeWidget;
 class DiscordHandler;
 class DragEnterEvent;
-class FIFOPlayerWindow;
 class FreeLookWindow;
+class GameCount;
 class GameList;
 class GBATASInputWindow;
 class GCTASInputWindow;
 class GeckoDialog;
-class GraphicsWindow;
 class HotkeyScheduler;
 class InfinityBaseWindow;
 class JITWidget;
@@ -57,6 +57,7 @@ class ToolBar;
 class WatchWidget;
 class WiiTASInputWindow;
 class WiiSpeakWindow;
+class LogitechMicWindow;
 struct WindowSystemInfo;
 class ControllersPane;
 
@@ -86,13 +87,17 @@ class MainWindow final : public QMainWindow
 
 public:
   explicit MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
-                      const std::string& movie_path);
+                      const std::string& movie_path, const bool netplay_join,
+                      const std::optional<UICommon::GameFile> netplay_host);
   ~MainWindow() override;
 
   WindowSystemInfo GetWindowSystemInfo() const;
 
   bool eventFilter(QObject* object, QEvent* event) override;
   QMenu* createPopupMenu() override;
+
+  void ShowTriforceWindow();
+  void CheckForUpdatesAuto();
 
 signals:
   void ReadOnlyModeChanged(bool read_only);
@@ -182,6 +187,7 @@ private:
   void ShowSkylanderPortal();
   void ShowInfinityBase();
   void ShowWiiSpeakWindow();
+  void ShowLogitechMicWindow();
   void ShowMemcardManager();
   void ShowResourcePackManager();
   void ShowCheatsManager();
@@ -193,8 +199,6 @@ private:
   void OnHardcoreChanged();
 #endif  // USE_RETRO_ACHIEVEMENTS
 
-  void CheckForUpdatesAuto();
-  
   void NetPlayInit();
   bool NetPlayJoin();
   bool NetPlayHost(const UICommon::GameFile& game);
@@ -215,11 +219,14 @@ private:
   void OnActivateChat();
   void OnRequestGolfControl();
   void ShowTASInput();
+  void ShowOSDWindow();
 
   void ChangeDisc();
   void EjectDisc();
 
   void OpenUserFolder();
+  void OpenConfigFolder();
+  void OpenCacheFolder();
 
   QStringList PromptFileNames();
 
@@ -242,6 +249,7 @@ private:
   MenuBar* m_menu_bar;
   SearchBar* m_search_bar;
   GameList* m_game_list;
+  GameCount* m_game_count;
   RenderWidget* m_render_widget = nullptr;
   bool m_rendering_to_main;
   bool m_stop_confirm_showing = false;
@@ -254,11 +262,13 @@ private:
   GeckoDialog* m_gecko_dialog = nullptr;
   ControllersPane* m_controllers_window = nullptr;
   SettingsWindow* m_settings_window = nullptr;
-  GraphicsWindow* m_graphics_window = nullptr;
-  FIFOPlayerWindow* m_fifo_window = nullptr;
+  // m_fifo_window doesn't set MainWindow as its parent so that the fifo can be focused without
+  // raising the main window, so use a unique_ptr to make sure it gets destroyed.
+  std::unique_ptr<FIFOPlayerWindow> m_fifo_window = nullptr;
   SkylanderPortalWindow* m_skylander_window = nullptr;
   InfinityBaseWindow* m_infinity_window = nullptr;
   WiiSpeakWindow* m_wii_speak_window = nullptr;
+  LogitechMicWindow* m_logitech_mic_window = nullptr;
   MappingWindow* m_hotkey_window = nullptr;
   FreeLookWindow* m_freelook_window = nullptr;
   HotkeyScheduler* m_hotkey_scheduler;
@@ -288,6 +298,6 @@ private:
   RegisterWidget* m_register_widget;
   ThreadWidget* m_thread_widget;
   WatchWidget* m_watch_widget;
-  CheatsManager* m_cheats_manager;
+  CheatsManager* m_cheats_manager{};
   QByteArray m_render_widget_geometry;
 };

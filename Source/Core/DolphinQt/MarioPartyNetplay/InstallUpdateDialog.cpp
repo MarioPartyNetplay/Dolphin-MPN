@@ -376,21 +376,29 @@ bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::s
             return false;
         }
         
-        std::string out_path = destDir + "/" + file_info->filename;
-        if (file_info->filename[strlen(file_info->filename) - 1] == '/')
+        // Skip files in the User/ directory to preserve user data
+        std::string filename_str(file_info->filename);
+        bool is_user_file = (filename_str.find("User/") == 0 || 
+                            filename_str.find("User\\") == 0);
+        
+        if (!is_user_file)
         {
-            // Directory
-            QDir().mkpath(QString::fromStdString(out_path));
-        }
-        else
-        {
-            // File
-            QDir().mkpath(QFileInfo(QString::fromStdString(out_path)).path());
-            if (mz_zip_reader_entry_save_file(reader, out_path.c_str()) != MZ_OK)
+            std::string out_path = destDir + "/" + file_info->filename;
+            if (file_info->filename[strlen(file_info->filename) - 1] == '/')
             {
-                mz_zip_reader_close(reader);
-                mz_zip_reader_delete(&reader);
-                return false;
+                // Directory
+                QDir().mkpath(QString::fromStdString(out_path));
+            }
+            else
+            {
+                // File
+                QDir().mkpath(QFileInfo(QString::fromStdString(out_path)).path());
+                if (mz_zip_reader_entry_save_file(reader, out_path.c_str()) != MZ_OK)
+                {
+                    mz_zip_reader_close(reader);
+                    mz_zip_reader_delete(&reader);
+                    return false;
+                }
             }
         }
         

@@ -5,8 +5,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "Common/CommonTypes.h"
@@ -41,7 +41,7 @@ public:
   virtual void DisableWatch(std::size_t index) = 0;
   virtual bool HasEnabledWatch(u32 address) const = 0;
   virtual void RemoveWatch(std::size_t index) = 0;
-  virtual void LoadWatchesFromStrings(const std::vector<std::string>& watches) = 0;
+  virtual void LoadWatchesFromStrings(std::span<const std::string> watches) = 0;
   virtual std::vector<std::string> SaveWatchesToStrings() const = 0;
   virtual void ClearWatches() = 0;
 
@@ -104,7 +104,7 @@ public:
   {
     return 0xFFFFFFFF;
   }
-  virtual std::string_view GetDescription(u32 /*address*/) const = 0;
+  virtual std::string GetDescription(u32 /*address*/) const = 0;
   virtual void Clear(const CPUThreadGuard& guard) = 0;
 };
 }  // namespace Core

@@ -3,25 +3,23 @@
 
 #include "UICommon/AutoUpdate.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <string>
 
 #include <fmt/format.h>
 #include <picojson.h>
 
-#include "Common/CommonFuncs.h"
-#include "Common/CommonPaths.h"
-#include "Common/FileUtil.h"
 #include "Common/HttpRequest.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
+#include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
 #include "Common/Version.h"
 
 #ifdef _WIN32
 #include <Windows.h>
 #else
-#include <sys/types.h>
 #include <unistd.h>
 #endif
 
@@ -29,10 +27,18 @@
 #include <sys/stat.h>
 #endif
 
+#if defined(_WIN32) || defined(__APPLE__)
+#define OS_SUPPORTS_UPDATER
+#include "Common/CommonFuncs.h"
+#include "Common/CommonPaths.h"
+#include "Common/FileUtil.h"
+#endif
+
 // Refer to docs/autoupdate_overview.md for a detailed overview of the autoupdate process
 
 namespace
 {
+std::atomic_bool s_check_in_progress = false;
 bool s_update_triggered = false;
 
 #ifdef __APPLE__
@@ -75,6 +81,23 @@ std::string MakeUpdaterCommandLine(const std::map<std::string, std::string>& fla
   return cmdline;
 }
 
+void CleanupFromPreviousUpdate()
+{
+#ifdef __APPLE__
+  // Remove the relocated updater file.
+  File::DeleteDirRecursively(UpdaterPath(true));
+
+  // Remove the old (non-embedded) updater app bundle.
+  // While the update process will delete the files within the old bundle after updating to a
+  // version with an embedded updater, it won't delete the folder structure of the bundle, so
+  // we should clean those leftovers up.
+  File::DeleteDirRecursively(File::GetExeDirectory() + DIR_SEP + "Dolphin Updater.app");
+#endif
+
+  // Updater.log was moved from GetExeDirectory() to GetUserPath(D_LOGS_IDX) in 5.0-14529.
+  File::Delete(File::GetExeDirectory() + DIR_SEP + "Updater.log",
+               File::IfAbsentBehavior::NoConsoleWarning);
+}
 #endif
 
 // This ignores i18n because most of the text in there (change descriptions) is only going to be
@@ -129,6 +152,15 @@ bool AutoUpdateChecker::SystemSupportsAutoUpdates()
 #endif
 }
 
+static u32 GetOwnProcessId()
+{
+#ifdef _WIN32
+  return GetCurrentProcessId();
+#else
+  return getpid();
+#endif
+}
+
 static std::string GetPlatformID()
 {
 #if defined(_WIN32)
@@ -159,9 +191,27 @@ static std::string GetUpdateServerUrl()
 void AutoUpdateChecker::CheckForUpdate(std::string_view update_track,
                                        std::string_view hash_override, const CheckType check_type)
 {
+  bool expected_check_in_progress = false;
+  if (!s_check_in_progress.compare_exchange_strong(expected_check_in_progress, true))
+    return;
+
+  Common::ScopeGuard guard([]() { s_check_in_progress.store(false); });
+
+  if (s_update_triggered)
+  {
+    if (check_type == CheckType::Manual)
+      SuccessAlertFmtT("A Dolphin update is already scheduled for the next time it closes.");
+
+    return;
+  }
+
   // Don't bother checking if updates are not supported or not enabled.
   if (!SystemSupportsAutoUpdates() || update_track.empty())
     return;
+
+#ifdef OS_SUPPORTS_UPDATER
+  CleanupFromPreviousUpdate();
+#endif
 
   std::string_view version_hash = hash_override.empty() ? Common::GetScmRevGitStr() : hash_override;
   std::string url = fmt::format("{}/update/check/v1/{}/{}/{}", GetUpdateServerUrl(), update_track,
@@ -179,7 +229,6 @@ void AutoUpdateChecker::TriggerUpdate(const AutoUpdateChecker::NewVersionInforma
     return;
   }*/
 
-  s_update_triggered = true;
 #ifdef OS_SUPPORTS_UPDATER
   std::map<std::string, std::string> updater_flags;
   updater_flags["this-manifest-url"] = info.this_manifest_url;
@@ -220,6 +269,7 @@ void AutoUpdateChecker::TriggerUpdate(const AutoUpdateChecker::NewVersionInforma
   {
     CloseHandle(pinfo.hThread);
     CloseHandle(pinfo.hProcess);
+    s_update_triggered = true;
   }
   else
   {
@@ -231,6 +281,10 @@ void AutoUpdateChecker::TriggerUpdate(const AutoUpdateChecker::NewVersionInforma
   {
     const std::string error = Common::LastStrerrorString();
     CriticalAlertFmtT("Could not start updater process: {0}", error);
+  }
+  else
+  {
+    s_update_triggered = true;
   }
 #endif
 

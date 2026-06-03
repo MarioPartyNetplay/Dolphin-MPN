@@ -53,7 +53,7 @@ public:
   void DisableWatch(std::size_t index) override;
   bool HasEnabledWatch(u32 address) const override;
   void RemoveWatch(std::size_t index) override;
-  void LoadWatchesFromStrings(const std::vector<std::string>& watches) override;
+  void LoadWatchesFromStrings(std::span<const std::string> watches) override;
   std::vector<std::string> SaveWatchesToStrings() const override;
   void ClearWatches() override;
 
@@ -102,7 +102,7 @@ public:
   void Step() override {}
   void RunTo(u32 address) override;
   u32 GetColor(const Core::CPUThreadGuard* guard, u32 address) const override;
-  std::string_view GetDescription(u32 address) const override;
+  std::string GetDescription(u32 address) const override;
 
   std::shared_ptr<Core::NetworkCaptureLogger> NetworkLogger();
 

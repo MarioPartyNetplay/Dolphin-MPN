@@ -1,128 +1,611 @@
- name: Combined CI
+name: Combined CI
+on:
+  push: null
+  pull_request: null
+jobs:
+  build_android:
+    name: Android arm64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-
+            ${{ runner.os }}-gradle-
+      
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android
+            ~/.local/share/android
+          key: ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-
+            ${{ runner.os }}-android-
+      
+      - name: Setup Android SDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        run: |
+          # Use the existing Android SDK from the runner
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          
+          # Accept licenses and install required components if not already present
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" || true
+          
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+      
+      - name: Build APK
+        run: |
+          cd Source/Android
+          ./gradlew assembleRelease
+          
+          # Rename the APK to DolphinMPN-android.apk
+          find . -name "*.apk" -path "*/release/*" | head -1 | xargs -I {} cp {} DolphinMPN-android.apk
+          
+          # Create OUT directory and move APK
+          mkdir -p OUT
+          mv DolphinMPN-android.apk OUT/
+      
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DolphinMPN-android
+          path: Source/Android/OUT/
+  build_archlinux:
+    name: Arch Linux x86_64
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    steps:
 
- on:
-  push:
-  pull_request:
+    - name: Checkout Repository
+      uses: actions/checkout@v5
 
- jobs:
+    - name: Install Git
+      run: |
+        pacman -Sy --noconfirm git
+
+    - name: Setup Build User
+      run: |
+        # Create a non-root user for building
+        useradd -m -G wheel builder
+        echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+        # Give builder user access to the workspace
+        chown -R builder:builder .
+
+    - name: Install Dependencies
+      run: |
+        # Update package database and install dependencies as root
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm --needed --overwrite="*" cmake ninja qt6-tools git
+        
+        # Install runtime dependencies
+        pacman -S --noconfirm --needed --overwrite="*" \
+          alsa-lib \
+          bluez-libs \
+          enchant \
+          ffmpeg \
+          fmt \
+          hidapi \
+          libevdev \
+          libpulse \
+          libx11 \
+          libxi \
+          libxrandr \
+          lzo \
+          mbedtls \
+          miniupnpc \
+          pugixml \
+          qt6-base \
+          qt6-svg \
+          sdl2 \
+          sfml \
+          zlib \
+          zstd
+
+    - name: Update PKGBUILD commit
+      run: sed -i "s/^_commit=.*/_commit=${{ github.sha }}/" Distribution/PKGBUILD
+
+    - name: Build
+      run: |
+        sudo -u builder bash -c "
+          cd Distribution
+          # Run makepkg without installing dependencies (-s instead of -si)
+          makepkg -s
+          
+          # Move the built package to Distribution/OUT
+          mkdir -p OUT
+          mv *.pkg.tar.zst OUT/ || mv *.pkg.tar.gz OUT/ || mv *.pkg.tar.xz OUT/ || echo 'No package found to move'
+        "
+      
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DolphinMPN-archlinux-x86_64
+        path: Distribution/OUT/
+
   build_flatpak:
+    name: Flatpak Linux x86_64
     runs-on: ubuntu-latest
     container:
       image: bilelmoussaoui/flatpak-github-actions:gnome-nightly
       options: --privileged
     steps:
-    - uses: actions/checkout@v2
-    - name: Purge .git for space reasons
-      run: rm -rf /home/runner/work/Dolphin-MPN-src/Dolphin-MPN-src/.git
-    - name: Setup Packages
-      run: |
-        flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo && \
-        flatpak install org.kde.Sdk//5.15 org.kde.Platform//5.15 -y && \
-        dnf install libusb1-devel cmake git gcc-c++ libXext-devel libgudev qt6-qtbase-devel systemd-devel openal-soft-devel libevdev-devel libao-devel SOIL-devel libXrandr-devel pulseaudio-libs-devel bluez-libs-devel p7zip SDL2-devel make automake gcc gcc-c++ kernel-devel -y
-    - name: Run Flatpak Builder
-      uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-      with:
-        manifest-path: Distribution/flatpak.yml
-        bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Preserve Space
+        run: |
+          # Show initial disk space
+          df -h
+          
+          # Remove git history (saves significant space)
+          rm -rf .git/
+          
+          # Remove Qt externals (not needed, Flatpak provides Qt)
+          rm -rf Externals/Qt
+          
+          # Remove large documentation/example directories from externals
+          rm -rf Externals/imgui/imgui/examples || true
+          rm -rf Externals/imgui/imgui/docs || true
+          rm -rf Externals/imgui/imgui/misc/fonts || true
+          rm -rf Externals/SDL/docs || true
+          rm -rf Externals/SDL/test || true
+          rm -rf Externals/mGBA/mgba/res || true
+          rm -rf Externals/gtest/docs || true
+          
+          # Remove more unnecessary files
+          find . -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.pyc" -delete 2>/dev/null || true
+          find . -type f -name "*.o" -delete 2>/dev/null || true
+          find . -type f -name "*.a" -delete 2>/dev/null || true
+          
+          # Clean package manager caches
+          dnf clean all || true
+          
+          # Clean Flatpak caches
+          flatpak uninstall --unused -y || true
+          rm -rf ~/.cache/flatpak/* || true
+          rm -rf /var/tmp/flatpak-* || true
+          
+          # Show disk space after cleanup
+          df -h
+          
+      - name: Setup Packages
+        run: |
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          
+          # Install only what we need, clean as we go
+          flatpak install org.kde.Sdk//5.15 org.kde.Platform//5.15 -y
+          
+          dnf install libusb1-devel cmake git gcc-c++ libXext-devel libgudev qt6-qtbase-devel systemd-devel openal-soft-devel libevdev-devel libao-devel SOIL-devel libXrandr-devel pulseaudio-libs-devel bluez-libs-devel p7zip SDL2-devel make automake gcc gcc-c++ kernel-devel -y
+          
+          # Aggressive cleanup
+          dnf clean all
+          rm -rf /var/cache/dnf/*
+          rm -rf /var/lib/dnf/*
+          rm -rf /tmp/*
+          
+          # Clean Flatpak caches again
+          flatpak uninstall --unused -y || true
+          
+          df -h
+      - name: Clean up before build
+        run: |
+          # Show disk space before build
+          df -h
+          
+          # Clean up any build artifacts from previous runs
+          rm -rf .flatpak-builder || true
+          rm -rf build || true
+          
+          # Clean up temporary files
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          
+          # Clean up any leftover build artifacts
+          find . -type d -name "CMakeFiles" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.o" -delete 2>/dev/null || true
+          find . -type f -name "*.a" -delete 2>/dev/null || true
+          find . -type f -name "cmake_install.cmake" -delete 2>/dev/null || true
+          
+          # Show disk space after cleanup
+          df -h
+          
+      - name: Run Flatpak Builder
+        env:
+          # Limit parallelism to reduce peak disk usage
+          CMAKE_BUILD_PARALLEL_LEVEL: 2
+          NINJA_STATUS: "[%f/%t] "
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: Distribution/flatpak.yml
+          bundle: DolphinMPN-flatpak-linux-x86_64.flatpak
+          options: --ccache
+      - name: Clean up after build
+        if: always()
+        run: |
+          # Show disk space after build
+          df -h
+          
+          # Clean up build artifacts to save space
+          rm -rf .flatpak-builder/cache || true
+          rm -rf .flatpak-builder/checkout || true
+          find .flatpak-builder -type f -name "*.o" -delete 2>/dev/null || true
+          find .flatpak-builder -type f -name "*.a" -delete 2>/dev/null || true
+          
+          # Clean up temporary files
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          
+          df -h
 
-  build_deb24_04:
-    runs-on: ubuntu-24.04
+  build_macos:
+    name: macOS Build x86_64
+    runs-on: macos-14
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN && git submodule update --init --recursive
-    - name: Setup Packages
-      run: |
-        sudo apt update --fix-missing
-        sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
-    - name: Build
-      run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb OUT/
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
       with:
-        name: DolphinMPN-ubuntu-24.04-linux-x86_64
-        path: build/OUT/
-
-  build_deb22_04:
-    runs-on: ubuntu-22.04
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory /__w/Dolphin-MPN/Dolphin-MPN && git submodule update --init --recursive
-    - name: Setup Packages
+        submodules: recursive
+    - name: Install Packages
       run: |
-        sudo apt update --fix-missing
-        sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
-    - name: Build
-      run: |
-        mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb OUT/
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
+        brew install gnu-sed
+        if ! brew install ccache ninja; then
+          brew update
+          brew install ccache ninja
+        fi
+    - name: Cache Dependencies
+      id: cache-deps
+      uses: actions/cache@v4
       with:
-        name: DolphinMPN-ubuntu-22.04-linux-x86_64
-        path: build/OUT/
+        path: ~/deps
+        key: macOS deps x86_64 ${{ hashFiles('.github/workflows/ci.yml') }}
+        restore-keys: |
+          macOS deps x86_64
+    - name: Cache Homebrew
+      uses: actions/cache@v4
+      with:
+        path: |
+          /opt/homebrew/Cellar
+          /usr/local/Cellar
+          /opt/homebrew/Caskroom
+          /usr/local/Caskroom
+          ~/.cache/Homebrew
+        key: ${{ runner.os }}-homebrew-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}
+        restore-keys: |
+          ${{ runner.os }}-homebrew-
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.ccache
+          ~/.cache/ccache
+        key: ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-
+          ${{ runner.os }}-ccache-
+    - name: Verify Dependencies Architecture
+      if: steps.cache-deps.outputs.cache-hit == 'true'
+      id: verify-deps
+      run: |
+        # Verify that cached dependencies are x86_64
+        needs_rebuild=false
+        if [ -d "$HOME/deps/lib" ]; then
+          for lib in "$HOME/deps/lib"/libQt*.dylib; do
+            if [ -f "$lib" ]; then
+              arch=$(lipo -info "$lib" 2>/dev/null | grep -o 'x86_64\|arm64' | head -1 || echo "")
+              if [ "$arch" != "x86_64" ] && [ -n "$arch" ]; then
+                echo "WARNING: Found $arch library $lib, expected x86_64."
+                needs_rebuild=true
+              fi
+            fi
+          done
+          if [ "$needs_rebuild" = "true" ]; then
+            echo "Clearing incorrectly cached dependencies..."
+            rm -rf "$HOME/deps"
+          else
+            echo "Verified dependencies are x86_64"
+          fi
+        else
+          needs_rebuild=true
+        fi
+        echo "needs_rebuild=$needs_rebuild" >> $GITHUB_OUTPUT
+    
+    - name: Build Dependencies
+      if: steps.cache-deps.outputs.cache-hit != 'true' || steps.verify-deps.outputs.needs_rebuild == 'true'
+      run: |
+        chmod +x Distribution/prepare_macos.sh
+        export CMAKE_OSX_ARCHITECTURES=x86_64
+        export MACOS_DEPS_DIR="$HOME/deps"
+        export MOLTENVK_DIR="$HOME/moltenvk"
+        export BUILD_MOLTENVK=false
+        bash Distribution/prepare_macos.sh
+    - name: Cache MoltenVK
+      id: cache-moltenvk
+      uses: actions/cache@v4
+      with:
+        path: ~/moltenvk
+        key: macOS MoltenVK ${{ hashFiles('Externals/MoltenVK') }}
+    - name: Build MoltenVK
+      if: steps.cache-moltenvk.outputs.cache-hit != 'true'
+      run: |
+        chmod +x Distribution/prepare_macos.sh
+        export CMAKE_OSX_ARCHITECTURES=x86_64
+        export MACOS_DEPS_DIR="$HOME/deps"
+        export MOLTENVK_DIR="$HOME/moltenvk"
+        export BUILD_MOLTENVK=true
+        export SKIP_DEPS=true
+        bash Distribution/prepare_macos.sh
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/cmake
+          ~/.cache/ninja
+        key: ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-
+          ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-
+          ${{ runner.os }}-cmake-macos-
+    - name: Generate CMake Files
+      run: |
+        # Configure ccache for faster builds
+        export CCACHE_DIR=~/.ccache
+        export CCACHE_MAXSIZE=10G
+        export CCACHE_COMPRESS=1
+        export CCACHE_COMPRESSLEVEL=6
         
-  build_macos_universal:
-    runs-on: macos-15
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory . && git submodule update --init --recursive
-    - name: Install Homebrew packages (x86_64 via Rosetta)
-      run: |
-        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        chmod +x /usr/local/bin/brew
-        rm -f /usr/local/bin/idle3 /usr/local/bin/python3 /usr/local/bin/pip3
-        arch -x86_64 /usr/local/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
+        # Explicitly set architecture environment variables for x86_64
+        export CMAKE_OSX_ARCHITECTURES=x86_64
+        export ARCHFLAGS="-arch x86_64"
+          
+        COMMON_ARGS=(
+          -DCMAKE_PREFIX_PATH="$HOME/deps;$HOME/moltenvk"
+          -DCMAKE_BUILD_TYPE=Release
+          -DUSE_BUNDLED_MOLTENVK=OFF
+          -DMACOS_CODE_SIGNING=OFF
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
+          -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
+          -DUSE_SYSTEM_LIBS=OFF
+          -DUSE_SYSTEM_BZIP2=ON
+          -DUSE_SYSTEM_CURL=ON
+          -DUSE_SYSTEM_ICONV=ON
+          -DUSE_SYSTEM_SDL3=OFF
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.10
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
+          -DCMAKE_SYSTEM_PROCESSOR=x86_64
+          -DCMAKE_SYSTEM_NAME=Darwin
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DCMAKE_C_FLAGS="-arch x86_64"
+          -DCMAKE_CXX_FLAGS="-arch x86_64"
 
-    - name: Install Homebrew packages (arm64)
+          -G Ninja
+        )
+
+        cmake "${COMMON_ARGS[@]}" -B build .
+
+    - name: Build Dolphin (x86_64)
+      working-directory: build
       run: |
-        /opt/homebrew/bin/brew install ninja qt6 cmake ffmpeg libusb libxrandr libxi pango libsvg pulseaudio git
-    - name: Build
-      run: |
-        mkdir -p build && cd build && python3 ../BuildMacOSUniversalBinary.py
-    - name: Prepare macOS Build Artifact
-      run: |
-        cd build/universal
-        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-universal.dmg
+        # Ensure architecture is set for the build
+        export CMAKE_OSX_ARCHITECTURES=x86_64
+        export ARCHFLAGS="-arch x86_64"
+        ninja dolphin-mpn
+
+    - name: Prepare Build Artifacts
+      run: >
+        mkdir -p build/OUT
+
+        rsync -av build/Binaries/DolphinQt.app/ build/OUT/Dolphin-MPN.app/
+
+        cd build/OUT
+
+        hdiutil create -volname "Dolphin-MPN" -srcfolder Dolphin-MPN.app -ov -format UDZO DolphinMPN-macOS-x86_64.dmg
+
         rm -rf Dolphin-MPN.app
-        rm -rf DolphinQt.app
-        rm -f dolphin-mpn-nogui
-        rm -f dolphin-tool
-        rm -f traversal_server
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DolphinMPN-macOS-universal
-        path: build/universal/
-
+        name: DolphinMPN-macOS-x86_64
+        path: build/OUT/DolphinMPN-macOS-x86_64.dmg
+        
   build_windows_x86_64:
+    name: Windows x86_64
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Submodules
-      run: git config --global --add safe.directory . && git submodule update --init --recursive
+    - uses: actions/checkout@v5
+      with:
+        submodules: recursive
+    - name: Cache MSBuild artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          Binary
+          Source/**/bin
+          Source/**/obj
+          packages
+        key: ${{ runner.os }}-msbuild-${{ hashFiles('**/*.vcxproj', '**/*.sln',
+          '**/*.props') }}-${{ github.sha }}
+        restore-keys: >
+          ${{ runner.os }}-msbuild-${{ hashFiles('**/*.vcxproj', '**/*.sln',
+          '**/*.props') }}-
+
+          ${{ runner.os }}-msbuild-
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v1.0.2
       with:
-        vs-version: '16.6.2'
+        vs-version: 16.6.2
     - name: Build
-      run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal /property:Configuration=Release /property:Platform=x64
-    - name: Trusted Signing
-      uses: azure/trusted-signing-action@v0.5.1
-      with:
-        azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-        endpoint: https://eus.codesigning.azure.net/
-        trusted-signing-account-name: TabithaHanegan
-        certificate-profile-name: vscx-certificate-profile
-        files-folder: Binary/x64/
-        files-folder-filter: exe,dll
+      run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal
+        /property:Configuration=Release /property:Platform=x64
+
+    #- name: Trusted Signing
+    #  uses: azure/trusted-signing-action@v0.5.1
+    #  with:
+    #    azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+    #    azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+    #    azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+    #    endpoint: https://eus.codesigning.azure.net/
+    #    trusted-signing-account-name: TabithaHanegan
+    #    certificate-profile-name: vscx-certificate-profile
+    #    files-folder: Binary/x64/
+    #    files-folder-filter: exe,dll
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
         name: DolphinMPN-windows-x86_64
         path: Binary/x64/
+        
+  build_deb24_04:
+    name: Ubuntu Linux 24.04 x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Git
+        run: |
+          sudo apt update
+          sudo apt install -y git
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-24.04-${{ hashFiles('**/ci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-24.04-
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+            ~/.cache/cmake
+          key: ${{ runner.os }}-cmake-24.04-${{ hashFiles('**/CMakeLists.txt',
+            '**/cmake/**') }}-${{ github.sha }}
+          restore-keys: >
+            ${{ runner.os }}-cmake-24.04-${{ hashFiles('**/CMakeLists.txt',
+            '**/cmake/**') }}-
+  
+            ${{ runner.os }}-cmake-24.04-
+      - name: Setup Packages
+        run: >
+          sudo apt update --fix-missing
+  
+          sudo apt install ninja-build dpkg-dev qt6-base-dev build-essential git cmake ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libevdev-dev libusb-1.0-0-dev libxrandr-dev libxi-dev libpangocairo-1.0-0 qt6-base-private-dev libqt6svg6-dev libbluetooth-dev libasound2-dev libpulse-dev libgl1-mesa-dev libcurl4-openssl-dev
+      - name: Build
+        run: >
+          mkdir -p build && cd build && cmake .. -G Ninja -DDISTRIBUTOR="Mario Party
+          Netplay" && ninja -j8 && ninja package && mkdir -p OUT && mv *.deb
+          OUT/
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DolphinMPN-ubuntu-24.04-linux-x86_64
+          path: build/OUT/
+
+  build_appimage:
+    name: AppImage Linux x86_64
+    runs-on: ubuntu-24.04
+    env:
+      yaqti: 6.7.3
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: build-ccache-appimage-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            build-ccache-appimage-${{ runner.os }}-
+
+      - name: Install Qt
+        run: |
+          curl -sLO https://files.pythonhosted.org/packages/47/42/351389ca36c7adfc5f4e92d086cdb2bdbde13f1b89ee882f4a1cab2183ac/yaqti-2021.7.29-py3-none-any.whl
+          python3 -m pip install yaqti-2021.7.29-py3-none-any.whl
+          pyver=$(python3 --version | awk '{print $2}')
+          curl -sL https://raw.githubusercontent.com/qurious-pixel/yaqti/fetch/yaqti/fetchers.py -o $HOME/.local/lib/python${pyver%.*}/site-packages/yaqti/fetchers.py
+          python -m yaqti install --os linux --platform desktop --version ${{ env.yaqti }} --modules linux_gcc_64 --set-envs --install-deps
+
+      - name: Install Packages
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential dialog dpkg libbluetooth-dev liblz4-dev liblzma-dev libssl-dev libopus-dev libpng-dev libsystemd-dev \
+          libzip-dev libzstd-dev zlib1g-dev libasound2-dev libpulse-dev pulseaudio p7zip p7zip-full libsfml-dev libminiupnpc-dev libmbedtls-dev libpugixml-dev \
+          libbz2-dev liblzo2-dev libxi-dev libavcodec-dev libudev-dev libusb-1.0-0-dev libevdev-dev libc6-dev libhidapi-dev libavformat-dev libavdevice-dev \
+          libfmt-dev libwayland-dev libxrandr-dev libglu1-mesa-dev libcurl4-openssl-dev x11-utils zenity wget curl git gettext ccache make cmake ninja-build \
+          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-icccm4 libxcb-image0-dev libxcb-cursor-dev
+
+      - name: Purge .git for space reasons
+        run: rm -rf .git
+
+      - name: Update Patchelf
+        run: |
+          PATCHELFVER=0.14.5
+          curl -sL https://github.com/NixOS/patchelf/releases/download/${PATCHELFVER}/patchelf-${PATCHELFVER}-x86_64.tar.gz -o /tmp/patchelf.tar.gz
+          tar -xvf /tmp/patchelf.tar.gz --directory /tmp/ ./bin/patchelf --strip-components=2 
+          sudo mv /tmp/patchelf /usr/bin
+          patchelf --version
+
+      - name: Build Dolphin
+        run: |
+          export Qt_DIR="${{github.workspace}}/qt/${{ env.yaqti }}/gcc_64/lib/cmake/Qt6"
+          mkdir -p "$HOME/.ccache"
+          mkdir -p build
+          cd build
+          cmake .. -GNinja \
+            -DCMAKE_C_COMPILER=/usr/lib/ccache/gcc-13 \
+            -DCMAKE_CXX_COMPILER=/usr/lib/ccache/g++-13 \
+            -DCMAKE_PREFIX_PATH="${{github.workspace}}/qt/${{ env.yaqti }}/gcc_64/" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.10 \
+            -DENABLE_NOGUI=OFF
+          ninja
+
+      - name: Build AppImage using appimage.sh
+        env:
+          QT_BASE_DIR: ${{github.workspace}}/qt/${{ env.yaqti }}/gcc_64
+          QTDIR: ${{github.workspace}}/qt/${{ env.yaqti }}/gcc_64
+          CCACHE_MAXSIZE: 200M
+        run: |
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${GITHUB_WORKSPACE}/qt/${{ env.yaqti }}/gcc_64/lib/
+          export PATH=${GITHUB_WORKSPACE}/qt/${{ env.yaqti }}/gcc_64/bin:$PATH
+          cd build
+          chmod +x ../Distribution/appimage.sh
+          bash ../Distribution/appimage.sh
+          mkdir -p OUT
+          mv *.AppImage OUT/ || true
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DolphinMPN-AppImage-x86_64
+          path: build/OUT/
+      

@@ -13,7 +13,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "Common/CommonTypes.h"
@@ -119,7 +118,7 @@ public:
   virtual void OnIndexRefreshFailed(std::string error) = 0;
 
   virtual void ShowChunkedProgressDialog(const std::string& title, u64 data_size,
-                                         const std::vector<int>& players) = 0;
+                                         std::span<const int> players) = 0;
   virtual void HideChunkedProgressDialog() = 0;
   virtual void SetChunkedProgress(int pid, u64 progress) = 0;
 
@@ -144,8 +143,8 @@ public:
   void ThreadFunc();
   void SendAsync(sf::Packet&& packet, u8 channel_id = DEFAULT_CHANNEL);
 
-  NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog,
-                const std::string& name, const NetTraversalConfig& traversal_config);
+  NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog, std::string name,
+                const NetTraversalConfig& traversal_config);
   ~NetPlayClient() override;
 
   std::vector<const Player*> GetPlayers();
@@ -153,6 +152,7 @@ public:
 
   // Called from the GUI thread.
   bool IsConnected() const { return m_is_connected; }
+  bool IsRunning() const { return m_is_running.IsSet(); }
   bool StartGame(const std::string& path);
   void InvokeStop();
   bool StopGame();
@@ -184,6 +184,9 @@ public:
   void OnConnectReady(ENetAddress addr) override;
   void OnConnectFailed(Common::TraversalConnectFailedReason reason) override;
   void OnTtlDetermined(u8 ttl) override {}
+
+  // Message processing methods - made public for Android client
+  void OnData(sf::Packet& packet);
 
   bool IsFirstInGamePad(int ingame_pad) const;
   int NumLocalPads() const;
@@ -308,7 +311,6 @@ private:
   void DisplayPlayersPing();
   u32 GetPlayersMaxPing() const;
 
-  void OnData(sf::Packet& packet);
   void OnPlayerJoin(sf::Packet& packet);
   void OnPlayerLeave(sf::Packet& packet);
   void OnChatMessage(sf::Packet& packet);

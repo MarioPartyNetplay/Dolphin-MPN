@@ -1,28 +1,26 @@
 // Copyright 2020 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstring>
 #include <optional>
-#include "Core/HW/EXI/EXI_DeviceEthernet.h"
-#include "SFML/Network/IpAddress.hpp"
+#include <utility>
 
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #else
-#include <fcntl.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 #endif
 
-#include <cstdlib>
-#include <cstring>
-
-#include "Common/CommonFuncs.h"
 #include "Common/Logging/Log.h"
+#include "Common/Network.h"
 #include "Common/StringUtil.h"
-#include "Core/HW/EXI/EXI_Device.h"
+#include "Core/HW/EXI/BBA/TAPServerConnection.h"
+#include "SFML/Network/IpAddress.hpp"
 
 namespace ExpansionInterface
 {
@@ -34,16 +32,13 @@ using ws_ssize_t = int;
 using ws_ssize_t = ssize_t;
 #endif
 
-#ifdef __linux__
-#define SEND_FLAGS MSG_NOSIGNAL
-#else
-#define SEND_FLAGS 0
-#endif
+using Common::SEND_FLAGS;
 
-TAPServerConnection::TAPServerConnection(const std::string& destination,
+TAPServerConnection::TAPServerConnection(std::string destination,
                                          std::function<void(std::string&&)> recv_cb,
                                          std::size_t max_frame_size)
-    : m_destination(destination), m_recv_cb(recv_cb), m_max_frame_size(max_frame_size)
+    : m_destination(std::move(destination)), m_recv_cb(std::move(recv_cb)),
+      m_max_frame_size(max_frame_size)
 {
 }
 
@@ -117,11 +112,7 @@ static int ConnectToDestination(const std::string& destination)
     return -1;
   }
 
-#ifdef __APPLE__
-  int opt_no_sigpipe = 1;
-  if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &opt_no_sigpipe, sizeof(opt_no_sigpipe)) < 0)
-    INFO_LOG_FMT(SP1, "Failed to set SO_NOSIGPIPE on socket\n");
-#endif
+  Common::SetPlatformSocketOptions(fd);
 
   if (connect(fd, reinterpret_cast<sockaddr*>(&ss), ss_size) == -1)
   {

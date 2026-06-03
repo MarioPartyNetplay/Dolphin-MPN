@@ -6,6 +6,7 @@
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -14,6 +15,7 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "Core/HotkeyManager.h"
@@ -23,6 +25,9 @@
 #include "Common/FileUtil.h"
 #include "Common/IniFile.h"
 #include "Common/StringUtil.h"
+
+#include "Core/HW/SI/SI.h"
+#include "Core/HW/SI/SI_DeviceAMBaseboard.h"
 
 #include "DolphinQt/Config/Mapping/FreeLookGeneral.h"
 #include "DolphinQt/Config/Mapping/FreeLookRotation.h"
@@ -143,7 +148,17 @@ void MappingWindow::CreateProfilesLayout()
   m_profiles_combo = new QComboBox();
   m_profiles_load = new NonDefaultQPushButton(tr("Load"));
   m_profiles_save = new NonDefaultQPushButton(tr("Save"));
-  m_profiles_delete = new NonDefaultQPushButton(tr("Delete"));
+
+  // Other actions
+  m_profile_other_actions = new QToolButton();
+  m_profile_other_actions->setPopupMode(QToolButton::InstantPopup);
+  m_profile_other_actions->setArrowType(Qt::DownArrow);
+  m_profile_other_actions->setStyleSheet(
+      QStringLiteral("QToolButton::menu-indicator { image: none; }"));  // remove other arrow
+  m_profiles_delete = new QAction(tr("Delete"), this);
+  m_profiles_open_folder = new QAction(tr("Open Folder"), this);
+  m_profile_other_actions->addAction(m_profiles_delete);
+  m_profile_other_actions->addAction(m_profiles_open_folder);
 
   auto* button_layout = new QHBoxLayout();
 
@@ -154,7 +169,7 @@ void MappingWindow::CreateProfilesLayout()
   m_profiles_layout->addWidget(m_profiles_combo);
   button_layout->addWidget(m_profiles_load);
   button_layout->addWidget(m_profiles_save);
-  button_layout->addWidget(m_profiles_delete);
+  button_layout->addWidget(m_profile_other_actions);
   m_profiles_layout->addLayout(button_layout);
 
   m_profiles_box->setLayout(m_profiles_layout);
@@ -205,7 +220,8 @@ void MappingWindow::ConnectWidgets()
   connect(m_reset_default, &QPushButton::clicked, this, &MappingWindow::OnDefaultFieldsPressed);
   connect(m_profiles_save, &QPushButton::clicked, this, &MappingWindow::OnSaveProfilePressed);
   connect(m_profiles_load, &QPushButton::clicked, this, &MappingWindow::OnLoadProfilePressed);
-  connect(m_profiles_delete, &QPushButton::clicked, this, &MappingWindow::OnDeleteProfilePressed);
+  connect(m_profiles_delete, &QAction::triggered, this, &MappingWindow::OnDeleteProfilePressed);
+  connect(m_profiles_open_folder, &QAction::triggered, this, &MappingWindow::OnOpenProfileFolder);
 
   connect(m_profiles_combo, &QComboBox::currentIndexChanged, this, &MappingWindow::OnSelectProfile);
   connect(m_profiles_combo, &QComboBox::editTextChanged, this,
@@ -349,6 +365,14 @@ void MappingWindow::OnSaveProfilePressed()
   }
 }
 
+void MappingWindow::OnOpenProfileFolder()
+{
+  std::string path = m_config->GetUserProfileDirectoryPath();
+  File::CreateDirs(path);
+  QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
+  QDesktopServices::openUrl(url);
+}
+
 void MappingWindow::OnSelectDevice(int)
 {
   // Original string is stored in the "user-data".
@@ -435,7 +459,7 @@ void MappingWindow::SetMappingType(MappingWindow::Type type)
   case Type::MAPPING_GC_STEERINGWHEEL:
   case Type::MAPPING_GC_DANCEMAT:
   case Type::MAPPING_GCPAD:
-    widget = new GCPadEmu(this);
+    widget = CreateStandardControllerMappingWidget(this);
     setWindowTitle(tr("GameCube Controller at Port %1").arg(GetPort() + 1));
     AddWidget(tr("GameCube Controller"), widget);
     break;
@@ -494,6 +518,11 @@ void MappingWindow::SetMappingType(MappingWindow::Type type)
     setWindowTitle(tr("Free Look Controller %1").arg(GetPort() + 1));
   }
   break;
+  case Type::MAPPING_AM_BASEBOARD:
+    widget = CreateAMBaseboardMappingWidget(this);
+    setWindowTitle(tr("Triforce Baseboard at Port %1").arg(GetPort() + 1));
+    AddWidget(tr("Triforce Baseboard"), widget);
+    break;
   default:
     return;
   }
@@ -512,7 +541,7 @@ void MappingWindow::PopulateProfileSelection()
   m_profiles_combo->clear();
 
   const std::string profiles_path = m_config->GetUserProfileDirectoryPath();
-  for (const auto& filename : Common::DoFileSearch({profiles_path}, {".ini"}))
+  for (const auto& filename : Common::DoFileSearch(profiles_path, ".ini"))
   {
     std::string basename;
     SplitPath(filename, nullptr, &basename, nullptr);
@@ -522,8 +551,7 @@ void MappingWindow::PopulateProfileSelection()
 
   m_profiles_combo->insertSeparator(m_profiles_combo->count());
 
-  for (const auto& filename :
-       Common::DoFileSearch({m_config->GetSysProfileDirectoryPath()}, {".ini"}))
+  for (const auto& filename : Common::DoFileSearch(m_config->GetSysProfileDirectoryPath(), ".ini"))
   {
     std::string basename;
     SplitPath(filename, nullptr, &basename, nullptr);

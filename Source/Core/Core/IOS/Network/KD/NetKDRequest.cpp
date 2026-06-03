@@ -13,7 +13,6 @@
 #include "Common/CommonPaths.h"
 #include "Common/CommonTypes.h"
 #include "Common/Crypto/HMAC.h"
-#include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/NandPaths.h"
 #include "Common/Projection.h"
@@ -160,7 +159,7 @@ NetKDRequestDevice::NetKDRequestDevice(EmulationKernel& ios, const std::string& 
   // Enable all NWC24 permissions
   m_scheduler_buffer[1] = Common::swap32(-1);
 
-  m_work_queue.Reset("WiiConnect24 Worker", [this](AsyncTask task) {
+  m_work_queue.Reset("WiiConnect24 Worker", [this](const AsyncTask& task) {
     const IPCReply reply = task.handler();
     {
       std::lock_guard lg(m_async_reply_lock);
@@ -391,7 +390,7 @@ NWC24::ErrorCode NetKDRequestDevice::KDCheckMail(u32* mail_flag, u32* interval)
 
   // On a real Wii, a response to a challenge is expected and would be verified by KD.
   const std::string hmac_message =
-      fmt::format("{}\nw{}\n{}\n{}", random_number, m_config.Id(), str_mail_flag, str_interval);
+      fmt::format("{}\nw{:016}\n{}\n{}", random_number, m_config.Id(), str_mail_flag, str_interval);
   std::array<u8, 20> hashed{};
   Common::HMAC::HMACWithSHA1(
       MAIL_CHECK_KEY,
@@ -533,7 +532,7 @@ NWC24::ErrorCode NetKDRequestDevice::KDSendMail()
 
   m_send_list.ReadSendList();
   const std::string auth =
-      fmt::format("mlid=w{}\r\npasswd={}", m_config.Id(), m_config.GetPassword());
+      fmt::format("mlid=w{:016}\r\npasswd={}", m_config.Id(), m_config.GetPassword());
   std::vector<Common::HttpRequest::Multiform> multiform = {{"mlid", auth}};
 
   std::vector<u32> mails = m_send_list.GetMailToSend();
@@ -932,8 +931,8 @@ IPCReply NetKDRequestDevice::HandleRequestRegisterUserId(const IOS::HLE::IOCtlRe
 
   const Common::SettingsReader settings_reader{data};
   const std::string serno = settings_reader.GetValue("SERNO");
-  const std::string form_data =
-      fmt::format("mlid=w{}&hdid={}&rgncd={}", m_config.Id(), m_ios.GetIOSC().GetDeviceId(), serno);
+  const std::string form_data = fmt::format("mlid=w{:016}&hdid={}&rgncd={}", m_config.Id(),
+                                            m_ios.GetIOSC().GetDeviceId(), serno);
   const Common::HttpRequest::Response response = m_http.Post(m_config.GetAccountURL(), form_data);
 
   if (!response)

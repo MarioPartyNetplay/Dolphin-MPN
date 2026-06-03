@@ -17,7 +17,8 @@ public:
     XLinkKai,
     TapServer,
     BuiltIn,
-    ModemTapServer
+    ModemTapServer,
+    IPC
   };
 
   explicit BroadbandAdapterSettingsDialog(QWidget* target, Type bba_type);

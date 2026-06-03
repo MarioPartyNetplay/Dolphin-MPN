@@ -8,11 +8,19 @@ enum class FloatSetting(
     private val key: String,
     private val defaultValue: Float
 ) : AbstractFloatSetting {
+    MAIN_OVERLAY_HAPTICS_SCALE(
+        Settings.FILE_DOLPHIN,
+        Settings.SECTION_INI_ANDROID,
+        "OverlayHapticsScale",
+        0.5f
+    ),
     // These entries have the same names and order as in C++, just for consistency.
     MAIN_EMULATION_SPEED(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "EmulationSpeed", 1.0f),
     MAIN_OVERCLOCK(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "Overclock", 1.0f),
     MAIN_VI_OVERCLOCK(Settings.FILE_DOLPHIN, Settings.SECTION_INI_CORE, "VIOverclock", 1.0f),
-    GFX_CC_GAME_GAMMA(Settings.FILE_GFX, Settings.SECTION_GFX_COLOR_CORRECTION, "GameGamma", 2.35f);
+    GFX_CC_GAME_GAMMA(Settings.FILE_GFX, Settings.SECTION_GFX_COLOR_CORRECTION, "GameGamma", 2.35f),
+    GFX_STEREO_DEPTH(Settings.FILE_GFX, Settings.SECTION_STEREOSCOPY, "StereoDepth", 20.0f),
+    GFX_STEREO_CONVERGENCE(Settings.FILE_GFX, Settings.SECTION_STEREOSCOPY, "StereoConvergence", 20.0f);
 
     override val isOverridden: Boolean
         get() = NativeConfig.isOverridden(file, section, key)

@@ -9,12 +9,8 @@
 
 #include "AudioCommon/AudioCommon.h"
 #include "Common/Logging/Log.h"
-#include "Common/Random.h"
-#include "Common/StringUtil.h"
-#include "Common/Timer.h"
 #include "Core/Core.h"
 #include "Core/HW/Memmap.h"
-#include "Core/IOS/USB/Emulated/Skylanders/SkylanderCrypto.h"
 #include "Core/System.h"
 
 namespace IOS::HLE::USB
@@ -644,7 +640,7 @@ std::vector<InterfaceDescriptor> SkylanderUSB::GetInterfaces(u8 config) const
   return m_interface_descriptor;
 }
 
-std::vector<EndpointDescriptor> SkylanderUSB::GetEndpoints(u8 config, u8 interface, u8 alt) const
+std::vector<EndpointDescriptor> SkylanderUSB::GetEndpoints(u8 config, u8 iface, u8 alt) const
 {
   return m_endpoint_descriptor;
 }
@@ -660,13 +656,13 @@ bool SkylanderUSB::Attach()
   return true;
 }
 
-bool SkylanderUSB::AttachAndChangeInterface(const u8 interface)
+bool SkylanderUSB::AttachAndChangeInterface(const u8 iface)
 {
   if (!Attach())
     return false;
 
-  if (interface != m_active_interface)
-    return ChangeInterface(interface) == 0;
+  if (iface != m_active_interface)
+    return ChangeInterface(iface) == 0;
 
   return true;
 }
@@ -679,15 +675,15 @@ int SkylanderUSB::CancelTransfer(const u8 endpoint)
   return IPC_SUCCESS;
 }
 
-int SkylanderUSB::ChangeInterface(const u8 interface)
+int SkylanderUSB::ChangeInterface(const u8 iface)
 {
   DEBUG_LOG_FMT(IOS_USB, "[{:04x}:{:04x} {}] Changing interface to {}", m_vid, m_pid,
-                m_active_interface, interface);
-  m_active_interface = interface;
+                m_active_interface, iface);
+  m_active_interface = iface;
   return 0;
 }
 
-int SkylanderUSB::GetNumberOfAltSettings(u8 interface)
+int SkylanderUSB::GetNumberOfAltSettings(u8 iface)
 {
   return 0;
 }
@@ -1394,7 +1390,7 @@ Type NormalizeSkylanderType(Type type)
   case Type::Trap:
   case Type::Vehicle:
   case Type::Unknown:
-    // until these get seperate data logic (except unknown and item since items don't save data and
+    // until these get separate data logic (except unknown and item since items don't save data and
     // unknown is unknown)
     return Type::Unknown;
   }

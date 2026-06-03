@@ -22,12 +22,14 @@
 #include "Core/Core.h"
 #include "Core/IOS/USB/Common.h"
 #include "Core/IOS/USB/Emulated/Infinity.h"
+#include "Core/IOS/USB/Emulated/LogitechMic.h"
 #include "Core/IOS/USB/Emulated/Skylanders/Skylander.h"
 #include "Core/IOS/USB/Emulated/WiiSpeak.h"
 #include "Core/IOS/USB/Host.h"
 #include "Core/IOS/USB/LibusbDevice.h"
 #include "Core/NetPlayProto.h"
 #include "Core/System.h"
+#include "Core/USBUtils.h"
 
 namespace IOS::HLE
 {
@@ -142,7 +144,7 @@ bool USBScanner::AddNewDevices(DeviceMap* new_devices) const
 #ifdef __LIBUSB__
   if (!Core::WantsDeterminism())
   {
-    auto whitelist = Config::GetUSBDeviceWhitelist();
+    const auto whitelist = Config::GetUSBDeviceWhitelist();
     if (whitelist.empty())
       return true;
 
@@ -155,7 +157,8 @@ bool USBScanner::AddNewDevices(DeviceMap* new_devices) const
         {
           WakeupSantrollerDevice(device);
         }
-        if (!whitelist.contains({descriptor.idVendor, descriptor.idProduct}))
+        const USBUtils::DeviceInfo device_info{descriptor.idVendor, descriptor.idProduct};
+        if (!whitelist.contains(device_info))
           return true;
 
         auto usb_device = std::make_unique<USB::LibusbDevice>(device, descriptor);
@@ -186,6 +189,14 @@ void USBScanner::AddEmulatedDevices(DeviceMap* new_devices)
   {
     auto wii_speak = std::make_unique<USB::WiiSpeak>();
     AddDevice(std::move(wii_speak), new_devices);
+  }
+  for (u8 index = 0; index != Config::EMULATED_LOGITECH_MIC_COUNT; ++index)
+  {
+    if (Config::Get(Config::MAIN_EMULATE_LOGITECH_MIC[index]) && !NetPlay::IsNetPlayRunning())
+    {
+      auto logitech_mic = std::make_unique<USB::LogitechMic>(index);
+      AddDevice(std::move(logitech_mic), new_devices);
+    }
   }
 }
 

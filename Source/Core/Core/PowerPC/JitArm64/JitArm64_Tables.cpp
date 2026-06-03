@@ -101,7 +101,7 @@ constexpr std::array<JitArm64OpTemplate, 13> s_table4{{
     {592, &JitArm64::ps_mergeXX},  // ps_merge10
     {624, &JitArm64::ps_mergeXX},  // ps_merge11
 
-    {1014, &JitArm64::FallBackToInterpreter},  // dcbz_l
+    {1014, &JitArm64::dcbz},  // dcbz_l
 }};
 
 constexpr std::array<JitArm64OpTemplate, 17> s_table4_2{{
@@ -172,8 +172,8 @@ constexpr std::array<JitArm64OpTemplate, 107> s_table31{{
     {616, &JitArm64::negx},     // negox
     {40, &JitArm64::subfx},     // subfx
     {552, &JitArm64::subfx},    // subfox
-    {8, &JitArm64::subfcx},     // subfcx
-    {520, &JitArm64::subfcx},   // subfcox
+    {8, &JitArm64::subfx},      // subfcx
+    {520, &JitArm64::subfx},    // subfcox
     {136, &JitArm64::subfex},   // subfex
     {648, &JitArm64::subfex},   // subfeox
     {232, &JitArm64::subfex},   // subfmex
@@ -266,18 +266,18 @@ constexpr std::array<JitArm64OpTemplate, 107> s_table31{{
     {759, &JitArm64::stfXX},  // stfdux
     {983, &JitArm64::stfXX},  // stfiwx
 
-    {19, &JitArm64::mfcr},     // mfcr
-    {83, &JitArm64::mfmsr},    // mfmsr
-    {144, &JitArm64::mtcrf},   // mtcrf
-    {146, &JitArm64::mtmsr},   // mtmsr
-    {210, &JitArm64::mtsr},    // mtsr
-    {242, &JitArm64::mtsrin},  // mtsrin
-    {339, &JitArm64::mfspr},   // mfspr
-    {467, &JitArm64::mtspr},   // mtspr
-    {371, &JitArm64::mftb},    // mftb
-    {512, &JitArm64::mcrxr},   // mcrxr
-    {595, &JitArm64::mfsr},    // mfsr
-    {659, &JitArm64::mfsrin},  // mfsrin
+    {19, &JitArm64::mfcr},                    // mfcr
+    {83, &JitArm64::mfmsr},                   // mfmsr
+    {144, &JitArm64::mtcrf},                  // mtcrf
+    {146, &JitArm64::mtmsr},                  // mtmsr
+    {210, &JitArm64::FallBackToInterpreter},  // mtsr
+    {242, &JitArm64::FallBackToInterpreter},  // mtsrin
+    {339, &JitArm64::mfspr},                  // mfspr
+    {467, &JitArm64::mtspr},                  // mtspr
+    {371, &JitArm64::mftb},                   // mftb
+    {512, &JitArm64::mcrxr},                  // mcrxr
+    {595, &JitArm64::mfsr},                   // mfsr
+    {659, &JitArm64::mfsrin},                 // mfsrin
 
     {4, &JitArm64::twx},                      // tw
     {598, &JitArm64::DoNothing},              // sync

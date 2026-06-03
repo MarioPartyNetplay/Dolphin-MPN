@@ -7,6 +7,8 @@
 
 class QStackedWidget;
 class QListWidget;
+class MainWindow;
+class QEvent;
 
 // A settings window with a QListWidget to switch between panes of a QStackedWidget.
 class StackedSettingsWindow : public QDialog
@@ -26,29 +28,39 @@ protected:
   // For derived classes to call after they create their settings panes.
   void OnDoneCreatingPanes();
 
+  void changeEvent(QEvent* event) override;
+
 private:
-  QStackedWidget* m_stacked_panes;
-  QListWidget* m_navigation_list;
+  void UpdateNavigationListStyle();
+
+  QStackedWidget* m_stacked_panes = nullptr;
+  QListWidget* m_navigation_list = nullptr;
+  bool m_handling_theme_change = false;
 };
 
 enum class SettingsWindowPaneIndex : int
 {
   General = 0,
-  Controllers = 1,
-  Interface = 2,
-  MarioPartyNetplay = 3,
-  Audio = 4,
-  Paths = 5,
-  GameCube = 6,
-  Wii = 7,
-  Advanced = 8,
+  Graphics = 1,
+  Controllers = 2,
+  Interface = 3,
+  MarioPartyNetplay = 4,
+  OnScreenDisplay = 5,
+  Audio = 6,
+  Paths = 7,
+  GameCube = 8,
+  Wii = 9,
+  Triforce = 10,
+  Advanced = 11,
 };
 
 class SettingsWindow final : public StackedSettingsWindow
 {
   Q_OBJECT
 public:
-  explicit SettingsWindow(QWidget* parent = nullptr);
+  explicit SettingsWindow(MainWindow* parent);
 
   void SelectPane(SettingsWindowPaneIndex);
+
+  void closeEvent(QCloseEvent* event) override;
 };

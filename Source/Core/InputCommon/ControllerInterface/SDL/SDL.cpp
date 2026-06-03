@@ -16,6 +16,11 @@
 #include "Common/Event.h"
 #include "Common/Logging/Log.h"
 #include "Common/ScopeGuard.h"
+#include "Common/Thread.h"
+
+#include "Core/Config/MainSettings.h"
+#include "Core/HW/SI/SI.h"
+#include "Core/HW/SI/SI_Device.h"
 
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/ControllerInterface/SDL/SDLGamepad.h"
@@ -130,18 +135,62 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
 {
   EnableSDLLogging();
 
-  // This is required on windows so that SDL's joystick code properly pumps window messages
-  SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
-
-  SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
+  if (Config::Get(Config::MAIN_SDL_HINT_JOYSTICK_ENHANCED_REPORTS) == "")
+    Config::SetBase(Config::MAIN_SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
 
   // We have our own WGI backend. Enabling SDL's WGI handling creates even more redundant devices.
-  SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "0");
+  if (Config::Get(Config::MAIN_SDL_HINT_JOYSTICK_WGI) == "")
+    Config::SetBase(Config::MAIN_SDL_HINT_JOYSTICK_WGI, "0");
 
   // Disable DualSense Player LEDs; We already colorize the Primary LED
-  SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED, "0");
+  if (Config::Get(Config::MAIN_SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED) == "")
+    Config::SetBase(Config::MAIN_SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED, "0");
+
+  // Disabling DirectInput support apparently solves hangs on shutdown for users with
+  //  "8BitDo Ultimate 2" controllers, however, it also breaks hotplug support for Dual Sense
+  //  and DS4 Controllers, so we leave it enabled for now.
+  // It also works around a possibly related random hang on a IDirectInputDevice8_Acquire
+  //  call within SDL.
+  if (Config::Get(Config::MAIN_SDL_HINT_JOYSTICK_DIRECTINPUT) == "")
+    Config::SetBase(Config::MAIN_SDL_HINT_JOYSTICK_DIRECTINPUT, "1");
+
+  // Pre-populate the default Joy-Con hints so they can be easily changed
+  if (Config::Get(Config::MAIN_SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS) == "")
+    Config::SetBase(Config::MAIN_SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "1");
+
+  if (Config::Get(Config::MAIN_SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS) == "")
+    Config::SetBase(Config::MAIN_SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS, "0");
+
+  // Disable SDL's GC Adapter handling when we want to handle it ourselves.
+  bool is_gc_adapter_configured = false;
+  for (int i = 0; i != SerialInterface::MAX_SI_CHANNELS; ++i)
+  {
+    if (Config::Get(Config::GetInfoForSIDevice(i)) == SerialInterface::SIDEVICE_WIIU_ADAPTER)
+    {
+      is_gc_adapter_configured = true;
+      break;
+    }
+  }
+  // TODO: This hint should be adjusted when the config changes,
+  //  but SDL requires it be set before joystick initialization,
+  //  and ControllerInterface isn't prepared for SDL to spontaneously re-initialize itself.
+  SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE, is_gc_adapter_configured ? "0" : "1");
+
+  // Load all the hints from the config file
+  std::shared_ptr<Config::Layer> layer = Config::GetLayer(Config::LayerType::Base);
+  const Config::Section& section = layer->GetSection(Config::System::Main, "SDL_Hints");
+  for (auto& row_data : section)
+  {
+    const Config::Location& location = row_data.first;
+    const std::optional<std::string>& value = row_data.second;
+
+    if (value)
+      SDL_SetHint(location.key.c_str(), value->c_str());
+  }
 
   m_hotplug_thread = std::thread([this] {
+    Common::SetCurrentThreadName("SDL Hotplug Thread");
+
     Common::ScopeGuard quit_guard([] {
       // TODO: there seems to be some sort of memory leak with SDL, quit isn't freeing everything up
       SDL_Quit();
@@ -149,7 +198,7 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
     {
       Common::ScopeGuard init_guard([this] { m_init_event.Set(); });
 
-      if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC | SDL_INIT_GAMEPAD))
+      if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD))
       {
         ERROR_LOG_FMT(CONTROLLERINTERFACE, "SDL failed to initialize");
         return;
@@ -177,34 +226,11 @@ InputBackend::InputBackend(ControllerInterface* controller_interface)
       }
     }
 
-#ifdef _WIN32
-    // This is a hack to workaround SDL_hidapi using window messages to detect device
-    // removal/arrival, yet no part of SDL pumps messages for it. It can hopefully be removed in the
-    // future when SDL fixes the issue. Note this is a separate issue from SDL_HINT_JOYSTICK_THREAD.
-    // Also note that SDL_WaitEvent may block while device detection window messages get queued up,
-    // causing some noticible stutter. This is just another reason it should be fixed properly by
-    // SDL...
-    const auto window_handle =
-        FindWindowEx(HWND_MESSAGE, nullptr, TEXT("SDL_HIDAPI_DEVICE_DETECTION"), nullptr);
-#endif
-
     SDL_Event e;
     while (SDL_WaitEvent(&e))
     {
       if (!HandleEventAndContinue(e))
         return;
-
-#ifdef _WIN32
-      MSG msg;
-      while (window_handle && PeekMessage(&msg, window_handle, 0, 0, PM_NOREMOVE))
-      {
-        if (GetMessageA(&msg, window_handle, 0, 0) != 0)
-        {
-          TranslateMessage(&msg);
-          DispatchMessage(&msg);
-        }
-      }
-#endif
     }
   });
 
@@ -251,9 +277,9 @@ void InputBackend::OpenAndAddDevice(SDL_JoystickID instance_id)
       // SDL tries parsing these as Joysticks
       return;
     }
-    auto gamecontroller = std::make_shared<GameController>(gc, js);
-    if (!gamecontroller->Inputs().empty() || !gamecontroller->Outputs().empty())
-      GetControllerInterface().AddDevice(std::move(gamecontroller));
+    auto gamepad = std::make_shared<Gamepad>(gc, js);
+    if (!gamepad->Inputs().empty() || !gamepad->Outputs().empty())
+      GetControllerInterface().AddDevice(std::move(gamepad));
   }
 }
 
@@ -267,7 +293,7 @@ bool InputBackend::HandleEventAndContinue(const SDL_Event& e)
   {
     GetControllerInterface().RemoveDevice([&e](const auto* device) {
       return device->GetSource() == "SDL" &&
-             static_cast<const GameController*>(device)->GetSDLInstanceID() == e.jdevice.which;
+             static_cast<const Gamepad*>(device)->GetSDLInstanceID() == e.jdevice.which;
     });
   }
   else if (e.type == m_populate_event_type)

@@ -27,7 +27,6 @@
 
 #include "Common/Assert.h"
 #include "Common/GekkoDisassembler.h"
-#include "Common/StringUtil.h"
 #include "Core/Core.h"
 #include "Core/Debugger/CodeTrace.h"
 #include "Core/Debugger/PPCDebugInterface.h"
@@ -181,11 +180,13 @@ CodeViewWidget::CodeViewWidget()
           &CodeViewWidget::OnDebugFontChanged);
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this] {
-    m_address = m_system.GetPPCState().pc;
+    if (!m_lock_address && Core::GetState(m_system) == Core::State::Paused)
+      m_address = m_system.GetPPCState().pc;
     Update();
   });
   connect(Host::GetInstance(), &Host::UpdateDisasmDialog, this, [this] {
-    m_address = m_system.GetPPCState().pc;
+    if (!m_lock_address && Core::GetState(m_system) == Core::State::Paused)
+      m_address = m_system.GetPPCState().pc;
     Update();
   });
   connect(Host::GetInstance(), &Host::PPCSymbolsChanged, this,
@@ -318,6 +319,7 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
       guard ? std::make_optional(power_pc.GetPPCState().pc) : std::nullopt;
 
   const bool dark_theme = Settings::Instance().IsThemeDark();
+  const bool breaking_enabled = power_pc.GetBreakPoints().IsBreakingEnabled();
 
   m_branches.clear();
 
@@ -333,7 +335,7 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
 
     std::string ins = (split == std::string::npos ? disas : disas.substr(0, split));
     std::string param = (split == std::string::npos ? "" : disas.substr(split + 1));
-    const std::string_view desc = debug_interface.GetDescription(addr);
+    const std::string desc = debug_interface.GetDescription(addr);
 
     const Common::Note* note = m_ppc_symbol_db.GetNoteFromAddr(addr);
     std::string note_string;
@@ -399,7 +401,7 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
     if (bp != nullptr)
     {
       auto icon = Resources::GetThemeIcon("debugger_breakpoint").pixmap(QSize(rowh - 2, rowh - 2));
-      if (!bp->is_enabled)
+      if (!breaking_enabled || !bp->is_enabled)
       {
         QPixmap disabled_icon(icon.size());
         disabled_icon.fill(Qt::transparent);
@@ -430,8 +432,6 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
                                  hideColumn(CODE_VIEW_COLUMN_NOTE);
 
   CalculateBranchIndentation();
-
-  m_ppc_symbol_db.FillInCallers();
 
   repaint();
   m_updating = false;
@@ -536,6 +536,11 @@ void CodeViewWidget::CalculateBranchIndentation()
 u32 CodeViewWidget::GetAddress() const
 {
   return m_address;
+}
+
+void CodeViewWidget::OnLockAddress(bool lock)
+{
+  m_lock_address = lock;
 }
 
 void CodeViewWidget::SetAddress(u32 address, SetAddressUpdate update)
@@ -671,7 +676,7 @@ void CodeViewWidget::OnContextMenu()
 
   auto* note = m_ppc_symbol_db.GetNoteFromAddr(addr);
   note_edit_action->setEnabled(note != nullptr);
-  // A note cannot be added ontop of the starting address of another note.
+  // A note cannot be added on top of the starting address of another note.
   if (note != nullptr && note->address == addr)
     note_add_action->setEnabled(false);
 
@@ -943,7 +948,7 @@ void CodeViewWidget::OnFollowBranch()
 void CodeViewWidget::OnEditSymbol()
 {
   const u32 addr = GetContextAddress();
-  Common::Symbol* const symbol = m_ppc_symbol_db.GetSymbolFromAddr(addr);
+  const Common::Symbol* const symbol = m_ppc_symbol_db.GetSymbolFromAddr(addr);
 
   if (symbol == nullptr)
   {
@@ -967,12 +972,14 @@ void CodeViewWidget::OnEditSymbol()
   }
 
   if (symbol->name != name)
-    symbol->Rename(name);
+    m_ppc_symbol_db.RenameSymbol(*symbol, name);
 
   if (symbol->size != size)
   {
     Core::CPUThreadGuard guard(m_system);
-    PPCAnalyst::ReanalyzeFunction(guard, symbol->address, *symbol, size);
+    Common::Symbol new_symbol = *symbol;
+    PPCAnalyst::ReanalyzeFunction(guard, symbol->address, new_symbol, size);
+    m_ppc_symbol_db.AddCompleteSymbol(new_symbol);
   }
 
   emit Host::GetInstance()->PPCSymbolsChanged();
@@ -981,7 +988,7 @@ void CodeViewWidget::OnEditSymbol()
 void CodeViewWidget::OnDeleteSymbol()
 {
   const u32 addr = GetContextAddress();
-  Common::Symbol* const symbol = m_ppc_symbol_db.GetSymbolFromAddr(addr);
+  const Common::Symbol* const symbol = m_ppc_symbol_db.GetSymbolFromAddr(addr);
 
   if (symbol == nullptr)
     return;
@@ -1032,7 +1039,7 @@ void CodeViewWidget::OnSelectionChanged()
 void CodeViewWidget::OnEditNote()
 {
   const u32 context_address = GetContextAddress();
-  Common::Note* const note = m_ppc_symbol_db.GetNoteFromAddr(context_address);
+  const Common::Note* const note = m_ppc_symbol_db.GetNoteFromAddr(context_address);
 
   if (note == nullptr)
     return;
@@ -1064,7 +1071,7 @@ void CodeViewWidget::OnEditNote()
 void CodeViewWidget::OnDeleteNote()
 {
   const u32 context_address = GetContextAddress();
-  Common::Note* const note = m_ppc_symbol_db.GetNoteFromAddr(context_address);
+  const Common::Note* const note = m_ppc_symbol_db.GetNoteFromAddr(context_address);
 
   if (note == nullptr)
     return;

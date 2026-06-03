@@ -39,9 +39,15 @@ extern const Info<u32> GFX_WIDESCREEN_HEURISTIC_TRANSITION_THRESHOLD;
 extern const Info<float> GFX_WIDESCREEN_HEURISTIC_ASPECT_RATIO_SLOP;
 extern const Info<float> GFX_WIDESCREEN_HEURISTIC_STANDARD_RATIO;
 extern const Info<float> GFX_WIDESCREEN_HEURISTIC_WIDESCREEN_RATIO;
-extern const Info<bool> GFX_CROP;
+extern const Info<bool> GFX_CROP_TO_ASPECT_RATIO;
+extern const Info<bool> GFX_CROP_CUSTOM;
+extern const Info<int> GFX_CROP_CUSTOM_LEFT;
+extern const Info<int> GFX_CROP_CUSTOM_TOP;
+extern const Info<int> GFX_CROP_CUSTOM_RIGHT;
+extern const Info<int> GFX_CROP_CUSTOM_BOTTOM;
 extern const Info<int> GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES;
 extern const Info<bool> GFX_SHOW_FPS;
+extern const Info<bool> GFX_SHOW_INTERNAL_RESOLUTION;
 extern const Info<bool> GFX_SHOW_FTIMES;
 extern const Info<bool> GFX_SHOW_VPS;
 extern const Info<bool> GFX_SHOW_VTIMES;
@@ -148,16 +154,16 @@ extern const Info<float> GFX_CC_HDR_PAPER_WHITE_NITS;
 
 extern const Info<StereoMode> GFX_STEREO_MODE;
 extern const Info<bool> GFX_STEREO_PER_EYE_RESOLUTION_FULL;
-extern const Info<int> GFX_STEREO_DEPTH;
-extern const Info<int> GFX_STEREO_CONVERGENCE_PERCENTAGE;
+extern const Info<float> GFX_STEREO_DEPTH;
+extern const Info<float> GFX_STEREO_CONVERGENCE_PERCENTAGE;
 extern const Info<bool> GFX_STEREO_SWAP_EYES;
-extern const Info<int> GFX_STEREO_CONVERGENCE;
+extern const Info<float> GFX_STEREO_CONVERGENCE;
 extern const Info<bool> GFX_STEREO_EFB_MONO_DEPTH;
-extern const Info<int> GFX_STEREO_DEPTH_PERCENTAGE;
+extern const Info<float> GFX_STEREO_DEPTH_PERCENTAGE;
 
 // Stereoscopy pseudo-limits for consistent behavior between enhancements tab and hotkeys.
-static constexpr int GFX_STEREO_DEPTH_MAXIMUM = 100;
-static constexpr int GFX_STEREO_CONVERGENCE_MAXIMUM = 200;
+static constexpr float GFX_STEREO_DEPTH_MAXIMUM = 100;
+static constexpr float GFX_STEREO_CONVERGENCE_MAXIMUM = 200;
 
 // Graphics.Hacks
 
@@ -171,6 +177,7 @@ extern const Info<bool> GFX_HACK_SKIP_XFB_COPY_TO_RAM;
 extern const Info<bool> GFX_HACK_DISABLE_COPY_TO_VRAM;
 extern const Info<bool> GFX_HACK_DEFER_EFB_COPIES;
 extern const Info<bool> GFX_HACK_IMMEDIATE_XFB;
+extern const Info<bool> GFX_HACK_CAP_IMMEDIATE_XFB;
 extern const Info<bool> GFX_HACK_SKIP_DUPLICATE_XFBS;
 extern const Info<bool> GFX_HACK_EARLY_XFB_OUTPUT;
 extern const Info<bool> GFX_HACK_COPY_EFB_SCALED;
@@ -186,6 +193,7 @@ extern const Info<bool> GFX_HACK_NO_MIPMAPPING;
 // Graphics.GameSpecific
 
 extern const Info<bool> GFX_PERF_QUERIES_ENABLE;
+extern const Info<float> GFX_MPN_HUD_SCALE;
 
 // Android custom GPU drivers
 

@@ -12,14 +12,15 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <ranges>
 #include <span>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "Common/CommonTypes.h"
-#include "Common/EnumUtils.h"
 #include "Common/TypeUtils.h"
 
 std::string StringFromFormatV(const char* format, va_list args);
@@ -157,11 +158,16 @@ std::string ValueToString(s64 value);
 std::string ValueToString(bool value);
 std::string ValueToString(Common::Enum auto value)
 {
-  return ValueToString(Common::ToUnderlying(value));
+  return ValueToString(std::to_underlying(value));
 }
 
 // Generates an hexdump-like representation of a binary data blob.
 std::string HexDump(const u8* data, size_t size);
+
+inline auto HexDump(std::span<const u8> data)
+{
+  return HexDump(data.data(), data.size());
+}
 
 namespace Common
 {
@@ -180,9 +186,33 @@ std::from_chars_result FromChars(std::string_view sv, std::floating_point auto& 
 }
 }  // namespace Common
 
-std::string TabsToSpaces(int tab_size, std::string str);
-
 std::vector<std::string> SplitString(const std::string& str, char delim);
+
+// Returns `nullopt` if subject does not contain exactly (Count - 1) delim.
+template <std::size_t Count>
+requires(Count > 1)
+std::optional<std::array<std::string_view, Count>> SplitStringIntoArray(std::string_view subject,
+                                                                        char delim)
+{
+  std::optional<std::array<std::string_view, Count>> result;
+  result.emplace();
+
+  std::size_t index = 0;
+  for (auto&& item : subject | std::views::split(delim))
+  {
+    // Too many delim.
+    if (index == Count)
+      return std::nullopt;
+
+    (*result)[index++] = std::string_view{item};
+  }
+
+  // Too few delim.
+  if (index != Count)
+    return std::nullopt;
+
+  return result;
+}
 
 // "C:/Windows/winhelp.exe" to "C:/Windows/", "winhelp", ".exe"
 // This requires forward slashes to be used for the path separators, even on Windows.
@@ -201,13 +231,13 @@ std::string PathToFileName(std::string_view path);
 void StringPopBackIf(std::string* s, char c);
 size_t StringUTF8CodePointCount(std::string_view str);
 
-std::string CP1252ToUTF8(std::string_view str);
-std::string SHIFTJISToUTF8(std::string_view str);
-std::string UTF8ToSHIFTJIS(std::string_view str);
-std::string WStringToUTF8(std::wstring_view str);
+std::string CP1252ToUTF8(std::string_view input);
+std::string SHIFTJISToUTF8(std::string_view input);
+std::string UTF8ToSHIFTJIS(std::string_view input);
+std::string WStringToUTF8(std::wstring_view input);
 std::string UTF16BEToUTF8(const char16_t* str, size_t max_size);  // Stops at \0
-std::string UTF16ToUTF8(std::u16string_view str);
-std::u16string UTF8ToUTF16(std::string_view str);
+std::string UTF16ToUTF8(std::u16string_view input);
+std::u16string UTF8ToUTF16(std::string_view input);
 
 #ifdef _WIN32
 
@@ -311,11 +341,12 @@ std::string GetEscapedHtml(std::string html);
 void ToLower(std::string* str);
 void ToUpper(std::string* str);
 bool CaseInsensitiveEquals(std::string_view a, std::string_view b);
+bool CaseInsensitiveContains(std::string_view haystack, std::string_view needle);
 
 // 'std::less'-like comparison function object type for case-insensitive strings.
 struct CaseInsensitiveLess
 {
-  using is_transparent = void;  // Allow heterogenous lookup.
+  using is_transparent = void;  // Allow heterogeneous lookup.
   bool operator()(std::string_view a, std::string_view b) const;
 };
 

@@ -12,7 +12,6 @@
 
 #include "Common/CommonTypes.h"
 #include "Common/ENet.h"
-#include "Common/Thread.h"
 #include "Common/TraversalProto.h"
 
 namespace Common
@@ -44,8 +43,7 @@ public:
     SocketSendError,
     ResendTimeout,
   };
-  TraversalClient(ENetHost* netHost, const std::string& server, const u16 port,
-                  const u16 port_alt = 0);
+  TraversalClient(ENetHost* netHost, std::string server, const u16 port, const u16 port_alt = 0);
   ~TraversalClient();
 
   TraversalHostId GetHostID() const;

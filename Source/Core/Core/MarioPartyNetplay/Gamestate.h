@@ -1,7 +1,7 @@
 /*
-*  Dolphin for Mario Party Netplay
-*  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
-*/
+ *  Dolphin for Mario Party Netplay
+ *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
+ */
 
 #ifndef MPN_GAMESTATE_H
 #define MPN_GAMESTATE_H
@@ -19,6 +19,7 @@
 #include "VideoCommon/VideoConfig.h"
 
 #define MPN_GAMEID_MP4 0x474D5045
+#define MPN_GAMEID_MP4DX 0x474D5044
 #define MPN_GAMEID_MP5 0x47503545
 #define MPN_GAMEID_MP6 0x47503645
 #define MPN_GAMEID_MP7 0x47503745
@@ -35,7 +36,9 @@
 #undef MPN_USE_LEADERBOARDS
 #define MPN_USE_OSD
 
+#ifdef USE_DISCORD_PRESENCE
 #include "Discord.h"
+#endif
 
 #ifdef MPN_USE_LEADERBOARDS
 #include "Core/MarioPartyNetplay/Leaderboards.h"
@@ -247,7 +250,6 @@ const mpn_board_t MP5_BOARDS[] = {{1, 0x76, {"Toy Dream"}, {"mp5-toy"}},
                                   {6, 0x80, {"Sweet Dream"}, {"mp5-sweet"}},
                                   {7, 0x82, {"Bowser Nightmare"}, {"mp5-bowser"}},
 
-
                                   {NONE, NONE, {""}, ""}};
 
 const mpn_scene_t MP5_GAMESTATES[] = {{NONE, 0x01, {"Title Screen"}, 0},
@@ -353,15 +355,14 @@ const mpn_scene_t MP5_GAMESTATES[] = {{NONE, 0x01, {"Title Screen"}, 0},
    Mario Party 6 metadata
 ============================================================================ */
 
-const mpn_addresses_t MP6_ADDRESSES = {
-    0x00265B74,  // Current Turns
-    0x00265B75,  // Total Turns
-    0x00265BA8,  // Mini ID
-    0x002C0256,  // Scene ID
-    0x00265745,  // Controller Port A
-    0x00265731,  // Controller Port B
-    0x0026574F,  // Controller Port C
-    0x0026573B}; // Controller Port D
+const mpn_addresses_t MP6_ADDRESSES = {0x00265B74,   // Current Turns
+                                       0x00265B75,   // Total Turns
+                                       0x00265BA8,   // Mini ID
+                                       0x002C0256,   // Scene ID
+                                       0x00265745,   // Controller Port A
+                                       0x00265731,   // Controller Port B
+                                       0x0026574F,   // Controller Port C
+                                       0x0026573B};  // Controller Port D
 
 const mpn_board_t MP6_BOARDS[] = {{1, 0x7B, {"Towering Treetop"}, {"mp6-treetop"}},
                                   {2, 0x7C, {"E. Gadd's Garage"}, {"mp6-garage"}},
@@ -488,19 +489,19 @@ const mpn_scene_t MP6_GAMESTATES[] = {{NONE, 0x01, {"Title Screen"}, 0},
 ============================================================================ */
 
 const mpn_addresses_t MP7_ADDRESSES = {
-  0x0029151C,   // Current Turns
-  0x0029151D,   // Total Turns
-  0x00291558,   // Mini ID
-  0x002F2F3E,   // Scene ID
-  0x00290C51,   // Controller Port A
-  0x00290C5B,   // Controller Port B
-  0x00290C65,   // Controller Port C
-  0x00290C6F    // Controller Port D
-  //0x00290C79, // Controller Port E
-  //0x00290C83, // Controller Port F
-  //0x00290C8D, // Controller Port G
-  //0x00290C97  // Controller Port H
-};  
+    0x0029151C,  // Current Turns
+    0x0029151D,  // Total Turns
+    0x00291558,  // Mini ID
+    0x002F2F3E,  // Scene ID
+    0x00290C51,  // Controller Port A
+    0x00290C5B,  // Controller Port B
+    0x00290C65,  // Controller Port C
+    0x00290C6F   // Controller Port D
+    // 0x00290C79, // Controller Port E
+    // 0x00290C83, // Controller Port F
+    // 0x00290C8D, // Controller Port G
+    // 0x00290C97  // Controller Port H
+};
 
 const mpn_board_t MP7_BOARDS[] = {{1, 0x7A, {"Grand Canal"}, {"mp7-canal"}},
                                   {2, 0x7B, {"Pagoda Peak"}, {"mp7-peak"}},

@@ -218,9 +218,9 @@ std::optional<Disc> ParseString(std::string_view xml, std::string xml_path)
   return disc;
 }
 
-static bool CheckRegion(const std::vector<std::string>& xml_regions, std::string_view game_region)
+static bool CheckRegion(std::span<const std::string> xml_regions, std::string_view game_region)
 {
-  if (xml_regions.begin() == xml_regions.end())
+  if (xml_regions.empty())
     return true;
 
   for (const auto& region : xml_regions)
@@ -313,7 +313,7 @@ std::vector<Patch> Disc::GeneratePatches(const std::string& game_id) const
         replacements.emplace_back(std::pair{"{$__region}", game_region});
         replacements.emplace_back(std::pair{"{$__maker}", game_developer});
         for (const auto& param : patch_ref.m_params)
-          replacements.emplace_back(std::pair{"{$" + param.first + "}", param.second});
+          replacements.emplace_back("{$" + param.first + "}", param.second);
 
         Patch& new_patch = active_patches.emplace_back(*patch);
         new_patch.m_root = replace_variables(new_patch.m_root, replacements);
@@ -399,7 +399,7 @@ std::vector<Patch> GenerateRiivolutionPatchesFromConfig(const std::string& root_
   const std::optional<Config> config = ParseConfigFile(
       fmt::format("{}/riivolution/config/{}.xml", root_directory, game_id.substr(0, 4)));
 
-  for (const std::string& path : Common::DoFileSearch({root_directory + "riivolution"}, {".xml"}))
+  for (const std::string& path : Common::DoFileSearch(root_directory + "riivolution", ".xml"))
   {
     std::optional<Disc> parsed = ParseFile(path);
     if (!parsed || !parsed->IsValidForGame(game_id, revision, disc_number))

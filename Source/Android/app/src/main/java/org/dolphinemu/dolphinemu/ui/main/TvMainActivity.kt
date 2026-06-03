@@ -125,22 +125,6 @@ class TvMainActivity : FragmentActivity(), MainView, OnRefreshListener {
         SettingsActivity.launch(this, menuTag)
     }
 
-    override fun launchFileListActivity() {
-        if (DirectoryInitialization.preferOldFolderPicker(this)) {
-            FileBrowserHelper.openDirectoryPicker(this, FileBrowserHelper.GAME_EXTENSIONS)
-        } else {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-            startActivityForResult(intent, MainPresenter.REQUEST_DIRECTORY)
-        }
-    }
-
-    override fun launchOpenFileActivity(requestCode: Int) {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
-        intent.addCategory(Intent.CATEGORY_OPENABLE)
-        intent.type = "*/*"
-        startActivityForResult(intent, requestCode)
-    }
-
     /**
      * Shows or hides the loading indicator.
      */
@@ -163,6 +147,21 @@ class TvMainActivity : FragmentActivity(), MainView, OnRefreshListener {
 
     override fun showGridOptions() {
         GridOptionDialogFragment().show(supportFragmentManager, "gridOptions")
+    }
+
+    override fun showNetPlayDialog() {
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    override fun showNetPlayBrowser() {
+        // Show the MPN netplay browser dialog for TV
+        showMPNNetPlayBrowser()
+    }
+
+    private fun showMPNNetPlayBrowser() {
+        val dialog = org.dolphinemu.dolphinemu.dialogs.MPNNetPlayBrowserDialog()
+        dialog.show(supportFragmentManager, "MPNNetPlayBrowser")
     }
 
     /**

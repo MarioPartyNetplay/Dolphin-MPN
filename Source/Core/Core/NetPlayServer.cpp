@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/NetPlayServer.h"
+#include "ChatBlocklist.h"
 
 #include <algorithm>
 #include <chrono>
@@ -12,8 +13,8 @@
 #include <optional>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <thread>
-#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -24,7 +25,6 @@
 #include "Common/CommonPaths.h"
 #include "Common/ENet.h"
 #include "Common/FileUtil.h"
-#include "Common/HttpRequest.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 #include "Common/SFMLHelper.h"
@@ -51,13 +51,10 @@
 #endif
 #include "Core/HW/GCMemcard/GCMemcard.h"
 #include "Core/HW/GCMemcard/GCMemcardDirectory.h"
-#include "Core/HW/GCMemcard/GCMemcardRaw.h"
 #include "Core/HW/Sram.h"
 #include "Core/HW/WiiSave.h"
 #include "Core/HW/WiiSaveStructs.h"
 #include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
-#include "Core/HW/WiimoteEmu/WiimoteEmu.h"
-#include "Core/HW/WiimoteReal/WiimoteReal.h"
 #include "Core/IOS/ES/ES.h"
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/IOS.h"
@@ -65,11 +62,11 @@
 #include "Core/NetPlayClient.h"  //for NetPlayUI
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
+#include "Core/HW/EXI/EXI_DeviceEthernet.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/RiivolutionPatcher.h"
 
-#include "InputCommon/ControllerEmu/ControlGroup/Attachments.h"
 #include "InputCommon/GCPadStatus.h"
 #include "InputCommon/InputConfig.h"
 
@@ -77,7 +74,6 @@
 
 #if !defined(_WIN32)
 #include <sys/socket.h>
-#include <sys/types.h>
 #ifdef __HAIKU__
 #define _BSD_SOURCE
 #include <bsd/ifaddrs.h>
@@ -225,16 +221,9 @@ void NetPlayServer::SetupIndex()
   }
   else
   {
-    Common::HttpRequest request;
-    // ENet does not support IPv6, so IPv4 has to be used
-    request.UseIPv4();
-    Common::HttpRequest::Response response =
-        request.Get("https://ip.dolphin-emu.org/", {{"X-Is-Dolphin", "1"}});
-
-    if (!response.has_value())
+    session.server_id = GetExternalIPAddress();
+    if (session.server_id.empty())
       return;
-
-    session.server_id = std::string(response->begin(), response->end());
   }
 
   session.EncryptID(Config::Get(Config::NETPLAY_INDEX_PASSWORD));
@@ -290,8 +279,8 @@ void NetPlayServer::ThreadFunc()
         auto& e = m_async_queue.Front();
         if (e.target_mode == TargetMode::Only)
         {
-          if (m_players.contains(e.target_pid))
-            Send(m_players.at(e.target_pid).socket, e.packet, e.channel_id);
+          if (const auto it = m_players.find(e.target_pid); it != m_players.end())
+            Send(it->second.socket, e.packet, e.channel_id);
         }
         else
         {
@@ -491,6 +480,7 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
     SendResponseToPlayer(new_player, MessageID::PadBuffer, m_target_buffer_size);
 
   SendResponseToPlayer(new_player, MessageID::HostInputAuthority, m_host_input_authority);
+
 
   for (const auto& existing_player : std::views::values(m_players))
   {
@@ -802,6 +792,20 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     std::string msg;
     packet >> msg;
 
+    // Check for blocked words
+    if (ContainsBlockedWord(msg))
+    {
+      // Notify the user that their message was blocked
+      sf::Packet blocked_packet;
+      blocked_packet << MessageID::ChatMessage;
+      blocked_packet << PlayerId{0};  // server ID
+      blocked_packet << fmt::format("Your message was not sent, because it contained contraband.");
+
+      Send(player.socket, blocked_packet);
+      INFO_LOG_FMT(NETPLAY, "Blocked chat message from player {} ({}): {}", player.name, player.pid, msg);
+      break;
+    }
+
     // send msg to other clients
     sf::Packet spac;
     spac << MessageID::ChatMessage;
@@ -829,7 +833,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
     if (m_chunked_data_complete_count.find(cid) != m_chunked_data_complete_count.end())
     {
-      m_chunked_data_complete_count[cid]++;
+      it->second++;
       m_chunked_data_complete_event.Set();
     }
   }
@@ -837,6 +841,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
     // if this is pad data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
       break;
@@ -920,6 +928,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::PadHostData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
     // Kick player if they're not the golfer.
     if (m_current_golfer != 0 && player.pid != m_current_golfer)
       return 1;
@@ -951,6 +963,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::WiimoteData:
   {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
     // if this is Wiimote data from the last game still being received, ignore it
     if (player.current_game != m_current_game)
       break;
@@ -1328,7 +1344,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
         }
         else
         {
-          INFO_LOG_FMT(NETPLAY, "SyncCodes: Not all players synchronized. ({} < {})",
+          INFO_LOG_FMT(NETPLAY, "SyncCodes: Not all players synchronized. ({} >= {})",
                        m_codes_synced_players, m_players.size() - 1);
         }
       }
@@ -1355,6 +1371,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     }
   }
   break;
+
 
   default:
     PanicAlertFmtT("Unknown message with id:{0} received from player:{1} Kicking player!",
@@ -1396,6 +1413,90 @@ void NetPlayServer::SendChatMessage(const std::string& msg)
   spac << msg;
 
   SendAsyncToClients(std::move(spac));
+}
+
+namespace
+{
+// Helper function to check if a wildcard pattern matches anywhere in the text
+// Supports * wildcards (matches any sequence of characters)
+// Pattern like "*word*" matches if "word" appears anywhere in text
+bool MatchesWildcard(const std::string& text, const std::string& pattern)
+{
+  // Handle common case: pattern surrounded by wildcards like "*word*"
+  // This means we just need to find "word" anywhere in text
+  if (pattern.size() >= 2 && pattern.front() == '*' && pattern.back() == '*')
+  {
+    // Extract the middle part (without the surrounding asterisks)
+    std::string middle = pattern.substr(1, pattern.size() - 2);
+    
+    // If middle contains no wildcards, simple substring search
+    if (middle.find('*') == std::string::npos)
+    {
+      return text.find(middle) != std::string::npos;
+    }
+  }
+  
+  // For patterns starting with * (like "*word"), check if text ends with the rest
+  if (!pattern.empty() && pattern.front() == '*' && pattern.find('*', 1) == std::string::npos)
+  {
+    std::string suffix = pattern.substr(1);
+    if (text.size() >= suffix.size())
+    {
+      return text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+    return false;
+  }
+  
+  // For patterns ending with * (like "word*"), check if text starts with the rest
+  if (!pattern.empty() && pattern.back() == '*' && pattern.find('*') == pattern.size() - 1)
+  {
+    std::string prefix = pattern.substr(0, pattern.size() - 1);
+    return text.compare(0, prefix.size(), prefix) == 0;
+  }
+  
+  // Fallback: simple substring match (ignoring wildcards)
+  std::string clean_pattern;
+  for (char c : pattern)
+  {
+    if (c != '*')
+      clean_pattern += c;
+  }
+  return text.find(clean_pattern) != std::string::npos;
+}
+}  // namespace
+
+bool NetPlayServer::ContainsBlockedWord(const std::string& msg) const
+{
+  // Blocklist loaded from blocklist.txt at compile time
+  const auto& blocked_words = GetChatBlocklist();
+
+  // Convert message to lowercase for case-insensitive matching
+  std::string lower_msg = msg;
+  Common::ToLower(&lower_msg);
+
+  // Check if any blocked word/pattern appears in the message
+  for (const auto& blocked_word : blocked_words)
+  {
+    // Check if pattern contains wildcards
+    if (blocked_word.find('*') != std::string::npos)
+    {
+      // Use wildcard matching
+      if (MatchesWildcard(lower_msg, blocked_word))
+      {
+        return true;
+      }
+    }
+    else
+    {
+      // Simple substring matching for non-wildcard patterns
+      if (lower_msg.find(blocked_word) != std::string::npos)
+      {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // called from ---GUI--- thread
@@ -1488,15 +1589,7 @@ bool NetPlayServer::SetupNetSettings()
   for (ExpansionInterface::Slot slot : ExpansionInterface::SLOTS)
   {
     ExpansionInterface::EXIDeviceType device;
-    if (slot == ExpansionInterface::Slot::SP1)
-    {
-      // There's no way the BBA is going to sync, disable it
-      device = ExpansionInterface::EXIDeviceType::None;
-    }
-    else
-    {
-      device = Config::Get(Config::GetInfoForEXIDevice(slot));
-    }
+    device = Config::Get(Config::GetInfoForEXIDevice(slot));
     settings.exi_device[slot] = device;
   }
 
@@ -1527,6 +1620,7 @@ bool NetPlayServer::SetupNetSettings()
   settings.divide_by_zero_exceptions = Config::Get(Config::MAIN_DIVIDE_BY_ZERO_EXCEPTIONS);
   settings.fprf = Config::Get(Config::MAIN_FPRF);
   settings.accurate_nans = Config::Get(Config::MAIN_ACCURATE_NANS);
+  settings.accurate_fmadds = Config::Get(Config::MAIN_ACCURATE_FMADDS);
   settings.disable_icache = Config::Get(Config::MAIN_DISABLE_ICACHE);
   settings.sync_on_skip_idle = Config::Get(Config::MAIN_SYNC_ON_SKIP_IDLE);
   settings.sync_gpu = Config::Get(Config::MAIN_SYNC_GPU);
@@ -1707,6 +1801,56 @@ bool NetPlayServer::StartGame()
   SConfig::GetInstance().m_strSRAM = File::GetUserPath(F_GCSRAM_IDX);
   InitSRAM(&m_settings.sram, SConfig::GetInstance().m_strSRAM);
 
+  // CRITICAL FIX: Ensure all clients have proper NetPlay configuration before starting game
+  // This prevents black screens and improper P1 binding issues
+  
+  // Send PadMapping configuration to all clients
+  sf::Packet pad_mapping_packet;
+  pad_mapping_packet << MessageID::PadMapping;
+  for (PlayerId mapping : m_pad_map)
+  {
+    pad_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(pad_mapping_packet));
+  
+  // Send WiimoteMapping configuration to all clients
+  sf::Packet wiimote_mapping_packet;
+  wiimote_mapping_packet << MessageID::WiimoteMapping;
+  for (PlayerId mapping : m_wiimote_map)
+  {
+    wiimote_mapping_packet << mapping;
+  }
+  SendAsyncToClients(std::move(wiimote_mapping_packet));
+  
+  // Send GBA configuration to all clients
+  sf::Packet gba_config_packet;
+  gba_config_packet << MessageID::GBAConfig;
+  for (const auto& config : m_gba_config)
+  {
+    gba_config_packet << config.enabled << config.has_rom << config.title;
+    for (auto& data : config.hash)
+      gba_config_packet << data;
+  }
+  SendAsyncToClients(std::move(gba_config_packet));
+  
+  // Send HostInputAuthority setting to all clients
+  sf::Packet host_input_packet;
+  host_input_packet << MessageID::HostInputAuthority;
+  host_input_packet << m_host_input_authority;
+  SendAsyncToClients(std::move(host_input_packet));
+  
+  // Send PadBuffer size to all clients (if not using host input authority)
+  if (!m_host_input_authority)
+  {
+    sf::Packet pad_buffer_packet;
+    pad_buffer_packet << MessageID::PadBuffer;
+    pad_buffer_packet << m_target_buffer_size;
+    SendAsyncToClients(std::move(pad_buffer_packet));
+  }
+  
+  // Wait a moment for all configuration to be processed
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  
   // tell clients to start game
   sf::Packet spac;
   spac << MessageID::StartGame;
@@ -2183,7 +2327,7 @@ bool NetPlayServer::SyncCodes()
   }
 
   // Find all INI files
-  const auto game_id = game->GetGameID();
+  const std::string_view game_id = game->GetGameID();
   const auto revision = game->GetRevision();
   Common::IniFile globalIni;
   for (const std::string& filename : ConfigLoaders::GetGameIniFilenames(game_id, revision))

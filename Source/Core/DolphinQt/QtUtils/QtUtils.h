@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <string_view>
+
 #include <QStyle>
 
 class QDateTimeEdit;
@@ -19,6 +21,10 @@ QWidget* CreateIconWarning(QWidget* parent, QStyle::StandardPixmap standard_pixm
 // Similar to QWidget::adjustSize except maximum size is 9/10 of screen rather than 2/3.
 void AdjustSizeWithinScreen(QWidget* widget);
 
+// Centers the widget on its parent. It should be called after any adjustments to the widget's size
+// has been applied.
+void CenterOnParentWindow(QWidget* widget);
+
 // A QWidget that returns the minimumSizeHint as the primary sizeHint.
 // Useful for QListWidget which hints a fairly large height even when entirely empty.
 // Usage: QtUtils::MinimumSizeHintWidget<QListWidget>
@@ -32,5 +38,8 @@ public:
   //  which would cause this to stack overflow.
   QSize sizeHint() const override { return Widget::minimumSizeHint(); }
 };
+
+// Opens the folder of the given file (and also selects the file on supported platforms).
+void ShowFileInFolder(std::string_view file_path);
 
 }  // namespace QtUtils

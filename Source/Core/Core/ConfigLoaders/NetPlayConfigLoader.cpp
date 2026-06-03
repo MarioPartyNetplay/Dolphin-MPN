@@ -4,11 +4,11 @@
 #include "Core/ConfigLoaders/NetPlayConfigLoader.h"
 
 #include <memory>
+#include <utility>
 
 #include <fmt/format.h>
 
 #include "Common/CommonPaths.h"
-#include "Common/Config/Config.h"
 #include "Common/FileUtil.h"
 
 #include "Core/Config/AchievementSettings.h"
@@ -24,8 +24,8 @@ namespace ConfigLoaders
 class NetPlayConfigLayerLoader final : public Config::ConfigLayerLoader
 {
 public:
-  explicit NetPlayConfigLayerLoader(const NetPlay::NetSettings& settings)
-      : ConfigLayerLoader(Config::LayerType::Netplay), m_settings(settings)
+  explicit NetPlayConfigLayerLoader(NetPlay::NetSettings settings)
+      : ConfigLayerLoader(Config::LayerType::Netplay), m_settings(std::move(settings))
   {
   }
 
@@ -80,6 +80,7 @@ public:
     layer->Set(Config::MAIN_DIVIDE_BY_ZERO_EXCEPTIONS, m_settings.divide_by_zero_exceptions);
     layer->Set(Config::MAIN_FPRF, m_settings.fprf);
     layer->Set(Config::MAIN_ACCURATE_NANS, m_settings.accurate_nans);
+    layer->Set(Config::MAIN_ACCURATE_FMADDS, m_settings.accurate_fmadds);
     layer->Set(Config::MAIN_DISABLE_ICACHE, m_settings.disable_icache);
     layer->Set(Config::MAIN_SYNC_ON_SKIP_IDLE, m_settings.sync_on_skip_idle);
     layer->Set(Config::MAIN_SYNC_GPU, m_settings.sync_gpu);

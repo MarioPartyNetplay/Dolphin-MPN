@@ -15,6 +15,7 @@
 #include "Common/ChunkFile.h"
 #include "Common/Logging/Log.h"
 #include "Common/SPSCQueue.h"
+#include "Common/ScopeGuard.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/CPUThreadConfigCallback.h"
@@ -29,6 +30,7 @@
 #include "VideoCommon/PerformanceMetrics.h"
 #include "VideoCommon/VideoBackendBase.h"
 #include "VideoCommon/VideoConfig.h"
+#include "VideoCommon/VideoEvents.h"
 
 namespace CoreTiming
 {
@@ -68,7 +70,7 @@ EventType* CoreTimingManager::RegisterEvent(const std::string& name, TimedCallba
              "during Init to avoid breaking save states.",
              name);
 
-  auto info = m_event_types.emplace(name, EventType{callback, nullptr});
+  auto info = m_event_types.emplace(name, EventType{std::move(callback), nullptr});
   EventType* event_type = &info.first->second;
   event_type->name = &info.first->first;
   return event_type;
@@ -106,24 +108,30 @@ void CoreTimingManager::Init()
   m_last_oc_factor = m_config_oc_factor;
   m_globals.last_OC_factor_inverted = m_config_oc_inv_factor;
 
-  m_on_state_changed_handle = Core::AddOnStateChangedCallback([this](Core::State state) {
+  m_core_state_changed_hook = Core::AddOnStateChangedCallback([this](Core::State state) {
     if (state == Core::State::Running)
     {
       // We don't want Throttle to attempt catch-up for all the time lost while paused.
       ResetThrottle(GetTicks());
     }
   });
+
+  m_throttled_after_presentation = false;
+  m_frame_hook = m_system.GetVideoEvents().after_present_event.Register([this](const PresentInfo&) {
+    m_throttled_after_presentation.store(false, std::memory_order_relaxed);
+  });
 }
 
 void CoreTimingManager::Shutdown()
 {
-  Core::RemoveOnStateChangedCallback(&m_on_state_changed_handle);
+  m_core_state_changed_hook.reset();
 
   std::lock_guard lk(m_ts_write_lock);
   MoveEvents();
   ClearPendingEvents();
   UnregisterAllEvents();
   CPUThreadConfigCallback::RemoveConfigChangedCallback(m_registered_config_callback_id);
+  m_frame_hook.reset();
 }
 
 void CoreTimingManager::RefreshConfig()
@@ -134,6 +142,11 @@ void CoreTimingManager::RefreshConfig()
                                                        1.0f);
   m_config_oc_inv_factor = 1.0f / m_config_oc_factor;
   m_config_sync_on_skip_idle = Config::Get(Config::MAIN_SYNC_ON_SKIP_IDLE);
+  m_config_rush_frame_presentation = Config::Get(Config::MAIN_RUSH_FRAME_PRESENTATION);
+
+  // We don't want to skip so much throttling that the audio buffer overfills.
+  m_max_throttle_skip_time =
+      std::chrono::milliseconds{Config::Get(Config::MAIN_AUDIO_BUFFER_SIZE)} / 2;
 
   // A maximum fallback is used to prevent the system from sleeping for
   // too long or going full speed in an attempt to catch up to timings.
@@ -282,7 +295,7 @@ void CoreTimingManager::ScheduleEvent(s64 cycles_into_future, EventType* event_t
     }
 
     std::lock_guard lk(m_ts_write_lock);
-    m_ts_queue.Push(Event{m_globals.global_timer + cycles_into_future, 0, userdata, event_type});
+    m_ts_queue.Push(Event{cycles_into_future, 0, userdata, event_type});
   }
 }
 
@@ -319,10 +332,14 @@ void CoreTimingManager::ForceExceptionCheck(s64 cycles)
 
 void CoreTimingManager::MoveEvents()
 {
-  for (Event ev; m_ts_queue.Pop(ev);)
+  while (!m_ts_queue.Empty())
   {
+    auto& ev = m_event_queue.emplace_back(m_ts_queue.Front());
+    m_ts_queue.Pop();
+
     ev.fifo_order = m_event_fifo_id++;
-    m_event_queue.emplace_back(std::move(ev));
+    ev.time += m_globals.global_timer;
+
     std::ranges::push_heap(m_event_queue, std::ranges::greater{});
   }
 }
@@ -346,7 +363,7 @@ void CoreTimingManager::Advance()
 
   while (!m_event_queue.empty() && m_event_queue.front().time <= m_globals.global_timer)
   {
-    Event evt = std::move(m_event_queue.front());
+    Event evt = m_event_queue.front();
     std::ranges::pop_heap(m_event_queue, std::ranges::greater{});
     m_event_queue.pop_back();
     evt.type->callback(m_system, evt.userdata, m_globals.global_timer - evt.time);
@@ -405,7 +422,7 @@ void CoreTimingManager::SleepUntil(TimePoint time_point)
 
     // Count amount of time sleeping for analytics
     const TimePoint time_after_sleep = Clock::now();
-    g_perf_metrics.CountThrottleSleep(time_after_sleep - time);
+    m_system.GetPerfMetrics().CountThrottleSleep(time_after_sleep - time);
   }
   else
   {
@@ -418,6 +435,27 @@ void CoreTimingManager::SleepUntil(TimePoint time_point)
 
 void CoreTimingManager::Throttle(const s64 target_cycle)
 {
+  const TimePoint time = Clock::now();
+
+  const bool already_throttled =
+      m_throttled_after_presentation.exchange(true, std::memory_order_relaxed);
+
+  // If RushFramePresentation is enabled, try to Throttle just once after each presentation.
+  //  This lowers input latency by speeding through to presentation after grabbing input.
+  // Make sure we don't get too far ahead of proper timing though,
+  //  otherwise the emulator unreasonably speeds through loading screens that don't have XFB copies,
+  //  making audio sound terrible.
+  const bool skip_throttle = already_throttled && m_config_rush_frame_presentation &&
+                             ((GetTargetHostTime(target_cycle) - time) < m_max_throttle_skip_time);
+  if (skip_throttle)
+    return;
+
+  // Measure current performance after throttling.
+  Common::ScopeGuard perf_marker{[&] {
+    m_system.GetPerfMetrics().CountPerformanceMarker(
+        target_cycle, m_system.GetSystemTimers().GetTicksPerSecond());
+  }};
+
   if (IsSpeedUnlimited())
   {
     ResetThrottle(target_cycle);
@@ -436,8 +474,6 @@ void CoreTimingManager::Throttle(const s64 target_cycle)
   }
 
   TimePoint target_time = CalculateTargetHostTimeInternal(target_cycle);
-
-  const TimePoint time = Clock::now();
 
   const TimePoint min_target = time - m_max_fallback;
 
@@ -526,7 +562,7 @@ void CoreTimingManager::AdjustEventQueueTimes(u32 new_ppc_clock, u32 old_ppc_clo
 
   UpdateSpeedLimit(ticks, m_emulation_speed);
 
-  g_perf_metrics.AdjustClockSpeed(ticks, new_ppc_clock, old_ppc_clock);
+  m_system.GetPerfMetrics().AdjustClockSpeed(ticks, new_ppc_clock, old_ppc_clock);
 
   for (Event& ev : m_event_queue)
   {

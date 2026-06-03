@@ -21,7 +21,7 @@ public:
   explicit CommandBufferManager(bool use_threaded_submission);
   ~CommandBufferManager();
 
-  bool Initialize();
+  bool Initialize(size_t swapchain_image_count);
 
   // These command buffers are allocated per-frame. They are valid until the command buffer
   // is submitted, after that you should call these functions again.
@@ -42,7 +42,7 @@ public:
   // Fence "counters" are used to track which commands have been completed by the GPU.
   // If the last completed fence counter is greater or equal to N, it means that the work
   // associated counter N has been completed by the GPU. The value of N to associate with
-  // commands can be retreived by calling GetCurrentFenceCounter().
+  // commands can be retrieved by calling GetCurrentFenceCounter().
   u64 GetCompletedFenceCounter() const { return m_completed_fence_counter; }
 
   // Gets the fence that will be signaled when the currently executing command buffer is
@@ -94,7 +94,7 @@ public:
   void DeferImageViewDestruction(VkImageView object);
 
 private:
-  bool CreateCommandBuffers();
+  bool CreateCommandBuffers(size_t swapchain_image_count);
   void DestroyCommandBuffers();
 
   bool CreateSubmitThread();
@@ -153,7 +153,7 @@ private:
     u32 command_buffer_index;
   };
   Common::WorkQueueThreadSP<PendingCommandBufferSubmit> m_submit_thread;
-  VkSemaphore m_present_semaphore = VK_NULL_HANDLE;
+  std::vector<VkSemaphore> m_present_semaphores = {};
   Common::Flag m_last_present_failed;
   VkResult m_last_present_result = VK_SUCCESS;
   bool m_use_threaded_submission = false;

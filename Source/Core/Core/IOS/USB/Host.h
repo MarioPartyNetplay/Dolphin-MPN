@@ -32,7 +32,6 @@ public:
   void DoState(PointerWrap& p) override;
 
   void OnDevicesChanged(const USBScanner::DeviceMap& new_devices);
-  static std::string GetDeviceNameFromVIDPID(u16 vid, u16 pid);
 
 protected:
   enum class ChangeEvent
@@ -47,8 +46,8 @@ protected:
   virtual void OnDeviceChangeEnd();
   virtual bool ShouldAddDevice(const USB::Device& device) const;
 
-  std::optional<IPCReply> HandleTransfer(std::shared_ptr<USB::Device> device, u32 request,
-                                         std::function<s32()> submit) const;
+  std::optional<IPCReply> HandleTransfer(const std::shared_ptr<USB::Device>& device, u32 request,
+                                         const std::function<s32()>& submit) const;
 
   std::map<u64, std::shared_ptr<USB::Device>> m_devices;
   mutable std::recursive_mutex m_devices_mutex;

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bit>
 #include <ranges>
+#include <utility>
 
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -20,7 +21,6 @@
 #include <QTreeWidgetItem>
 
 #include "Common/Assert.h"
-#include "Common/EnumUtils.h"
 #include "Common/Swap.h"
 #include "Core/FifoPlayer/FifoPlayer.h"
 
@@ -30,7 +30,6 @@
 #include "VideoCommon/BPMemory.h"
 #include "VideoCommon/CPMemory.h"
 #include "VideoCommon/OpcodeDecoding.h"
-#include "VideoCommon/VertexLoaderBase.h"
 #include "VideoCommon/XFStructs.h"
 
 // Values range from 0 to number of frames - 1
@@ -117,8 +116,7 @@ void FIFOAnalyzer::CreateWidgets()
 void FIFOAnalyzer::ConnectWidgets()
 {
   connect(m_tree_widget, &QTreeWidget::itemSelectionChanged, this, &FIFOAnalyzer::UpdateDetails);
-  connect(m_detail_list, &QListWidget::itemSelectionChanged, this,
-          &FIFOAnalyzer::UpdateDescription);
+  connect(m_detail_list, &QListWidget::currentRowChanged, this, &FIFOAnalyzer::UpdateDescription);
 
   connect(m_search_edit, &QLineEdit::returnPressed, this, &FIFOAnalyzer::BeginSearch);
   connect(m_search_new, &QPushButton::clicked, this, &FIFOAnalyzer::BeginSearch);
@@ -265,7 +263,7 @@ public:
     const u32 object_prim_size = num_vertices * vertex_size;
 
     const u8 opcode =
-        0x80 | Common::ToUnderlying(primitive) << OpcodeDecoder::GX_PRIMITIVE_SHIFT | vat;
+        0x80 | std::to_underlying(primitive) << OpcodeDecoder::GX_PRIMITIVE_SHIFT | vat;
     text = QStringLiteral("PRIMITIVE %1 (%2)  %3 vertices %4 bytes/vertex %5 total bytes")
                .arg(QString::fromStdString(name))
                .arg(opcode, 2, 16, QLatin1Char('0'))
@@ -315,11 +313,6 @@ public:
   OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {}
 
   OPCODE_CALLBACK(CPState& GetCPState()) { return m_cpmem; }
-
-  OPCODE_CALLBACK(u32 GetVertexSize(const u8 vat))
-  {
-    return VertexLoaderBase::GetVertexSize(GetCPState().vtx_desc, GetCPState().vtx_attr[vat]);
-  }
 
   QString text;
   CPState m_cpmem;
@@ -737,11 +730,6 @@ public:
   OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {}
 
   OPCODE_CALLBACK(CPState& GetCPState()) { return m_cpmem; }
-
-  OPCODE_CALLBACK(u32 GetVertexSize(const u8 vat))
-  {
-    return VertexLoaderBase::GetVertexSize(GetCPState().vtx_desc, GetCPState().vtx_attr[vat]);
-  }
 
   QString text;
   CPState m_cpmem;

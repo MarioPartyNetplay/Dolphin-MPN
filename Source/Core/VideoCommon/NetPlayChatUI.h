@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -20,7 +21,7 @@ public:
 
   void Display();
   void AppendChat(std::string message, Color color);
-  void SendMessage();
+  void SendChatMessage();
   void Activate();
 
 private:
@@ -33,4 +34,4 @@ private:
   std::function<void(const std::string&)> m_message_callback;
 };
 
-extern std::unique_ptr<NetPlayChatUI> g_netplay_chat_ui;
+extern std::atomic<std::shared_ptr<NetPlayChatUI>> g_netplay_chat_ui;

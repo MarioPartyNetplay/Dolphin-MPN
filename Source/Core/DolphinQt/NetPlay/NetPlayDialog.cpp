@@ -11,6 +11,7 @@
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -18,24 +19,26 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStyle>
+#include <QStyleOptionSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTextBrowser>
 
 #include <algorithm>
-#include <sstream>
+#include <utility>
 
+#ifdef HAS_LIBMGBA
 #include <fmt/ranges.h>
+#endif
 
-#include "Common/CommonPaths.h"
 #include "Common/Config/Config.h"
-#include "Common/HttpRequest.h"
+#include "Core/NetPlayCommon.h"
 #include "Common/Logging/Log.h"
 #include "Common/TraversalClient.h"
 
 #include "Core/Boot/Boot.h"
 #include "Core/Config/GraphicsSettings.h"
-#include "Core/Config/MainSettings.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
@@ -43,11 +46,13 @@
 #include "Core/HW/GBACore.h"
 #endif
 #include "Core/IOS/FS/FileSystem.h"
+#include "Core/NetPlayClient.h"
 #include "Core/NetPlayServer.h"
 #include "Core/SyncIdentifier.h"
 #include "Core/System.h"
 
 #include "DolphinQt/NetPlay/ChunkedProgressDialog.h"
+#include "DolphinQt/NetPlay/ClickBlurLabel.h"
 #include "DolphinQt/NetPlay/GameDigestDialog.h"
 #include "DolphinQt/NetPlay/GameListDialog.h"
 #include "DolphinQt/NetPlay/PadMappingDialog.h"
@@ -64,7 +69,6 @@
 
 #include "VideoCommon/NetPlayChatUI.h"
 #include "VideoCommon/NetPlayGolfUI.h"
-#include "VideoCommon/VideoConfig.h"
 
 namespace
 {
@@ -130,6 +134,28 @@ void NetPlayDialog::CreateMainLayout()
   m_game_button = new QPushButton;
   m_start_button = new QPushButton(tr("Start"));
   m_buffer_size_box = new QSpinBox;
+  m_buffer_size_box->setRange(0, 20);
+  m_buffer_size_box->setAlignment(Qt::AlignRight);
+  {
+    QStyleOptionSpinBox spinbox_option;
+    spinbox_option.initFrom(m_buffer_size_box);
+    const QStyle* const widget_style = m_buffer_size_box->style();
+    const int spinbox_buttons_width =
+        widget_style
+            ->subControlRect(QStyle::CC_SpinBox, &spinbox_option, QStyle::SC_SpinBoxUp,
+                             m_buffer_size_box)
+            .width() +
+        widget_style
+            ->subControlRect(QStyle::CC_SpinBox, &spinbox_option, QStyle::SC_SpinBoxDown,
+                             m_buffer_size_box)
+            .width();
+    m_buffer_size_box->setFixedWidth(
+        m_buffer_size_box->fontMetrics().horizontalAdvance(QStringLiteral("00")) +
+        spinbox_buttons_width +
+        2 * widget_style->pixelMetric(QStyle::PM_SpinBoxFrameWidth, &spinbox_option,
+                                      m_buffer_size_box));
+  }
+  m_buffer_size_box->setFixedHeight(m_start_button->sizeHint().height());
   m_buffer_label = new QLabel(tr("Buffer:"));
   m_quit_button = new QPushButton(tr("Quit"));
   m_splitter = new QSplitter(Qt::Horizontal);
@@ -246,15 +272,15 @@ void NetPlayDialog::CreateMainLayout()
   m_splitter->addWidget(m_chat_box);
   m_splitter->addWidget(m_players_box);
 
-  auto* options_widget = new QGridLayout;
+  auto* options_layout = new QHBoxLayout;
+  options_layout->setContentsMargins(0, 0, 0, 0);
+  options_layout->addWidget(m_start_button);
+  options_layout->addWidget(m_buffer_label);
+  options_layout->addWidget(m_buffer_size_box);
+  options_layout->addStretch(1);
+  options_layout->addWidget(m_quit_button);
 
-  options_widget->addWidget(m_start_button, 0, 0, Qt::AlignVCenter);
-  options_widget->addWidget(m_buffer_label, 0, 1, Qt::AlignVCenter);
-  options_widget->addWidget(m_buffer_size_box, 0, 2, Qt::AlignVCenter);
-  options_widget->addWidget(m_quit_button, 0, 3, Qt::AlignVCenter | Qt::AlignRight);
-  options_widget->setColumnStretch(3, 1000);
-
-  m_main_layout->addLayout(options_widget, 2, 0, 1, -1, Qt::AlignRight);
+  m_main_layout->addLayout(options_layout, 2, 0, 1, -1);
   m_main_layout->setRowStretch(1, 1000);
 
   setLayout(m_main_layout);
@@ -287,7 +313,7 @@ void NetPlayDialog::CreatePlayersLayout()
 {
   m_players_box = new QGroupBox(tr("Players"));
   m_room_box = new QComboBox;
-  m_hostcode_label = new QLabel;
+  m_hostcode_label = new ClickBlurLabel;
   m_hostcode_action_button = new QPushButton(tr("Copy"));
   m_players_list = new QTableWidget;
   m_kick_button = new QPushButton(tr("Kick Player"));
@@ -394,13 +420,24 @@ void NetPlayDialog::ConnectWidgets()
   });
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
+    if (state == Core::State::Uninitialized)
+    {
+      g_netplay_chat_ui.store({});
+      g_netplay_golf_ui.store({});
+
+      // ForceStop and other paths may stop the core without running NetPlayClient::StopGame().
+      if (const auto client = Settings::Instance().GetNetPlayClient())
+        client->InvokeStop();
+    }
+
     if (isVisible())
     {
       GameStatusChanged(state != Core::State::Uninitialized);
       if ((state == Core::State::Uninitialized || state == Core::State::Stopping) &&
           !m_got_stop_request)
       {
-        Settings::Instance().GetNetPlayClient()->RequestStopGame();
+        if (const auto client = Settings::Instance().GetNetPlayClient())
+          client->RequestStopGame();
       }
       if (state == Core::State::Uninitialized)
         DisplayMessage(tr("Stopped game"), "red");
@@ -501,7 +538,7 @@ void NetPlayDialog::reject()
 
 void NetPlayDialog::show(std::string nickname, bool use_traversal)
 {
-  m_nickname = nickname;
+  m_nickname = std::move(nickname);
   m_use_traversal = use_traversal;
   m_buffer_size = 0;
   m_old_player_count = 0;
@@ -550,17 +587,8 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
 
 void NetPlayDialog::ResetExternalIP()
 {
-  m_external_ip_address = Common::Lazy<std::string>([]() -> std::string {
-    Common::HttpRequest request;
-    // ENet does not support IPv6, so IPv4 has to be used
-    request.UseIPv4();
-    Common::HttpRequest::Response response =
-        request.Get("https://ip.dolphin-emu.org/", {{"X-Is-Dolphin", "1"}});
-
-    if (response.has_value())
-      return std::string(response->begin(), response->end());
-    return "";
-  });
+  m_external_ip_address =
+      Common::Lazy<std::string>([]() -> std::string { return NetPlay::GetExternalIPAddress(); });
 }
 
 void NetPlayDialog::UpdateDiscordPresence()
@@ -655,8 +683,9 @@ void NetPlayDialog::UpdateGUI()
 
     auto* name_item = new QTableWidgetItem(QString::fromStdString(p->name));
     name_item->setToolTip(name_item->text());
-    const auto& status_info = player_status.contains(p->game_status) ?
-                                  player_status.at(p->game_status) :
+    const auto it = player_status.find(p->game_status);
+    const auto& status_info = it != player_status.end() ?
+                                  it->second :
                                   std::make_pair(QStringLiteral("?"), QStringLiteral("?"));
     auto* status_item = new QTableWidgetItem(status_info.first);
     status_item->setToolTip(status_info.second);
@@ -777,7 +806,9 @@ void NetPlayDialog::StopGame()
     return;
 
   m_got_stop_request = true;
-  emit Stop();
+  // NetPlayClient::StopGame() is invoked from the netplay thread; Core::Stop must run on the GUI
+  // thread.
+  QueueOnObject(this, [this] { emit Stop(); });
 }
 
 bool NetPlayDialog::IsHosting() const
@@ -799,10 +830,10 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 
   const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
 
-  if (Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
-      Core::IsRunning(Core::System::GetInstance()))
+  if (const auto chat_ui = g_netplay_chat_ui.load();
+      NetPlay::IsNetPlayRunning() && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
   {
-    g_netplay_chat_ui->AppendChat(msg.toStdString(),
+    chat_ui->AppendChat(msg.toStdString(),
                                   {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),
                                    static_cast<float>(c.blueF())});
   }
@@ -810,7 +841,20 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 
 void NetPlayDialog::AppendChat(const std::string& msg)
 {
-  DisplayMessage(QString::fromStdString(msg), "");
+  // Special-case BBA mode messages
+  if (msg == "BBA mode enabled")
+  {
+    DisplayMessage(QString::fromStdString(msg), "#ffa500");  // Orange
+  }
+  else if (msg == "BBA mode disabled: Input synchronization enabled")
+  {
+    // Hide the disabled message
+    return;
+  }
+  else
+  {
+    DisplayMessage(QString::fromStdString(msg), "");
+  }
   QApplication::alert(this);
 }
 
@@ -871,12 +915,13 @@ void NetPlayDialog::OnMsgStartGame()
 {
   DisplayMessage(tr("Started game"), "green");
 
-  g_netplay_chat_ui =
-      std::make_unique<NetPlayChatUI>([this](const std::string& message) { SendMessage(message); });
+  g_netplay_chat_ui.store(std::make_shared<NetPlayChatUI>(
+      [this](const std::string& message) { SendMessage(message); }));
 
   if (m_host_input_authority && Settings::Instance().GetNetPlayClient()->GetNetSettings().golf_mode)
   {
-    g_netplay_golf_ui = std::make_unique<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient());
+    g_netplay_golf_ui.store(
+        std::make_shared<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient()));
   }
 
   QueueOnObject(this, [this] {
@@ -895,8 +940,8 @@ void NetPlayDialog::OnMsgStartGame()
 
 void NetPlayDialog::OnMsgStopGame()
 {
-  g_netplay_chat_ui.reset();
-  g_netplay_golf_ui.reset();
+  // Overlay teardown is deferred to GameStatusChanged() once emulation has fully stopped, so the
+  // video thread cannot call Display() on a destroyed NetPlayChatUI/NetPlayGolfUI.
   QueueOnObject(this, [this] { UpdateDiscordPresence(); });
 }
 
@@ -966,9 +1011,12 @@ void NetPlayDialog::OnHostInputAuthorityChanged(bool enabled)
 
 void NetPlayDialog::OnDesync(u32 frame, const std::string& player)
 {
-  DisplayMessage(tr("Possible desync detected: %1 might have desynced at frame %2")
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (client && !client->GetNetSettings().bba_mode) {
+    DisplayMessage(tr("Possible desync detected: %1 might have desynced at frame %2")
                      .arg(QString::fromStdString(player), QString::number(frame)),
                  "red", OSD::Duration::VERY_LONG);
+  }
 }
 
 void NetPlayDialog::OnConnectionLost()
@@ -1248,7 +1296,7 @@ void NetPlayDialog::AbortGameDigest()
 }
 
 void NetPlayDialog::ShowChunkedProgressDialog(const std::string& title, const u64 data_size,
-                                              const std::vector<int>& players)
+                                              std::span<const int> players)
 {
   QueueOnObject(this, [this, title, data_size, players] {
     if (m_chunked_progress_dialog->isVisible())

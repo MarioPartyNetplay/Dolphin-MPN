@@ -3,34 +3,29 @@
 
 #include "VideoCommon/HiresTextures.h"
 
+#include <fmt/format.h>
+
 #include <algorithm>
-#include <memory>
-#include <mutex>
-#include <string>
-#include <string_view>
-#include <thread>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-#include <xxhash.h>
-#include <algorithm>
-#include <string>
-#include <set>
 #include <filesystem>
 #include <iostream>
-#include <fmt/format.h>
+#include <memory>
+#include <set>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <xxhash.h>
 
 #include "Common/CommonPaths.h"
 #include "Common/FileSearch.h"
 #include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
-#include "Core/Config/GraphicsSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/System.h"
-#include "VideoCommon/Assets/CustomAsset.h"
 #include "VideoCommon/Assets/DirectFilesystemAssetLibrary.h"
 #include "VideoCommon/OnScreenDisplay.h"
+#include "VideoCommon/Resources/CustomResourceManager.h"
 #include "VideoCommon/VideoConfig.h"
 
 constexpr std::string_view s_format_prefix{"tex1_"};
@@ -85,130 +80,82 @@ void HiresTexture::Shutdown()
   Clear();
 }
 
-bool ContainsGeneratedInFileName(const std::filesystem::path& filePath) {
-  std::string filename = filePath.filename().string();
-  
-  // Convert to lowercase for case-insensitive comparison
-  std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-  
-  // Check if "generated" exists in the filename
-  return filename.find("generated") != std::string::npos;
-}
-
-// Function to check if a directory can be accessed (if it's valid)
-bool CanAccessDirectory(const std::filesystem::path& dir) {
-  return std::filesystem::exists(dir) && std::filesystem::is_directory(dir);
-}
-
 void HiresTexture::Update()
 {
-    const std::string& game_id = SConfig::GetInstance().GetGameID();
-    std::set<std::string> texture_directories =
-        GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
+  const std::string& game_id = SConfig::GetInstance().GetGameID();
+  std::set<std::string> texture_directories =
+      GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
 
-    const std::set<std::string> additional_texture_directories =
-        GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/Textures/", game_id);
+  const std::set<std::string> additional_texture_directories =
+      GetTextureDirectoriesWithGameId(File::GetSysDirectory() + "/Load/Textures/", game_id);
 
-    texture_directories.insert(additional_texture_directories.begin(), additional_texture_directories.end());
+  texture_directories.insert(additional_texture_directories.begin(),
+                             additional_texture_directories.end());
 
-    if (!g_ActiveConfig.bHiresTextures1)
+  const std::vector<std::string_view> extensions{".png", ".dds"};
+
+  for (const auto& texture_directory : texture_directories)
+  {
+    const auto texture_paths =
+        Common::DoFileSearch(texture_directory, extensions, /*recursive*/ true);
+
+    bool failed_insert = false;
+    for (auto& path : texture_paths)
     {
-      // Iterate over texture_directories and remove directories containing "Generated" in their name
-      for (auto it = texture_directories.begin(); it != texture_directories.end(); ) {
-          bool contains_generated = false;
+      std::string filename;
+      SplitPath(path, nullptr, &filename, nullptr);
 
-          // Log the current directory being checked
-          ERROR_LOG_FMT(VIDEO, "Checking directory: '{}'", *it);
+      if (filename.substr(0, s_format_prefix.length()) == s_format_prefix)
+      {
+        const size_t arb_index = filename.rfind("_arb");
+        const bool has_arbitrary_mipmaps = arb_index != std::string::npos;
+        if (has_arbitrary_mipmaps)
+          filename.erase(arb_index, 4);
 
-          // Check if the directory can be accessed
-          if (!CanAccessDirectory(*it)) {
-              // Log warning for inaccessible directory
-              ERROR_LOG_FMT(VIDEO, "Warning: Unable to access directory: '{}'", *it);
-              it = texture_directories.erase(it);  // Remove the directory and move to the next
-              continue;  // Skip to the next iteration
+        const auto [it, inserted] =
+            s_hires_texture_id_to_arbmipmap.try_emplace(filename, has_arbitrary_mipmaps);
+        if (!inserted)
+        {
+          failed_insert = true;
+        }
+        else
+        {
+          // Map the texture data
+          s_file_library->SetAssetIDMapData(
+              filename,
+              std::map<std::string, std::filesystem::path>{{"texture", StringToPath(path)}});
+
+          // Cache the texture if necessary
+          if (g_ActiveConfig.bCacheHiresTextures)
+          {
+            auto hires_texture =
+                std::make_shared<HiresTexture>(has_arbitrary_mipmaps, std::move(filename));
+            static_cast<void>(hires_texture->LoadTexture());
+            s_hires_texture_cache.try_emplace(hires_texture->GetId(), hires_texture);
           }
-
-          // Check if the directory name itself contains "generated"
-          if (ContainsGeneratedInFileName(*it)) {
-              contains_generated = true;
-          }
-
-          // Remove the directory if it contains "Generated" in the directory name
-          if (contains_generated) {
-              ERROR_LOG_FMT(VIDEO, "Warning: Directory contains 'Generated' in its name and will be removed: '{}'", *it);
-              it = texture_directories.erase(it);  // Erase and move to the next directory
-          } else {
-              ++it;  // Move to the next directory if it's valid
-          }
+        }
       }
     }
-    // After the loop, print all remaining directories in texture_directories
-    ERROR_LOG_FMT(VIDEO, "Remaining texture directories:");
-    for (const auto& dir : texture_directories) {
-        ERROR_LOG_FMT(VIDEO, "  '{}'", dir);  // Prints each remaining directory
-    }
 
-    const std::vector<std::string> extensions{".png", ".dds"};
-
-    for (const auto& texture_directory : texture_directories)
+    // Log if any textures failed to be inserted
+    if (failed_insert)
     {
-        const auto texture_paths =
-            Common::DoFileSearch({texture_directory}, extensions, /*recursive*/ true);
-
-        bool failed_insert = false;
-        for (auto& path : texture_paths)
-        {
-            std::string filename;
-            SplitPath(path, nullptr, &filename, nullptr);
-
-            if (filename.substr(0, s_format_prefix.length()) == s_format_prefix)
-            {
-                const size_t arb_index = filename.rfind("_arb");
-                const bool has_arbitrary_mipmaps = arb_index != std::string::npos;
-                if (has_arbitrary_mipmaps)
-                    filename.erase(arb_index, 4);
-
-                const auto [it, inserted] =
-                    s_hires_texture_id_to_arbmipmap.try_emplace(filename, has_arbitrary_mipmaps);
-                if (!inserted)
-                {
-                    failed_insert = true;
-                }
-                else
-                {
-                    // Map the texture data
-                    s_file_library->SetAssetIDMapData(filename, std::map<std::string, std::filesystem::path>{
-                                                            {"texture", StringToPath(path)}});
-
-                    // Cache the texture if necessary
-                    if (g_ActiveConfig.bCacheHiresTextures)
-                    {
-                      auto hires_texture =
-                          std::make_shared<HiresTexture>(has_arbitrary_mipmaps, std::move(filename));
-                      static_cast<void>(hires_texture->LoadTexture());
-                      s_hires_texture_cache.try_emplace(hires_texture->GetId(), hires_texture);                       
-                    }
-                    
-                }
-            }
-        }
-
-        // Log if any textures failed to be inserted
-        if (failed_insert)
-        {
-            ERROR_LOG_FMT(VIDEO, "One or more textures at path '{}' were already inserted", texture_directory);
-        }
+      ERROR_LOG_FMT(VIDEO, "One or more textures at path '{}' were already inserted",
+                    texture_directory);
     }
+  }
 
-    // Display message depending on whether textures are being cached or not
-    if (g_ActiveConfig.bCacheHiresTextures)
-    {
-        OSD::AddMessage(fmt::format("Loading '{}' custom textures", s_hires_texture_cache.size()), 10000);
-    }
-    else
-    {
-        OSD::AddMessage(fmt::format("Found '{}' custom textures", s_hires_texture_id_to_arbmipmap.size()), 10000);
-    }
+  // Display message depending on whether textures are being cached or not
+  if (g_ActiveConfig.bCacheHiresTextures)
+  {
+    OSD::AddMessage(fmt::format("Loading '{}' custom textures", s_hires_texture_cache.size()),
+                    10000);
+  }
+  else
+  {
+    OSD::AddMessage(fmt::format("Found '{}' custom textures", s_hires_texture_id_to_arbmipmap.size()),
+                    10000);
+  }
 }
 
 void HiresTexture::Clear()
@@ -244,7 +191,7 @@ HiresTexture::HiresTexture(bool has_arbitrary_mipmaps, std::string id)
 {
 }
 
-VideoCommon::CustomResourceManager::TextureTimePair HiresTexture::LoadTexture() const
+VideoCommon::TextureDataResource* HiresTexture::LoadTexture() const
 {
   auto& system = Core::System::GetInstance();
   auto& custom_resource_manager = system.GetCustomResourceManager();
@@ -279,7 +226,7 @@ std::set<std::string> GetTextureDirectoriesWithGameId(const std::string& root_di
   };
 
   // Look for any other directories that might be specific to the given gameid
-  const auto files = Common::DoFileSearch({root_directory}, {".txt"}, true);
+  const auto files = Common::DoFileSearch(root_directory, ".txt", true);
   for (const auto& file : files)
   {
     if (match_gameid_or_all(file))

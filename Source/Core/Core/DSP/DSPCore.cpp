@@ -429,8 +429,6 @@ bool DSPCore::Initialize(const DSPInitOptions& opts)
   if (!m_dsp.Initialize(opts))
     return false;
 
-  m_init_hax = false;
-
   // Initialize JIT, if necessary
   if (opts.core_type == DSPInitOptions::CoreType::JIT64)
     m_dsp_jit = JIT::CreateDSPEmitter(*this);
@@ -482,8 +480,6 @@ int DSPCore::RunCycles(int cycles)
 
       m_dsp_interpreter->Step();
       cycles--;
-
-      Host::UpdateDebugger();
       break;
     case State::Stopped:
       break;
@@ -519,8 +515,6 @@ void DSPCore::SetState(State new_state)
   // kick the event, in case we are waiting
   if (new_state == State::Running)
     m_step_event.Set();
-
-  Host::UpdateDebugger();
 }
 
 State DSPCore::GetState() const
@@ -606,7 +600,6 @@ bool DSPCore::IsJITCreated() const
 void DSPCore::DoState(PointerWrap& p)
 {
   m_dsp.DoState(p);
-  p.Do(m_init_hax);
 
   if (m_dsp_jit)
     m_dsp_jit->DoState(p);

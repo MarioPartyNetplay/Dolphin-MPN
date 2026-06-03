@@ -32,9 +32,6 @@
 void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, Common::Debug::MemoryPatch& patch,
                       bool store_existing_value)
 {
-  if (AchievementManager::GetInstance().IsHardcoreModeActive())
-    return;
-
   if (patch.value.empty())
     return;
 
@@ -44,17 +41,16 @@ void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, Common::Debug::MemoryPa
     return;
 
   auto& power_pc = guard.GetSystem().GetPowerPC();
+  bool should_invalidate_cache = false;
   for (u32 offset = 0; offset < size; ++offset)
   {
-    if (store_existing_value)
+    u8 old_value = PowerPC::MMU::HostRead<u8>(guard, address + offset);
+    PowerPC::MMU::HostWrite<u8>(guard, patch.value[offset], address + offset);
+    if (old_value != patch.value[offset])
     {
-      const u8 value = PowerPC::MMU::HostRead_U8(guard, address + offset);
-      PowerPC::MMU::HostWrite_U8(guard, patch.value[offset], address + offset);
-      patch.value[offset] = value;
-    }
-    else
-    {
-      PowerPC::MMU::HostWrite_U8(guard, patch.value[offset], address + offset);
+      should_invalidate_cache = true;
+      if (store_existing_value)
+        patch.value[offset] = old_value;
     }
 
     if (((address + offset) % 4) == 3)
@@ -158,7 +154,7 @@ void PPCDebugInterface::RemoveWatch(std::size_t index)
   return m_watches.RemoveWatch(index);
 }
 
-void PPCDebugInterface::LoadWatchesFromStrings(const std::vector<std::string>& watches)
+void PPCDebugInterface::LoadWatchesFromStrings(std::span<const std::string> watches)
 {
   m_watches.LoadFromStrings(watches);
 }
@@ -242,7 +238,7 @@ Common::Debug::Threads PPCDebugInterface::GetThreads(const Core::CPUThreadGuard&
   constexpr u32 ACTIVE_QUEUE_HEAD_ADDR = 0x800000dc;
   if (!PowerPC::MMU::HostIsRAMAddress(guard, ACTIVE_QUEUE_HEAD_ADDR))
     return threads;
-  const u32 active_queue_head = PowerPC::MMU::HostRead_U32(guard, ACTIVE_QUEUE_HEAD_ADDR);
+  const u32 active_queue_head = PowerPC::MMU::HostRead<u32>(guard, ACTIVE_QUEUE_HEAD_ADDR);
   if (!PowerPC::MMU::HostIsRAMAddress(guard, active_queue_head))
     return threads;
 
@@ -323,7 +319,7 @@ std::string PPCDebugInterface::GetRawMemoryString(const Core::CPUThreadGuard& gu
 
 u32 PPCDebugInterface::ReadMemory(const Core::CPUThreadGuard& guard, u32 address) const
 {
-  return PowerPC::MMU::HostRead_U32(guard, address);
+  return PowerPC::MMU::HostRead<u32>(guard, address);
 }
 
 u32 PPCDebugInterface::ReadExtraMemory(const Core::CPUThreadGuard& guard, int memory,
@@ -332,7 +328,7 @@ u32 PPCDebugInterface::ReadExtraMemory(const Core::CPUThreadGuard& guard, int me
   switch (memory)
   {
   case 0:
-    return PowerPC::MMU::HostRead_U32(guard, address);
+    return PowerPC::MMU::HostRead<u32>(guard, address);
   case 1:
   {
     const auto& dsp = guard.GetSystem().GetDSP();
@@ -439,7 +435,7 @@ u32 PPCDebugInterface::GetColor(const Core::CPUThreadGuard* guard, u32 address) 
 }
 // =============
 
-std::string_view PPCDebugInterface::GetDescription(u32 address) const
+std::string PPCDebugInterface::GetDescription(u32 address) const
 {
   return m_ppc_symbol_db.GetDescription(address);
 }

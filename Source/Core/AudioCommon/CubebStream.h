@@ -3,11 +3,14 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
 #include <vector>
 
 #include "AudioCommon/SoundStream.h"
+#ifdef _WIN32
 #include "Common/WorkQueueThread.h"
+#endif
 
 #ifdef HAVE_CUBEB
 #include <cubeb/cubeb.h>
@@ -29,9 +32,17 @@ public:
   static bool IsValid() { return true; }
 
 private:
+  struct WiimoteStreamData
+  {
+    CubebStream* self;
+    std::size_t wiimote_index;
+  };
+
   bool m_stereo = false;
   std::shared_ptr<cubeb> m_ctx;
   cubeb_stream* m_stream = nullptr;
+  std::array<WiimoteStreamData, 4> m_wiimote_stream_data{};
+  std::array<cubeb_stream*, 4> m_wiimote_streams{};
 
   std::vector<short> m_short_buffer;
   std::vector<float> m_floatstereo_buffer;
@@ -45,5 +56,9 @@ private:
   static long DataCallback(cubeb_stream* stream, void* user_data, const void* /*input_buffer*/,
                            void* output_buffer, long num_frames);
   static void StateCallback(cubeb_stream* stream, void* user_data, cubeb_state state);
+  static long WiimoteDataCallback(cubeb_stream* stream, void* user_data,
+                                  const void* /*input_buffer*/, void* output_buffer,
+                                  long num_frames);
+  static void WiimoteStateCallback(cubeb_stream* stream, void* user_data, cubeb_state state);
 #endif
 };

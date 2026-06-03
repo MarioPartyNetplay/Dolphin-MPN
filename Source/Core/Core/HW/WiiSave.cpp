@@ -30,7 +30,6 @@
 #include "Common/Lazy.h"
 #include "Common/Logging/Log.h"
 #include "Common/NandPaths.h"
-#include "Common/StringUtil.h"
 #include "Common/Swap.h"
 #include "Core/CommonTitles.h"
 #include "Core/HW/WiiSaveStructs.h"
@@ -85,7 +84,7 @@ public:
     for (const SaveFile& file : m_files_list)
     {
       // files in subdirs are deleted automatically when the subdir is deleted
-      if (file.path.find('/') != std::string::npos)
+      if (file.path.contains('/'))
         continue;
 
       const auto result =
@@ -127,7 +126,7 @@ public:
 
     Md5 md5_calc;
     mbedtls_md5_ret(reinterpret_cast<const u8*>(&header), sizeof(Header), md5_calc.data());
-    header.md5 = std::move(md5_calc);
+    header.md5 = md5_calc;
     return header;
   }
 
@@ -159,7 +158,7 @@ public:
 
   bool WriteBkHeader(const BkHeader& bk_header) override { return true; }
 
-  bool WriteFiles(const std::vector<SaveFile>& files) override
+  bool WriteFiles(std::span<const SaveFile> files) override
   {
     if (!m_uid || !m_gid)
       return false;
@@ -391,7 +390,7 @@ public:
     return m_file.Seek(sizeof(Header), File::SeekOrigin::Begin) && m_file.WriteArray(&bk_header, 1);
   }
 
-  bool WriteFiles(const std::vector<SaveFile>& files) override
+  bool WriteFiles(std::span<const SaveFile> files) override
   {
     if (!m_file.Seek(sizeof(Header) + sizeof(BkHeader), File::SeekOrigin::Begin))
       return false;
@@ -542,7 +541,7 @@ CopyResult Copy(Storage* source, Storage* dest)
   return CopyResult::Success;
 }
 
-CopyResult Import(const std::string& data_bin_path, std::function<bool()> can_overwrite)
+CopyResult Import(const std::string& data_bin_path, const std::function<bool()>& can_overwrite)
 {
   IOS::HLE::Kernel ios;
   const auto data_bin = MakeDataBinStorage(&ios.GetIOSC(), data_bin_path, "rb");

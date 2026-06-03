@@ -3,9 +3,9 @@
 
 #include "InputCommon/InputConfig.h"
 
+#include <utility>
 #include <vector>
 
-#include "Common/Config/Config.h"
 #include "Common/FileUtil.h"
 #include "Common/IniFile.h"
 #include "Common/MsgHandler.h"
@@ -13,17 +13,16 @@
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/HW/Wiimote.h"
-#include "InputCommon/ControllerEmu/ControlGroup/ControlGroup.h"
 #include "InputCommon/ControllerEmu/ControllerEmu.h"
-#include "InputCommon/ControllerEmu/Setting/NumericSetting.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/InputProfile.h"
 #include "VideoCommon/VideoConfig.h"
 
-InputConfig::InputConfig(const std::string& ini_name, const std::string& gui_name,
-                         const std::string& profile_directory_name, const std::string& profile_key)
-    : m_ini_name(ini_name), m_gui_name(gui_name), m_profile_directory_name(profile_directory_name),
-      m_profile_key(profile_key)
+InputConfig::InputConfig(std::string ini_name, std::string gui_name,
+                         std::string profile_directory_name, std::string profile_key)
+    : m_ini_name(std::move(ini_name)), m_gui_name(std::move(gui_name)),
+      m_profile_directory_name(std::move(profile_directory_name)),
+      m_profile_key(std::move(profile_key))
 {
 }
 
@@ -75,10 +74,12 @@ bool InputConfig::LoadConfig()
       !inifile.GetSections().empty())
   {
     int n = 0;
-
-    std::vector<std::string> controller_names;
     for (auto& controller : m_controllers)
     {
+      if (n >= MAX_BBMOTES)  // Prevent out-of-bounds access
+        break;
+      if (!controller)
+        continue;
       Common::IniFile::Section config;
       // Load settings from ini
       if (useProfile[n])
@@ -98,10 +99,16 @@ bool InputConfig::LoadConfig()
       }
       controller->LoadConfig(&config);
       controller->UpdateReferences(g_controller_interface);
-      controller_names.push_back(controller->GetName());
 
       // Next profile
       n++;
+    }
+
+    std::vector<std::string> controller_names;
+    for (const auto& controller : m_controllers)
+    {
+      if (controller)
+        controller_names.push_back(controller->GetName());
     }
 
     m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
@@ -111,13 +118,15 @@ bool InputConfig::LoadConfig()
   {
     // Only load the default profile for the first controller and clear the others,
     // otherwise they would all share the same mappings on the same (default) device
-    if (m_controllers.size() > 0)
+    if (m_controllers.size() > 0 && m_controllers[0])
     {
       m_controllers[0]->LoadDefaults(g_controller_interface);
       m_controllers[0]->UpdateReferences(g_controller_interface);
     }
     for (size_t i = 1; i < m_controllers.size(); ++i)
     {
+      if (!m_controllers[i])
+        continue;
       // Calling the base version just clears all settings without overwriting them with a default
       m_controllers[i]->EmulatedController::LoadDefaults(g_controller_interface);
       m_controllers[i]->UpdateReferences(g_controller_interface);
@@ -133,11 +142,16 @@ void InputConfig::SaveConfig()
   Common::IniFile inifile;
   inifile.Load(ini_filename);
 
-  std::vector<std::string> controller_names;
   for (auto& controller : m_controllers)
   {
     controller->SaveConfig(inifile.GetOrCreateSection(controller->GetName()));
-    controller_names.push_back(controller->GetName());
+  }
+
+  std::vector<std::string> controller_names;
+  for (const auto& controller : m_controllers)
+  {
+    if (controller)
+      controller_names.push_back(controller->GetName());
   }
 
   m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
@@ -146,6 +160,8 @@ void InputConfig::SaveConfig()
 
 ControllerEmu::EmulatedController* InputConfig::GetController(int index) const
 {
+  if (index < 0 || static_cast<size_t>(index) >= m_controllers.size() || !m_controllers[index])
+    return nullptr;
   return m_controllers.at(index).get();
 }
 
@@ -178,7 +194,7 @@ void InputConfig::RegisterHotplugCallback()
 {
   // Update control references on all controllers
   // as configured devices may have been added or removed.
-  m_hotplug_callback_handle = g_controller_interface.RegisterDevicesChangedCallback([this] {
+  m_hotplug_event_hook = g_controller_interface.RegisterDevicesChangedCallback([this] {
     for (auto& controller : m_controllers)
       controller->UpdateReferences(g_controller_interface);
   });
@@ -186,7 +202,7 @@ void InputConfig::RegisterHotplugCallback()
 
 void InputConfig::UnregisterHotplugCallback()
 {
-  g_controller_interface.UnregisterDevicesChangedCallback(m_hotplug_callback_handle);
+  m_hotplug_event_hook.reset();
 }
 
 bool InputConfig::IsControllerControlledByGamepadDevice(int index) const
