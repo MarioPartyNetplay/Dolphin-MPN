@@ -145,3 +145,8 @@
 	path = Externals/wil
 	url = https://github.com/microsoft/wil.git
 	shallow = true
+[submodule "Externals/SDL/SDL"]
+	path = Externals/SDL/SDL
+	url = https://github.com/libsdl-org/SDL.git
+	shallow = true
+	branch = release-3.4.0
