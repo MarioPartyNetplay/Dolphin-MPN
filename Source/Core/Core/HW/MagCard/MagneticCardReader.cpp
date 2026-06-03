@@ -73,14 +73,14 @@ static auto GetTrackIndicesForTrackType(Track track)
   case Track::Track_1_And_2:
   case Track::Track_1_And_3:
   case Track::Track_2_And_3:
-    result.emplace_back((track == Track::Track_2_And_3) ? 1 : 0);
-    result.emplace_back((track == Track::Track_1_And_2) ? 1 : 2);
+    result.emplace_back(std::size_t((track == Track::Track_2_And_3) ? 1 : 0));
+    result.emplace_back(std::size_t((track == Track::Track_1_And_2) ? 1 : 2));
     break;
 
   case Track::Track_1_2_And_3:
-    result.emplace_back(0);
-    result.emplace_back(1);
-    result.emplace_back(2);
+    result.emplace_back(std::size_t{0});
+    result.emplace_back(std::size_t{1});
+    result.emplace_back(std::size_t{2});
     break;
 
   default:
