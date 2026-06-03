@@ -23,6 +23,10 @@ endif()
 if(LibUSB_TYPE STREQUAL Bundled)
   set(LibUSB_FOUND TRUE)
   set(SDL_HIDAPI_LIBUSB_SHARED OFF)
+  # Bundled LibUSB::LibUSB is an INTERFACE target (Externals/libusb/CMakeLists.txt).
+  # SDL's CheckHIDAPI always probes for a shared libusb and errors on that target type.
+  # IOKit/MFI (macOS) and hidraw (Linux) cover controllers without SDL's libusb HIDAPI path.
+  set(SDL_HIDAPI_LIBUSB OFF CACHE BOOL "" FORCE)
 endif()
 
 add_subdirectory(SDL)

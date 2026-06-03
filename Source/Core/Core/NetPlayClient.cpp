@@ -2358,6 +2358,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 void NetPlayClient::InvokeStop()
 {
   m_is_running.Clear();
+  NetPlay_Disable();
 
   // stop waiting for input
   m_gc_pad_event.Set();
@@ -2370,8 +2371,6 @@ void NetPlayClient::InvokeStop()
 bool NetPlayClient::StopGame()
 {
   InvokeStop();
-
-  NetPlay_Disable();
 
   // stop game
   m_dialog->StopGame();

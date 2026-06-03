@@ -26,6 +26,7 @@
 #include "Core/FreeLookManager.h"
 #include "Core/HotkeyManager.h"
 #include "Core/IOS/IOS.h"
+#include "Core/NetPlayProto.h"
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiUtils.h"
@@ -489,8 +490,8 @@ void HotkeyScheduler::Run()
       if (IsHotkey(HK_TOGGLE_TEXTURES))
         Config::SetCurrent(Config::GFX_HIRES_TEXTURES, !Config::Get(Config::GFX_HIRES_TEXTURES));
 
-      // Only allow throttle toggle (speedup) when not in NetPlay
-      const bool throttle_allowed = !Settings::Instance().GetNetPlayClient();
+      // Only allow throttle toggle (speedup) when not in an active netplay game
+      const bool throttle_allowed = !NetPlay::IsNetPlayRunning();
       if (throttle_allowed)
         Core::SetIsThrottlerTempDisabled(IsHotkey(HK_TOGGLE_THROTTLE, true));
       else

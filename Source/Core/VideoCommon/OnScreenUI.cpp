@@ -15,6 +15,7 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Movie.h"
+#include "Core/NetPlayProto.h"
 #include "Core/System.h"
 
 #include "VideoCommon/AbstractGfx.h"
@@ -316,13 +317,13 @@ void OnScreenUI::DrawDebugText()
     g_stats.Display();
 
   if (const auto chat_ui = g_netplay_chat_ui.load();
-      Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
+      NetPlay::IsNetPlayRunning() && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
   {
     chat_ui->Display();
   }
 
   if (const auto golf_ui = g_netplay_golf_ui.load();
-      Config::Get(Config::NETPLAY_GOLF_MODE_OVERLAY) && golf_ui)
+      NetPlay::IsNetPlayRunning() && Config::Get(Config::NETPLAY_GOLF_MODE_OVERLAY) && golf_ui)
   {
     golf_ui->Display();
   }

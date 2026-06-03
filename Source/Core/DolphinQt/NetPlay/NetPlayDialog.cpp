@@ -18,8 +18,9 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QSizePolicy>
 #include <QSpinBox>
+#include <QStyle>
+#include <QStyleOptionSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTextBrowser>
@@ -45,6 +46,7 @@
 #include "Core/HW/GBACore.h"
 #endif
 #include "Core/IOS/FS/FileSystem.h"
+#include "Core/NetPlayClient.h"
 #include "Core/NetPlayServer.h"
 #include "Core/SyncIdentifier.h"
 #include "Core/System.h"
@@ -133,9 +135,27 @@ void NetPlayDialog::CreateMainLayout()
   m_start_button = new QPushButton(tr("Start"));
   m_buffer_size_box = new QSpinBox;
   m_buffer_size_box->setRange(0, 20);
-  m_buffer_size_box->setMinimumWidth(
-      m_buffer_size_box->fontMetrics().horizontalAdvance(QStringLiteral("00")) + 36);
-  m_buffer_size_box->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  m_buffer_size_box->setAlignment(Qt::AlignRight);
+  {
+    QStyleOptionSpinBox spinbox_option;
+    spinbox_option.initFrom(m_buffer_size_box);
+    const QStyle* const widget_style = m_buffer_size_box->style();
+    const int spinbox_buttons_width =
+        widget_style
+            ->subControlRect(QStyle::CC_SpinBox, &spinbox_option, QStyle::SC_SpinBoxUp,
+                             m_buffer_size_box)
+            .width() +
+        widget_style
+            ->subControlRect(QStyle::CC_SpinBox, &spinbox_option, QStyle::SC_SpinBoxDown,
+                             m_buffer_size_box)
+            .width();
+    m_buffer_size_box->setFixedWidth(
+        m_buffer_size_box->fontMetrics().horizontalAdvance(QStringLiteral("00")) +
+        spinbox_buttons_width +
+        2 * widget_style->pixelMetric(QStyle::PM_SpinBoxFrameWidth, &spinbox_option,
+                                      m_buffer_size_box));
+  }
+  m_buffer_size_box->setFixedHeight(m_start_button->sizeHint().height());
   m_buffer_label = new QLabel(tr("Buffer:"));
   m_quit_button = new QPushButton(tr("Quit"));
   m_splitter = new QSplitter(Qt::Horizontal);
@@ -252,16 +272,15 @@ void NetPlayDialog::CreateMainLayout()
   m_splitter->addWidget(m_chat_box);
   m_splitter->addWidget(m_players_box);
 
-  auto* options_widget = new QWidget;
-  auto* options_layout = new QHBoxLayout(options_widget);
+  auto* options_layout = new QHBoxLayout;
   options_layout->setContentsMargins(0, 0, 0, 0);
   options_layout->addWidget(m_start_button);
   options_layout->addWidget(m_buffer_label);
   options_layout->addWidget(m_buffer_size_box);
-  options_layout->addStretch();
+  options_layout->addStretch(1);
   options_layout->addWidget(m_quit_button);
 
-  m_main_layout->addWidget(options_widget, 2, 0, 1, -1, Qt::AlignRight);
+  m_main_layout->addLayout(options_layout, 2, 0, 1, -1);
   m_main_layout->setRowStretch(1, 1000);
 
   setLayout(m_main_layout);
@@ -405,6 +424,10 @@ void NetPlayDialog::ConnectWidgets()
     {
       g_netplay_chat_ui.store({});
       g_netplay_golf_ui.store({});
+
+      // ForceStop and other paths may stop the core without running NetPlayClient::StopGame().
+      if (const auto client = Settings::Instance().GetNetPlayClient())
+        client->InvokeStop();
     }
 
     if (isVisible())
@@ -808,8 +831,7 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
   const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
 
   if (const auto chat_ui = g_netplay_chat_ui.load();
-      Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
-      Core::IsRunning(Core::System::GetInstance()) && chat_ui)
+      NetPlay::IsNetPlayRunning() && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
   {
     chat_ui->AppendChat(msg.toStdString(),
                                   {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),

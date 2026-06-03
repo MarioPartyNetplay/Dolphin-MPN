@@ -19,6 +19,7 @@
 
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
+#include "Core/NetPlayProto.h"
 #include "Core/State.h"
 #include "Core/System.h"
 
@@ -361,8 +362,8 @@ bool RenderWidget::event(QEvent* event)
 
     // The render window might flicker on some platforms because Qt tries to change focus to a new
     // element when there is none (?) Handling this event before it reaches QWidget fixes the issue.
-    // Only block Tab during NetPlay to allow pause/speedup hotkeys when not in NetPlay
-    if (ke->key() == Qt::Key_Tab && Settings::Instance().GetNetPlayClient())
+    // Only block Tab during an active netplay game to allow pause/speedup hotkeys locally
+    if (ke->key() == Qt::Key_Tab && NetPlay::IsNetPlayRunning())
       return true;
 
     break;

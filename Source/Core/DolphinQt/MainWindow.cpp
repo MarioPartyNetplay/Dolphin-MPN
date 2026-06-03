@@ -924,6 +924,7 @@ void MainWindow::Play(const std::optional<std::string>& savestate_path)
 
 void MainWindow::Pause()
 {
+
   Core::SetState(m_system, Core::State::Paused);
 }
 
@@ -1004,8 +1005,8 @@ bool MainWindow::RequestStop()
 
     const Core::State state = Core::GetState(m_system);
 
-    // Only pause the game, if NetPlay is not running
-    bool pause = !Settings::Instance().GetNetPlayClient();
+    // Only pause the game if a netplay session is active (avoids deadlocking the CPU thread).
+    const bool pause = !NetPlay::IsNetPlayRunning();
 
     if (pause)
       Core::SetState(m_system, Core::State::Paused);
