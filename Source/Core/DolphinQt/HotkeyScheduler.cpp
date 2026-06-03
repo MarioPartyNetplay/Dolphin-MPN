@@ -30,6 +30,7 @@
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiUtils.h"
+#include "Core/NetPlayProto.h"
 
 #ifdef HAS_LIBMGBA
 #include "DolphinQt/GBAWidget.h"
@@ -509,8 +510,21 @@ void HotkeyScheduler::Run()
                Config::GetActiveLayerForConfig(Config::MAIN_AUDIO_MUTED) ==
                    Config::LayerType::CurrentRun)
       {
-        Config::DeleteKey(Config::LayerType::CurrentRun, Config::MAIN_AUDIO_MUTED);
-        AudioCommon::UpdateSoundStream(system);
+        Core::SetIsThrottlerTempDisabled(IsHotkey(HK_TOGGLE_THROTTLE, true));
+
+        if (IsHotkey(HK_TOGGLE_THROTTLE, true) && !Config::Get(Config::MAIN_AUDIO_MUTED) &&
+            Config::Get(Config::MAIN_AUDIO_MUTE_ON_DISABLED_SPEED_LIMIT))
+        {
+          Config::SetCurrent(Config::MAIN_AUDIO_MUTED, true);
+          AudioCommon::UpdateSoundStream(system);
+        }
+        else if (!IsHotkey(HK_TOGGLE_THROTTLE, true) && Config::Get(Config::MAIN_AUDIO_MUTED) &&
+                 Config::GetActiveLayerForConfig(Config::MAIN_AUDIO_MUTED) ==
+                     Config::LayerType::CurrentRun)
+        {
+          Config::DeleteKey(Config::LayerType::CurrentRun, Config::MAIN_AUDIO_MUTED);
+          AudioCommon::UpdateSoundStream(system);
+        }
       }
 
       auto ShowEmulationSpeed = [] {
