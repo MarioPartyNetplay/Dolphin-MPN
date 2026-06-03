@@ -853,6 +853,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     bool has_multiple_players = false;
     std::vector<PadIndex> pads_to_aggregate;
     std::vector<std::pair<PadIndex, GCPadStatus>> single_player_inputs;
+    std::map<PadIndex, unsigned int> shared_pad_entries_in_packet;
 
     while (!packet.endOfPacket())
     {
@@ -881,12 +882,16 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       {
         has_multiple_players = true;
         pads_to_aggregate.push_back(map);
+        shared_pad_entries_in_packet[map]++;
       }
       else
       {
         single_player_inputs.emplace_back(map, pad);
       }
     }
+
+    for (const auto& [pad_index, count] : shared_pad_entries_in_packet)
+      m_shared_pad_packet_counts[pad_index][player.pid] = count;
 
     // If any pad has multiple players, aggregate inputs
     if (has_multiple_players)
@@ -975,6 +980,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     bool has_multiple_players = false;
     std::vector<PadIndex> pads_to_aggregate;
     std::vector<std::pair<PadIndex, WiimoteEmu::SerializedWiimoteState>> single_player_inputs;
+    std::map<PadIndex, unsigned int> shared_wiimote_entries_in_packet;
 
     while (!packet.endOfPacket())
     {
@@ -1002,12 +1008,16 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       {
         has_multiple_players = true;
         pads_to_aggregate.push_back(map);
+        shared_wiimote_entries_in_packet[map]++;
       }
       else
       {
         single_player_inputs.emplace_back(map, pad);
       }
     }
+
+    for (const auto& [pad_index, count] : shared_wiimote_entries_in_packet)
+      m_shared_wiimote_packet_counts[pad_index][player.pid] = count;
 
     // If any pad has multiple players, aggregate inputs
     if (has_multiple_players)
@@ -1954,6 +1964,10 @@ bool NetPlayServer::StartGame()
     pad_inputs.clear();
   for (auto& wii_inputs : m_wiimote_inputs_by_player)
     wii_inputs.clear();
+  for (auto& pad_counts : m_shared_pad_packet_counts)
+    pad_counts.clear();
+  for (auto& wii_counts : m_shared_wiimote_packet_counts)
+    wii_counts.clear();
 
   return true;
 }
@@ -2839,14 +2853,25 @@ void NetPlayServer::AggregatePadInputs(PadIndex pad_index)
 
   const GCPadStatus aggregated = CombinePadInputs(inputs);
 
+  unsigned int num_copies = 1;
+  for (const PlayerId player_id : pad_players)
+  {
+    const auto it = m_shared_pad_packet_counts[pad_index].find(player_id);
+    if (it != m_shared_pad_packet_counts[pad_index].end())
+      num_copies = std::max(num_copies, it->second);
+  }
+
   sf::Packet spac;
   spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
-  spac << pad_index << aggregated.button;
-  if (!m_gba_config.at(pad_index).enabled)
+  for (unsigned int copy = 0; copy < num_copies; ++copy)
   {
-    spac << aggregated.analogA << aggregated.analogB << aggregated.stickX << aggregated.stickY
-         << aggregated.substickX << aggregated.substickY << aggregated.triggerLeft
-         << aggregated.triggerRight << aggregated.isConnected;
+    spac << pad_index << aggregated.button;
+    if (!m_gba_config.at(pad_index).enabled)
+    {
+      spac << aggregated.analogA << aggregated.analogB << aggregated.stickX << aggregated.stickY
+           << aggregated.substickX << aggregated.substickY << aggregated.triggerLeft
+           << aggregated.triggerRight << aggregated.isConnected;
+    }
   }
 
   if (m_host_input_authority)
@@ -2918,12 +2943,23 @@ void NetPlayServer::AggregateWiimoteInputs(PadIndex pad_index)
 
   const WiimoteEmu::SerializedWiimoteState aggregated = CombineWiimoteInputs(inputs);
 
+  unsigned int num_copies = 1;
+  for (const PlayerId player_id : wii_players)
+  {
+    const auto it = m_shared_wiimote_packet_counts[pad_index].find(player_id);
+    if (it != m_shared_wiimote_packet_counts[pad_index].end())
+      num_copies = std::max(num_copies, it->second);
+  }
+
   sf::Packet spac;
   spac << MessageID::WiimoteData;
-  spac << pad_index;
-  spac << aggregated.length;
-  for (size_t i = 0; i < aggregated.length; ++i)
-    spac << aggregated.data[i];
+  for (unsigned int copy = 0; copy < num_copies; ++copy)
+  {
+    spac << pad_index;
+    spac << aggregated.length;
+    for (size_t i = 0; i < aggregated.length; ++i)
+      spac << aggregated.data[i];
+  }
 
   SendToClients(spac);
 

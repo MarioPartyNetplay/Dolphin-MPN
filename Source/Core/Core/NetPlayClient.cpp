@@ -2292,7 +2292,7 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   }
   else if (shared_port)
   {
-    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
@@ -2324,7 +2324,7 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {
       AddWiimoteStateToPacket(ingame_pad, state, packet);
       data_added = true;
