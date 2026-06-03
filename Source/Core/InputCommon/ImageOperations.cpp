@@ -55,24 +55,11 @@ std::optional<ImagePixelData> LoadImage(const std::string& path)
 {
   File::IOFile file;
   if (!file.Open(path, "rb"))
-  {
-    ERROR_LOG_FMT(COMMON, "Failed to open image file: {}", path);
     return std::nullopt;
-  }
-    
-  const u64 file_size = file.GetSize();
-  if (file_size == 0 || file_size > 100 * 1024 * 1024)
-  {
-    ERROR_LOG_FMT(COMMON, "Invalid file size for image: {} (size: {})", path, file_size);
+
+  Common::UniqueBuffer<u8> buffer(file.GetSize());
+  if (!file.ReadBytes(buffer.data(), file.GetSize()))
     return std::nullopt;
-  }
-    
-  Common::UniqueBuffer<u8> buffer(file_size);
-  if (!file.ReadBytes(buffer.data(), file_size))
-  {
-    ERROR_LOG_FMT(COMMON, "Failed to read image file: {}", path);
-    return std::nullopt;
-  }
 
   ImagePixelData image;
   Common::UniqueBuffer<u8> data;

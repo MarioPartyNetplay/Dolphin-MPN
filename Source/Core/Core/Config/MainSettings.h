@@ -57,6 +57,7 @@ extern const Info<bool> MAIN_SKIP_IPL;
 extern const Info<PowerPC::CPUCore> MAIN_CPU_CORE;
 extern const Info<bool> MAIN_JIT_FOLLOW_BRANCH;
 extern const Info<bool> MAIN_FASTMEM;
+extern const Info<bool> MAIN_PAGE_TABLE_FASTMEM;
 extern const Info<bool> MAIN_FASTMEM_ARENA;
 extern const Info<bool> MAIN_LARGE_ENTRY_POINTS_MAP;
 extern const Info<bool> MAIN_ACCURATE_CPU_CACHE;
@@ -65,7 +66,10 @@ extern const Info<bool> MAIN_DSP_HLE;
 extern const Info<int> MAIN_MAX_FALLBACK;
 extern const Info<int> MAIN_TIMING_VARIANCE;
 extern const Info<bool> MAIN_CORRECT_TIME_DRIFT;
+extern const Info<bool> MAIN_RUSH_FRAME_PRESENTATION;
+extern const Info<bool> MAIN_SMOOTH_EARLY_PRESENTATION;
 extern const Info<bool> MAIN_CPU_THREAD;
+extern const Info<bool> MAIN_LOAD_GAME_INTO_MEMORY;
 extern const Info<bool> MAIN_SYNC_ON_SKIP_IDLE;
 extern const Info<std::string> MAIN_DEFAULT_ISO;
 extern const Info<bool> MAIN_ENABLE_CHEATS;
@@ -76,6 +80,7 @@ extern const Info<AudioCommon::DPL2Quality> MAIN_DPL2_QUALITY;
 extern const Info<int> MAIN_AUDIO_LATENCY;
 extern const Info<int> MAIN_AUDIO_BUFFER_SIZE;
 extern const Info<bool> MAIN_AUDIO_FILL_GAPS;
+extern const Info<bool> MAIN_AUDIO_PRESERVE_PITCH;
 extern const Info<std::string> MAIN_MEMCARD_A_PATH;
 extern const Info<std::string> MAIN_MEMCARD_B_PATH;
 const Info<std::string>& GetInfoForMemcardPath(ExpansionInterface::Slot slot);
@@ -125,6 +130,7 @@ extern const Info<bool> MAIN_FLOAT_EXCEPTIONS;
 extern const Info<bool> MAIN_DIVIDE_BY_ZERO_EXCEPTIONS;
 extern const Info<bool> MAIN_FPRF;
 extern const Info<bool> MAIN_ACCURATE_NANS;
+extern const Info<bool> MAIN_ACCURATE_FMADDS;
 extern const Info<bool> MAIN_DISABLE_ICACHE;
 extern const Info<float> MAIN_EMULATION_SPEED;
 extern const Info<bool> MAIN_PRECISION_FRAME_TIMING;
@@ -212,16 +218,17 @@ extern const Info<int> MAIN_GDB_PORT;
 extern const Info<int> MAIN_ISO_PATH_COUNT;
 extern const Info<std::string> MAIN_SKYLANDERS_PATH;
 std::vector<std::string> GetIsoPaths();
-void SetIsoPaths(const std::vector<std::string>& paths);
+void SetIsoPaths(std::span<const std::string> paths);
 
 // Main.GBA
 
 #ifdef HAS_LIBMGBA
 extern const Info<std::string> MAIN_GBA_BIOS_PATH;
-extern const std::array<Info<std::string>, 4> MAIN_GBA_ROM_PATHS;
+extern const std::array<Info<std::string>, 5> MAIN_GBA_ROM_PATHS;
 extern const Info<std::string> MAIN_GBA_SAVES_PATH;
 extern const Info<bool> MAIN_GBA_SAVES_IN_ROM_PATH;
-extern const Info<bool> MAIN_GBA_THREADS;
+
+static constexpr std::size_t GBPLAYER_GBA_INDEX = 4;
 #endif
 
 // Main.Network
@@ -327,10 +334,18 @@ extern const Info<bool> MAIN_MOVIE_DUMP_FRAMES_SILENT;
 extern const Info<bool> MAIN_MOVIE_SHOW_INPUT_DISPLAY;
 extern const Info<bool> MAIN_MOVIE_SHOW_RTC;
 extern const Info<bool> MAIN_MOVIE_SHOW_RERECORD;
+extern const Info<bool> MAIN_MOVIE_SHOW_OSD;
 
 // Main.Input
 
 extern const Info<bool> MAIN_INPUT_BACKGROUND_INPUT;
+
+extern const Config::Info<std::string> MAIN_SDL_HINT_JOYSTICK_ENHANCED_REPORTS;
+extern const Config::Info<std::string> MAIN_SDL_HINT_JOYSTICK_WGI;
+extern const Config::Info<std::string> MAIN_SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED;
+extern const Config::Info<std::string> MAIN_SDL_HINT_JOYSTICK_DIRECTINPUT;
+extern const Config::Info<std::string> MAIN_SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS;
+extern const Config::Info<std::string> MAIN_SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS;
 
 // Main.Debug
 
@@ -371,6 +386,16 @@ extern const Info<bool> MAIN_EMULATE_WII_SPEAK;
 extern const Info<std::string> MAIN_WII_SPEAK_MICROPHONE;
 extern const Info<bool> MAIN_WII_SPEAK_MUTED;
 extern const Info<s16> MAIN_WII_SPEAK_VOLUME_MODIFIER;
+
+static constexpr std::size_t EMULATED_LOGITECH_MIC_COUNT = 4;
+
+extern const std::array<Info<bool>, EMULATED_LOGITECH_MIC_COUNT> MAIN_EMULATE_LOGITECH_MIC;
+extern const std::array<Info<std::string>, EMULATED_LOGITECH_MIC_COUNT>
+    MAIN_LOGITECH_MIC_MICROPHONE;
+extern const std::array<Info<bool>, EMULATED_LOGITECH_MIC_COUNT> MAIN_LOGITECH_MIC_MUTED;
+extern const std::array<Info<s16>, EMULATED_LOGITECH_MIC_COUNT> MAIN_LOGITECH_MIC_VOLUME_MODIFIER;
+
+extern const Info<std::string> MAIN_TRIFORCE_IP_REDIRECTIONS;
 
 // GameCube path utility functions
 

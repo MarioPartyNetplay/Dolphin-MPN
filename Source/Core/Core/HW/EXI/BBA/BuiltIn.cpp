@@ -13,7 +13,6 @@
 #else
 #include <sys/select.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #endif
 
 #include "Common/BitUtils.h"
@@ -21,9 +20,7 @@
 #include "Common/MsgHandler.h"
 #include "Common/Network.h"
 #include "Common/ScopeGuard.h"
-#include "Core/HW/EXI/EXI_Device.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
-#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #include "Core/CoreTiming.h"
 #include "Core/System.h"
 
@@ -102,27 +99,6 @@ bool CEXIETHERNET::BuiltInBBAInterface::Activate()
   (void)m_upnp_httpd.listen(Common::SSDP_PORT, sf::IpAddress(ip));
   m_upnp_httpd.setBlocking(false);
 
-  // Initialize NetPlay transport if enabled
-  if (m_use_netplay_transport)
-  {
-    m_np_shutdown = false;
-    m_np_receiving = false;
-
-    if (!m_np_event_inject)
-    {
-      m_np_event_inject = m_eth_ref->m_system.GetCoreTiming().RegisterEvent(
-          "BuiltInNPInject", [](Core::System& system, u64 userdata, s64) {
-            auto* self = reinterpret_cast<CEXIETHERNET::BuiltInBBAInterface*>(userdata);
-            if (self)
-              self->NP_ProcessPendingPacketsOnCPU();
-          });
-    }
-
-    // Subscribe for incoming BBA packets delivered by NetPlay
-    m_np_injector_id = ExpansionInterface::RegisterBBAPacketInjector(
-        [this](const u8* data, u32 size) { NP_InjectPacket(data, size); });
-  }
-
   return RecvInit();
 }
 
@@ -140,14 +116,6 @@ void CEXIETHERNET::BuiltInBBAInterface::Deactivate()
   m_arp_table.clear();
   m_upnp_httpd.close();
 
-  // NetPlay transport cleanup
-  if (m_np_injector_id != 0)
-  {
-    ExpansionInterface::UnregisterBBAPacketInjector(m_np_injector_id);
-    m_np_injector_id = 0;
-  }
-  m_np_shutdown = true;
-
   // Wait for read thread to exit.
   if (m_read_thread.joinable())
     m_read_thread.join();
@@ -158,9 +126,9 @@ bool CEXIETHERNET::BuiltInBBAInterface::IsActivated()
   return m_active;
 }
 
-void CEXIETHERNET::BuiltInBBAInterface::WriteToQueue(const std::vector<u8>& data)
+void CEXIETHERNET::BuiltInBBAInterface::WriteToQueue(std::vector<u8> data)
 {
-  m_queue_data[m_queue_write] = data;
+  m_queue_data[m_queue_write] = std::move(data);
   const u8 next_write_index = (m_queue_write + 1) & 15;
   if (next_write_index != m_queue_read)
     m_queue_write = next_write_index;
@@ -212,7 +180,7 @@ void CEXIETHERNET::BuiltInBBAInterface::PollData(std::size_t* datasize)
       // Otherwise, enqueue it
       const auto socket_data = TryGetDataFromSocket(&net_ref);
       if (socket_data.has_value())
-        WriteToQueue(*socket_data);
+        WriteToQueue(std::move(*socket_data));
     }
     else
     {
@@ -254,7 +222,7 @@ void CEXIETHERNET::BuiltInBBAInterface::HandleDHCP(const Common::UDPPacket& pack
   const u8* router_ip_ptr = reinterpret_cast<const u8*>(&m_router_ip);
   const std::vector<u8> ip_part(router_ip_ptr, router_ip_ptr + sizeof(m_router_ip));
 
-  const std::vector<u8> timeout_24h = {0, 1, 0x51, 0x80};
+  constexpr auto timeout_24h = std::to_array<u8>({0, 1, 0x51, 0x80});
 
   Common::DHCPPacket reply;
   reply.body = Common::DHCPBody(request.transaction_id, m_current_mac, m_current_ip, m_router_ip);
@@ -641,17 +609,6 @@ const Common::MACAddress& CEXIETHERNET::BuiltInBBAInterface::ResolveAddress(u32 
 
 bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
 {
-  if (m_use_netplay_transport)
-  {
-    // Forward frames over NetPlay when acting as client; host buffers locally to avoid loops
-    if (!ExpansionInterface::g_is_first_user.load())
-    {
-      ExpansionInterface::SendBBAPacketViaNetPlay(frame, size);
-    }
-    m_eth_ref->SendComplete();
-    return true;
-  }
-
   std::lock_guard<std::mutex> lock(m_mtx);
   const Common::PacketView view(frame, size);
 
@@ -711,8 +668,7 @@ bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
     case IPPROTO_IGMP:
     {
       // Acknowledge IGMP packet
-      const std::vector<u8> data(frame, frame + size);
-      WriteToQueue(data);
+      WriteToQueue({frame, frame + size});
       break;
     }
 
@@ -824,14 +780,9 @@ void CEXIETHERNET::BuiltInBBAInterface::RecvStart()
 {
   if (m_read_enabled.IsSet())
     return;
-  if (!m_use_netplay_transport)
-  {
-    InitUDPPort(26502);  // Kirby Air Ride
-    InitUDPPort(26512);  // Mario Kart: Double Dash!! and 1080° Avalanche
-  }
+  InitUDPPort(26502);  // Kirby Air Ride
+  InitUDPPort(26512);  // Mario Kart: Double Dash!! and 1080° Avalanche
   m_read_enabled.Set();
-  if (m_use_netplay_transport)
-    m_np_receiving = true;
 }
 
 void CEXIETHERNET::BuiltInBBAInterface::RecvStop()
@@ -840,49 +791,8 @@ void CEXIETHERNET::BuiltInBBAInterface::RecvStop()
   m_network_ref.Clear();
   m_queue_read = 0;
   m_queue_write = 0;
-  if (m_use_netplay_transport)
-    m_np_receiving = false;
 }
 
-// NetPlay transport: injection and CPU-thread processing
-void CEXIETHERNET::BuiltInBBAInterface::NP_InjectPacket(const u8* data, u32 size)
-{
-  if (!data || size == 0)
-    return;
-  {
-    std::lock_guard<std::mutex> lk(m_np_buffer_mutex);
-    m_np_packet_buffer.emplace_back(data, data + size);
-  }
-  if (m_np_event_inject)
-  {
-    m_eth_ref->m_system.GetCoreTiming().ScheduleEvent(
-        0, m_np_event_inject, reinterpret_cast<u64>(this), CoreTiming::FromThread::NON_CPU);
-  }
-}
-
-void CEXIETHERNET::BuiltInBBAInterface::NP_ProcessPendingPacketsOnCPU()
-{
-  if (!m_use_netplay_transport || m_np_shutdown || !m_np_receiving)
-    return;
-  std::deque<std::vector<u8>> pending;
-  {
-    std::lock_guard<std::mutex> lk(m_np_buffer_mutex);
-    pending.swap(m_np_packet_buffer);
-  }
-  for (const auto& pkt : pending)
-  {
-    const u32 size = static_cast<u32>(pkt.size());
-    const u32 min_frame = 64;
-    const u32 copy_size = std::max(size, min_frame);
-    if (copy_size > BBA_RECV_SIZE)
-      continue;
-    std::memcpy(m_eth_ref->mRecvBuffer.get(), pkt.data(), size);
-    if (size < min_frame)
-      std::memset(m_eth_ref->mRecvBuffer.get() + size, 0, min_frame - size);
-    m_eth_ref->mRecvBufferLength = copy_size;
-    (void)m_eth_ref->RecvHandlePacket();
-  }
-}
 }  // namespace ExpansionInterface
 
 BbaTcpSocket::BbaTcpSocket() = default;

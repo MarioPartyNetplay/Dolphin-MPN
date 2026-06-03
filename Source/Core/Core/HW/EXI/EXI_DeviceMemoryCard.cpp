@@ -4,7 +4,6 @@
 #include "Core/HW/EXI/EXI_DeviceMemoryCard.h"
 
 #include <array>
-#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -18,7 +17,6 @@
 #include "Common/Config/Config.h"
 #include "Common/EnumMap.h"
 #include "Common/FileUtil.h"
-#include "Common/IniFile.h"
 #include "Common/Logging/Log.h"
 #include "Core/CommonTitles.h"
 #include "Core/Config/MainSettings.h"
@@ -57,7 +55,7 @@ static Common::EnumMap<char, MAX_MEMCARD_SLOT> s_card_short_names{'A', 'B'};
 // Takes care of the nasty recovery of the 'this' pointer from card_slot,
 // stored in the userdata parameter of the CoreTiming event.
 void CEXIMemoryCard::EventCompleteFindInstance(Core::System& system, u64 userdata,
-                                               std::function<void(CEXIMemoryCard*)> callback)
+                                               const std::function<void(CEXIMemoryCard*)>& callback)
 {
   Slot card_slot = static_cast<Slot>(userdata);
   IEXIDevice* self = system.GetExpansionInterface().GetDevice(card_slot);

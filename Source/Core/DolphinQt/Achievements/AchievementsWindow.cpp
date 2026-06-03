@@ -31,13 +31,12 @@ AchievementsWindow::AchievementsWindow(QWidget* parent) : QDialog(parent)
   CreateMainLayout();
   ConnectWidgets();
 
-  m_event_hook = AchievementManager::UpdateEvent::Register(
+  m_event_hook = AchievementManager::GetInstance().update_event.Register(
       [this](AchievementManager::UpdatedItems updated_items) {
         QueueOnObject(this, [this, updated_items = std::move(updated_items)] {
-          AchievementsWindow::UpdateData(std::move(updated_items));
+          AchievementsWindow::UpdateData(updated_items);
         });
-      },
-      "AchievementsWindow");
+      });
   UpdateData(AchievementManager::UpdatedItems{.all = true});
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this,
@@ -81,7 +80,7 @@ void AchievementsWindow::ConnectWidgets()
   connect(m_button_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
-void AchievementsWindow::UpdateData(AchievementManager::UpdatedItems updated_items)
+void AchievementsWindow::UpdateData(const AchievementManager::UpdatedItems& updated_items)
 {
   m_settings_widget->UpdateData(updated_items.failed_login_code);
   if (updated_items.all)

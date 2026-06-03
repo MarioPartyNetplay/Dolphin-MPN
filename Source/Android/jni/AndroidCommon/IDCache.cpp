@@ -26,8 +26,36 @@ static jmethodID s_game_file_constructor;
 static jclass s_game_file_cache_class;
 static jfieldID s_game_file_cache_pointer;
 
+static jclass s_game_file_cache_manager_class;
+static jfieldID s_game_file_cache_manager_instance;
+
+static jclass s_netplay_class;
+static jfieldID s_net_play_ui_callbacks_pointer;
+static jfieldID s_net_play_client_pointer;
+static jfieldID s_net_play_server_pointer;
+static jmethodID s_netplay_on_boot_game;
+static jmethodID s_netplay_on_stop_game;
+static jmethodID s_netplay_on_connection_lost;
+static jmethodID s_netplay_on_connection_error;
+static jmethodID s_netplay_on_game_changed;
+static jmethodID s_netplay_on_host_input_authority_changed;
+static jmethodID s_netplay_on_pad_buffer_changed;
+static jmethodID s_netplay_on_chat_message_received;
+static jmethodID s_netplay_update;
+static jmethodID s_netplay_on_show_chunked_progress_dialog;
+static jmethodID s_netplay_on_set_chunked_progress;
+static jmethodID s_netplay_on_hide_chunked_progress_dialog;
+static jmethodID s_netplay_on_desync;
+static jmethodID s_netplay_on_show_game_digest_dialog;
+static jmethodID s_netplay_on_set_game_digest_progress;
+static jmethodID s_netplay_on_set_game_digest_result;
+static jmethodID s_netplay_on_abort_game_digest;
+static jmethodID s_netplay_on_traversal_state_changed;
+
+static jclass s_netplay_player_class;
+static jmethodID s_netplay_player_constructor;
+
 static jclass s_analytics_class;
-static jmethodID s_send_analytics_report;
 static jmethodID s_get_analytics_value;
 
 static jclass s_pair_class;
@@ -192,11 +220,6 @@ jclass GetAnalyticsClass()
   return s_analytics_class;
 }
 
-jmethodID GetSendAnalyticsReport()
-{
-  return s_send_analytics_report;
-}
-
 jmethodID GetAnalyticsValue()
 {
   return s_get_analytics_value;
@@ -225,6 +248,136 @@ jclass GetGameFileCacheClass()
 jfieldID GetGameFileCachePointer()
 {
   return s_game_file_cache_pointer;
+}
+
+jclass GetGameFileCacheManagerClass()
+{
+  return s_game_file_cache_manager_class;
+}
+
+jfieldID GetGameFileCacheManagerInstance()
+{
+  return s_game_file_cache_manager_instance;
+}
+
+jclass GetNetplayClass()
+{
+  return s_netplay_class;
+}
+
+jfieldID GetNetPlayUICallbacksPointer()
+{
+  return s_net_play_ui_callbacks_pointer;
+}
+
+jfieldID GetNetPlayClientPointer()
+{
+  return s_net_play_client_pointer;
+}
+
+jfieldID GetNetPlayServerPointer()
+{
+  return s_net_play_server_pointer;
+}
+
+jmethodID GetNetplayOnBootGame()
+{
+  return s_netplay_on_boot_game;
+}
+
+jmethodID GetNetplayOnStopGame()
+{
+  return s_netplay_on_stop_game;
+}
+
+jmethodID GetNetplayOnConnectionLost()
+{
+  return s_netplay_on_connection_lost;
+}
+
+jmethodID GetNetplayOnConnectionError()
+{
+  return s_netplay_on_connection_error;
+}
+
+jmethodID GetNetplayOnGameChanged()
+{
+  return s_netplay_on_game_changed;
+}
+
+jmethodID GetNetplayOnHostInputAuthorityChanged()
+{
+  return s_netplay_on_host_input_authority_changed;
+}
+
+jmethodID GetNetplayOnPadBufferChanged()
+{
+  return s_netplay_on_pad_buffer_changed;
+}
+
+jmethodID GetNetplayOnChatMessageReceived()
+{
+  return s_netplay_on_chat_message_received;
+}
+
+jmethodID GetNetplayUpdate()
+{
+  return s_netplay_update;
+}
+
+jmethodID GetNetplayOnShowChunkedProgressDialog()
+{
+  return s_netplay_on_show_chunked_progress_dialog;
+}
+
+jmethodID GetNetplayOnSetChunkedProgress()
+{
+  return s_netplay_on_set_chunked_progress;
+}
+
+jmethodID GetNetplayOnHideChunkedProgressDialog()
+{
+  return s_netplay_on_hide_chunked_progress_dialog;
+}
+
+jmethodID GetNetplayOnDesync()
+{
+  return s_netplay_on_desync;
+}
+
+jmethodID GetNetplayOnShowGameDigestDialog()
+{
+  return s_netplay_on_show_game_digest_dialog;
+}
+
+jmethodID GetNetplayOnSetGameDigestProgress()
+{
+  return s_netplay_on_set_game_digest_progress;
+}
+
+jmethodID GetNetplayOnSetGameDigestResult()
+{
+  return s_netplay_on_set_game_digest_result;
+}
+
+jmethodID GetNetplayOnAbortGameDigest()
+{
+  return s_netplay_on_abort_game_digest;
+}
+
+jmethodID GetNetplayOnTraversalStateChanged()
+{
+  return s_netplay_on_traversal_state_changed;
+}
+
+jclass GetNetplayPlayerClass()
+{
+  return s_netplay_player_class;
+}
+
+jmethodID GetNetplayPlayerConstructor()
+{
+  return s_netplay_player_constructor;
 }
 
 jclass GetPairClass()
@@ -622,10 +775,64 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
   s_game_file_cache_pointer = env->GetFieldID(game_file_cache_class, "pointer", "J");
   env->DeleteLocalRef(game_file_cache_class);
 
+  const jclass game_file_cache_manager_class =
+      env->FindClass("org/dolphinemu/dolphinemu/services/GameFileCacheManager");
+  s_game_file_cache_manager_class =
+      reinterpret_cast<jclass>(env->NewGlobalRef(game_file_cache_manager_class));
+  s_game_file_cache_manager_instance = env->GetStaticFieldID(
+      game_file_cache_manager_class, "gameFileCache",
+      "Lorg/dolphinemu/dolphinemu/model/GameFileCache;");
+  env->DeleteLocalRef(game_file_cache_manager_class);
+
+  const jclass netplay_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/netplay/NetplaySession");
+  s_netplay_class = reinterpret_cast<jclass>(env->NewGlobalRef(netplay_class));
+  s_net_play_ui_callbacks_pointer =
+      env->GetFieldID(netplay_class, "netPlayUICallbacksPointer", "J");
+  s_net_play_client_pointer = env->GetFieldID(netplay_class, "netPlayClientPointer", "J");
+  s_net_play_server_pointer = env->GetFieldID(netplay_class, "netPlayServerPointer", "J");
+  s_netplay_on_boot_game = env->GetMethodID(netplay_class, "onBootGame", "(Ljava/lang/String;J)V");
+  s_netplay_on_stop_game = env->GetMethodID(netplay_class, "onStopGame", "()V");
+  s_netplay_on_connection_lost = env->GetMethodID(netplay_class, "onConnectionLost", "()V");
+  s_netplay_on_connection_error = env->GetMethodID(netplay_class, "onConnectionError", "(Ljava/lang/String;)V");
+  s_netplay_on_game_changed =
+      env->GetMethodID(netplay_class, "onGameChanged", "(Ljava/lang/String;)V");
+  s_netplay_on_host_input_authority_changed =
+      env->GetMethodID(netplay_class, "onHostInputAuthorityChanged", "(Z)V");
+  s_netplay_on_pad_buffer_changed =
+      env->GetMethodID(netplay_class, "onPadBufferChanged", "(I)V");
+  s_netplay_on_chat_message_received =
+      env->GetMethodID(netplay_class, "onChatMessageReceived", "(Ljava/lang/String;)V");
+  s_netplay_update = env->GetMethodID(netplay_class, "onUpdate", "([Lorg/dolphinemu/dolphinemu/features/netplay/model/Player;)V");
+  s_netplay_on_show_chunked_progress_dialog =
+      env->GetMethodID(netplay_class, "onShowChunkedProgressDialog", "(Ljava/lang/String;J[I)V");
+  s_netplay_on_set_chunked_progress =
+      env->GetMethodID(netplay_class, "onSetChunkedProgress", "(IJ)V");
+  s_netplay_on_hide_chunked_progress_dialog =
+      env->GetMethodID(netplay_class, "onHideChunkedProgressDialog", "()V");
+  s_netplay_on_desync =
+      env->GetMethodID(netplay_class, "onDesync", "(ILjava/lang/String;)V");
+  s_netplay_on_show_game_digest_dialog =
+      env->GetMethodID(netplay_class, "onShowGameDigestDialog", "(Ljava/lang/String;)V");
+  s_netplay_on_set_game_digest_progress =
+      env->GetMethodID(netplay_class, "onSetGameDigestProgress", "(II)V");
+  s_netplay_on_set_game_digest_result =
+      env->GetMethodID(netplay_class, "onSetGameDigestResult", "(ILjava/lang/String;)V");
+  s_netplay_on_abort_game_digest =
+      env->GetMethodID(netplay_class, "onAbortGameDigest", "()V");
+  s_netplay_on_traversal_state_changed = env->GetMethodID(
+      netplay_class, "onTraversalStateChanged",
+      "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+  env->DeleteLocalRef(netplay_class);
+
+  const jclass netplay_player_class =
+      env->FindClass("org/dolphinemu/dolphinemu/features/netplay/model/Player");
+  s_netplay_player_class = reinterpret_cast<jclass>(env->NewGlobalRef(netplay_player_class));
+  s_netplay_player_constructor = env->GetMethodID(netplay_player_class, "<init>", "(ILjava/lang/String;Ljava/lang/String;IZLjava/lang/String;)V");
+  env->DeleteLocalRef(netplay_player_class);
+
   const jclass analytics_class = env->FindClass("org/dolphinemu/dolphinemu/utils/Analytics");
   s_analytics_class = reinterpret_cast<jclass>(env->NewGlobalRef(analytics_class));
-  s_send_analytics_report =
-      env->GetStaticMethodID(s_analytics_class, "sendReport", "(Ljava/lang/String;[B)V");
   s_get_analytics_value = env->GetStaticMethodID(s_analytics_class, "getValue",
                                                  "(Ljava/lang/String;)Ljava/lang/String;");
   env->DeleteLocalRef(analytics_class);
@@ -671,11 +878,11 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
       env->FindClass("org/dolphinemu/dolphinemu/utils/NetworkHelper");
   s_network_helper_class = reinterpret_cast<jclass>(env->NewGlobalRef(network_helper_class));
   s_network_helper_get_network_ip_address =
-      env->GetStaticMethodID(s_network_helper_class, "GetNetworkIpAddress", "()I");
+      env->GetStaticMethodID(s_network_helper_class, "getNetworkIpAddress", "()I");
   s_network_helper_get_network_prefix_length =
-      env->GetStaticMethodID(s_network_helper_class, "GetNetworkPrefixLength", "()I");
+      env->GetStaticMethodID(s_network_helper_class, "getNetworkPrefixLength", "()I");
   s_network_helper_get_network_gateway =
-      env->GetStaticMethodID(s_network_helper_class, "GetNetworkGateway", "()I");
+      env->GetStaticMethodID(s_network_helper_class, "getNetworkGateway", "()I");
   env->DeleteLocalRef(network_helper_class);
 
   const jclass boolean_supplier_class =
@@ -840,6 +1047,9 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved)
   env->DeleteGlobalRef(s_native_library_class);
   env->DeleteGlobalRef(s_game_file_class);
   env->DeleteGlobalRef(s_game_file_cache_class);
+  env->DeleteGlobalRef(s_game_file_cache_manager_class);
+  env->DeleteGlobalRef(s_netplay_class);
+  env->DeleteGlobalRef(s_netplay_player_class);
   env->DeleteGlobalRef(s_analytics_class);
   env->DeleteGlobalRef(s_pair_class);
   env->DeleteGlobalRef(s_hash_map_class);

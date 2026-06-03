@@ -6,10 +6,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
-#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -26,7 +26,6 @@
 #include "Common/MsgHandler.h"
 #include "Common/StringUtil.h"
 #include "Common/Thread.h"
-#include "Common/Timer.h"
 
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/SessionSettings.h"
@@ -134,7 +133,7 @@ std::vector<std::string> GCMemcardDirectory::GetFileNamesForGameID(const std::st
     game_code = Common::swap32(reinterpret_cast<const u8*>(game_id.c_str()));
 
   std::vector<Memcard::DEntry> loaded_saves;
-  for (const std::string& file_name : Common::DoFileSearch({directory}, {".gci"}))
+  for (const std::string& file_name : Common::DoFileSearch(directory, ".gci"))
   {
     File::IOFile gci_file(file_name, "rb");
     if (!gci_file)
@@ -178,11 +177,11 @@ std::vector<std::string> GCMemcardDirectory::GetFileNamesForGameID(const std::st
   return filenames;
 }
 
-GCMemcardDirectory::GCMemcardDirectory(const std::string& directory, ExpansionInterface::Slot slot,
+GCMemcardDirectory::GCMemcardDirectory(std::string directory, ExpansionInterface::Slot slot,
                                        const Memcard::HeaderData& header_data, u32 game_id)
     : MemoryCardBase(slot, header_data.m_size_mb), m_game_id(game_id), m_last_block(-1),
-      m_hdr(header_data), m_bat1(header_data.m_size_mb), m_saves(0), m_save_directory(directory),
-      m_exiting(false)
+      m_hdr(header_data), m_bat1(header_data.m_size_mb), m_saves(0),
+      m_save_directory(std::move(directory)), m_exiting(false)
 {
   // Use existing header data if available
   {
@@ -190,7 +189,7 @@ GCMemcardDirectory::GCMemcardDirectory(const std::string& directory, ExpansionIn
   }
 
   const bool current_game_only = Config::Get(Config::SESSION_GCI_FOLDER_CURRENT_GAME_ONLY);
-  const std::vector<std::string> filenames = Common::DoFileSearch({m_save_directory}, {".gci"});
+  const std::vector<std::string> filenames = Common::DoFileSearch(m_save_directory, ".gci");
 
   // split up into files for current games we should definitely load,
   // and files for other games that we don't care too much about
@@ -575,7 +574,7 @@ s32 GCMemcardDirectory::DirectoryWrite(u32 dest_address, u32 length, const u8* s
     // first 58 bytes should always be 0xff
     // needed to update the update ctr, checksums
     // could check for writes to the 6 important bytes but doubtful that it improves performance
-    // noticably
+    // noticeably
     memcpy((u8*)(dest) + offset, src_address, length);
     SyncSaves();
   }

@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include "AudioCommon/AudioCommon.h"
 #include "Common/Assert.h"
@@ -20,13 +21,16 @@
 #include "Common/Version.h"
 #include "Core/AchievementManager.h"
 #include "Core/Config/DefaultLocale.h"
+#include "Core/Core.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/EXI/EXI_Device.h"
 #include "Core/HW/GCMemcard/GCMemcard.h"
 #include "Core/HW/HSP/HSP_Device.h"
 #include "Core/HW/Memmap.h"
 #include "Core/HW/SI/SI_Device.h"
+#include "Core/IOS/Network/Socket.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/System.h"
 #include "Core/USBUtils.h"
 #include "DiscIO/Enums.h"
 #include "VideoCommon/VideoBackendBase.h"
@@ -40,6 +44,7 @@ const Info<PowerPC::CPUCore> MAIN_CPU_CORE{{System::Main, "Core", "CPUCore"},
                                            PowerPC::DefaultCPUCore()};
 const Info<bool> MAIN_JIT_FOLLOW_BRANCH{{System::Main, "Core", "JITFollowBranch"}, true};
 const Info<bool> MAIN_FASTMEM{{System::Main, "Core", "Fastmem"}, true};
+const Info<bool> MAIN_PAGE_TABLE_FASTMEM{{System::Main, "Core", "PageTableFastmem"}, true};
 const Info<bool> MAIN_FASTMEM_ARENA{{System::Main, "Core", "FastmemArena"}, true};
 const Info<bool> MAIN_LARGE_ENTRY_POINTS_MAP{{System::Main, "Core", "LargeEntryPointsMap"}, true};
 const Info<bool> MAIN_ACCURATE_CPU_CACHE{{System::Main, "Core", "AccurateCPUCache"}, false};
@@ -47,13 +52,16 @@ const Info<bool> MAIN_DSP_HLE{{System::Main, "Core", "DSPHLE"}, true};
 const Info<int> MAIN_MAX_FALLBACK{{System::Main, "Core", "MaxFallback"}, 100};
 const Info<int> MAIN_TIMING_VARIANCE{{System::Main, "Core", "TimingVariance"}, 40};
 const Info<bool> MAIN_CORRECT_TIME_DRIFT{{System::Main, "Core", "CorrectTimeDrift"}, false};
-#if defined(ANDROID)
-// Currently enabled by default on Android because the performance boost is really needed.
+const Info<bool> MAIN_RUSH_FRAME_PRESENTATION{{System::Main, "Core", "RushFramePresentation"},
+                                              false};
+const Info<bool> MAIN_SMOOTH_EARLY_PRESENTATION{{System::Main, "Core", "SmoothEarlyPresentation"},
+                                                false};
+
+// Dolphin-MPN: enable dual core for desktop, as we're targeting low end machines for default settings
 constexpr bool DEFAULT_CPU_THREAD = true;
-#else
-constexpr bool DEFAULT_CPU_THREAD = false;
-#endif
+
 const Info<bool> MAIN_CPU_THREAD{{System::Main, "Core", "CPUThread"}, DEFAULT_CPU_THREAD};
+const Info<bool> MAIN_LOAD_GAME_INTO_MEMORY{{System::Main, "Core", "LoadGameIntoMemory"}, false};
 const Info<bool> MAIN_SYNC_ON_SKIP_IDLE{{System::Main, "Core", "SyncOnSkipIdle"}, true};
 const Info<std::string> MAIN_DEFAULT_ISO{{System::Main, "Core", "DefaultISO"}, ""};
 const Info<bool> MAIN_ENABLE_CHEATS{{System::Main, "Core", "EnableCheats"}, true};
@@ -66,6 +74,7 @@ const Info<AudioCommon::DPL2Quality> MAIN_DPL2_QUALITY{{System::Main, "Core", "D
 const Info<int> MAIN_AUDIO_LATENCY{{System::Main, "Core", "AudioLatency"}, 20};
 const Info<int> MAIN_AUDIO_BUFFER_SIZE{{System::Main, "Core", "AudioBufferSize"}, 80};
 const Info<bool> MAIN_AUDIO_FILL_GAPS{{System::Main, "Core", "AudioFillGaps"}, true};
+const Info<bool> MAIN_AUDIO_PRESERVE_PITCH{{System::Main, "Core", "AudioPreservePitch"}, false};
 const Info<std::string> MAIN_MEMCARD_A_PATH{{System::Main, "Core", "MemcardAPath"}, ""};
 const Info<std::string> MAIN_MEMCARD_B_PATH{{System::Main, "Core", "MemcardBPath"}, ""};
 const Info<std::string>& GetInfoForMemcardPath(ExpansionInterface::Slot slot)
@@ -217,6 +226,7 @@ const Info<bool> MAIN_DIVIDE_BY_ZERO_EXCEPTIONS{{System::Main, "Core", "DivByZer
                                                 false};
 const Info<bool> MAIN_FPRF{{System::Main, "Core", "FPRF"}, false};
 const Info<bool> MAIN_ACCURATE_NANS{{System::Main, "Core", "AccurateNaNs"}, false};
+const Info<bool> MAIN_ACCURATE_FMADDS{{System::Main, "Core", "AccurateFmadds"}, true};
 const Info<bool> MAIN_DISABLE_ICACHE{{System::Main, "Core", "DisableICache"}, false};
 const Info<float> MAIN_EMULATION_SPEED{{System::Main, "Core", "EmulationSpeed"}, 1.0f};
 #if defined(ANDROID)
@@ -307,7 +317,7 @@ const Info<bool> MAIN_AUDIO_MUTED{{System::Main, "DSP", "Muted"}, false};
 const Info<bool> MAIN_AUDIO_MUTE_ON_DISABLED_SPEED_LIMIT{
     {System::Main, "DSP", "MuteOnDisabledSpeedLimit"}, false};
 #ifdef _WIN32
-const Info<std::string> MAIN_WASAPI_DEVICE{{System::Main, "DSP", "WASAPIDevice"}, "Default"};
+const Info<std::string> MAIN_WASAPI_DEVICE{{System::Main, "DSP", "WASAPIDevice"}, "default"};
 #endif
 
 bool ShouldUseDPL2Decoder()
@@ -355,7 +365,7 @@ std::vector<std::string> GetIsoPaths()
   return paths;
 }
 
-void SetIsoPaths(const std::vector<std::string>& paths)
+void SetIsoPaths(std::span<const std::string> paths)
 {
   size_t old_size = MathUtil::SaturatingCast<size_t>(Config::Get(Config::MAIN_ISO_PATH_COUNT));
   size_t new_size = paths.size();
@@ -386,14 +396,15 @@ void SetIsoPaths(const std::vector<std::string>& paths)
 
 #ifdef HAS_LIBMGBA
 const Info<std::string> MAIN_GBA_BIOS_PATH{{System::Main, "GBA", "BIOS"}, ""};
-const std::array<Info<std::string>, 4> MAIN_GBA_ROM_PATHS{
+const std::array<Info<std::string>, 5> MAIN_GBA_ROM_PATHS{
     Info<std::string>{{System::Main, "GBA", "Rom1"}, ""},
     Info<std::string>{{System::Main, "GBA", "Rom2"}, ""},
     Info<std::string>{{System::Main, "GBA", "Rom3"}, ""},
-    Info<std::string>{{System::Main, "GBA", "Rom4"}, ""}};
+    Info<std::string>{{System::Main, "GBA", "Rom4"}, ""},
+    Info<std::string>{{System::Main, "GBA", "GBPlayerRom"}, ""},
+};
 const Info<std::string> MAIN_GBA_SAVES_PATH{{System::Main, "GBA", "SavesPath"}, ""};
 const Info<bool> MAIN_GBA_SAVES_IN_ROM_PATH{{System::Main, "GBA", "SavesInRomPath"}, false};
-const Info<bool> MAIN_GBA_THREADS{{System::Main, "GBA", "Threads"}, true};
 #endif
 
 // Main.Network
@@ -512,10 +523,28 @@ const Info<bool> MAIN_MOVIE_DUMP_FRAMES_SILENT{{System::Main, "Movie", "DumpFram
 const Info<bool> MAIN_MOVIE_SHOW_INPUT_DISPLAY{{System::Main, "Movie", "ShowInputDisplay"}, false};
 const Info<bool> MAIN_MOVIE_SHOW_RTC{{System::Main, "Movie", "ShowRTC"}, false};
 const Info<bool> MAIN_MOVIE_SHOW_RERECORD{{System::Main, "Movie", "ShowRerecord"}, false};
+const Info<bool> MAIN_MOVIE_SHOW_OSD{{System::Main, "Movie", "ShowMovieWindow"}, false};
 
 // Main.Input
 
 const Info<bool> MAIN_INPUT_BACKGROUND_INPUT{{System::Main, "Input", "BackgroundInput"}, false};
+
+// Main.SDL_Hints
+
+// Defaults for these values are written in SDL.cpp so they appear in the config file, and thus show
+// up in the SDL Hints config window (default values defined here would not be written).
+const Info<std::string> MAIN_SDL_HINT_JOYSTICK_ENHANCED_REPORTS{
+    {System::Main, "SDL_Hints", "SDL_JOYSTICK_ENHANCED_REPORTS"}, ""};
+const Info<std::string> MAIN_SDL_HINT_JOYSTICK_WGI{{System::Main, "SDL_Hints", "SDL_JOYSTICK_WGI"},
+                                                   ""};
+const Info<std::string> MAIN_SDL_HINT_JOYSTICK_HIDAPI_PS5_PLAYER_LED{
+    {System::Main, "SDL_Hints", "SDL_JOYSTICK_HIDAPI_PS5_PLAYER_LED"}, ""};
+const Info<std::string> MAIN_SDL_HINT_JOYSTICK_DIRECTINPUT{
+    {System::Main, "SDL_Hints", "SDL_JOYSTICK_DIRECTINPUT"}, ""};
+const Info<std::string> MAIN_SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS{
+    {System::Main, "SDL_Hints", "SDL_JOYSTICK_HIDAPI_COMBINE_JOY_CONS"}, ""};
+const Info<std::string> MAIN_SDL_HINT_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS{
+    {System::Main, "SDL_Hints", "SDL_JOYSTICK_HIDAPI_VERTICAL_JOY_CONS"}, ""};
 
 // Main.Debug
 
@@ -610,6 +639,66 @@ const Info<bool> MAIN_WII_SPEAK_MUTED{{System::Main, "EmulatedUSBDevices", "WiiS
 const Info<s16> MAIN_WII_SPEAK_VOLUME_MODIFIER{
     {System::Main, "EmulatedUSBDevices", "WiiSpeakVolumeModifier"}, 0};
 
+const std::array<Info<bool>, EMULATED_LOGITECH_MIC_COUNT> MAIN_EMULATE_LOGITECH_MIC{
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "EmulateLogitechMic1"}, false},
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "EmulateLogitechMic2"}, false},
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "EmulateLogitechMic3"}, false},
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "EmulateLogitechMic4"}, false}};
+const std::array<Info<std::string>, EMULATED_LOGITECH_MIC_COUNT> MAIN_LOGITECH_MIC_MICROPHONE{
+    Info<std::string>{{System::Main, "EmulatedUSBDevices", "LogitechMic1Microphone"}, ""},
+    Info<std::string>{{System::Main, "EmulatedUSBDevices", "LogitechMic2Microphone"}, ""},
+    Info<std::string>{{System::Main, "EmulatedUSBDevices", "LogitechMic3Microphone"}, ""},
+    Info<std::string>{{System::Main, "EmulatedUSBDevices", "LogitechMic4Microphone"}, ""}};
+const std::array<Info<bool>, EMULATED_LOGITECH_MIC_COUNT> MAIN_LOGITECH_MIC_MUTED{
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "LogitechMic1Muted"}, false},
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "LogitechMic2Muted"}, false},
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "LogitechMic3Muted"}, false},
+    Info<bool>{{System::Main, "EmulatedUSBDevices", "LogitechMic4Muted"}, false}};
+const std::array<Info<s16>, EMULATED_LOGITECH_MIC_COUNT> MAIN_LOGITECH_MIC_VOLUME_MODIFIER{
+    Info<s16>{{System::Main, "EmulatedUSBDevices", "LogitechMic1VolumeModifier"}, 0},
+    Info<s16>{{System::Main, "EmulatedUSBDevices", "LogitechMic2VolumeModifier"}, 0},
+    Info<s16>{{System::Main, "EmulatedUSBDevices", "LogitechMic3VolumeModifier"}, 0},
+    Info<s16>{{System::Main, "EmulatedUSBDevices", "LogitechMic4VolumeModifier"}, 0}};
+
+static std::string GetDefaultTriforceIPRedirections()
+{
+#if defined(ANDROID)
+  return "0.0.0.0/0=127.0.0.1";
+#else
+  constexpr std::string_view entries[] = {
+
+      // Mario Kart Arcade GP 1 + 2
+      // This config allows for 4x Multicabinet on the same PC.
+      "192.168.29.150:5000-5008=127.0.0.1:5000-5008 MarioKart Seat #1 Static",
+      "192.168.29.151:5000-5008=127.0.0.1:5010-5018 MarioKart Seat #2 Static",
+      "192.168.29.152:5000-5008=127.0.0.1:5020-5028 MarioKart Seat #3 Static",
+      "192.168.29.153:5000-5008=127.0.0.1:5030-5038 MarioKart Seat #4 Static",
+      // Ephemeral ports are constrained to differentiate incoming connections.
+      "192.168.29.150=127.0.0.1:50000-50999 MarioKart Seat #1 Ephemeral",
+      "192.168.29.151=127.0.0.1:51000-51999 MarioKart Seat #2 Ephemeral",
+      "192.168.29.152=127.0.0.1:52000-52999 MarioKart Seat #3 Ephemeral",
+      "192.168.29.153=127.0.0.1:53000-53999 MarioKart Seat #4 Ephemeral",
+      // The cameras.
+      "192.168.29.104-107=127.0.0.1 MarioKart namcam2",
+
+      // CyCraft Connect IP
+      "192.168.11.0/24=127.0.0.1 CyCraft",
+
+      // The Key of Avalon
+      // This config isn't usable as-is. It's just here for reference.
+      "192.168.13.0/24=127.0.0.1 The Key of Avalon",
+
+      // Sega ALL.Net
+      "192.168.150.0/24=127.0.0.1 ALL.Net",
+  };
+
+  return fmt::format("{}", fmt::join(entries, ","));
+#endif
+}
+
+const Info<std::string> MAIN_TRIFORCE_IP_REDIRECTIONS{
+    {System::Main, "Core", "TriforceIPRedirections"}, GetDefaultTriforceIPRedirections()};
+
 // The reason we need this function is because some memory card code
 // expects to get a non-NTSC-K region even if we're emulating an NTSC-K Wii.
 DiscIO::Region ToGameCubeRegion(DiscIO::Region region)
@@ -642,6 +731,9 @@ const char* GetDirectoryForRegion(DiscIO::Region region, RegionDirectoryStyle st
     // See ToGameCubeRegion
     ASSERT_MSG(BOOT, false, "NTSC-K is not a valid GameCube region");
     return style == RegionDirectoryStyle::Legacy ? JAP_DIR : JPN_DIR;
+
+  case DiscIO::Region::DEV:
+    return DEV_DIR;
 
   default:
     ASSERT_MSG(BOOT, false, "Default case should not be reached");
@@ -696,6 +788,7 @@ std::string GetMemcardPath(std::string configured_filename, ExpansionInterface::
   constexpr std::string_view us_region = "." USA_DIR;
   constexpr std::string_view jp_region = "." JAP_DIR;
   constexpr std::string_view eu_region = "." EUR_DIR;
+  constexpr std::string_view dv_region = "." DEV_DIR;
   std::optional<DiscIO::Region> path_region = std::nullopt;
   if (name.ends_with(us_region))
   {
@@ -711,6 +804,11 @@ std::string GetMemcardPath(std::string configured_filename, ExpansionInterface::
   {
     name = name.substr(0, name.size() - eu_region.size());
     path_region = DiscIO::Region::PAL;
+  }
+  else if (name.ends_with(dv_region))
+  {
+    name = name.substr(0, name.size() - dv_region.size());
+    path_region = DiscIO::Region::DEV;
   }
 
   const DiscIO::Region used_region =
@@ -755,6 +853,7 @@ std::string GetGCIFolderPath(std::string configured_folder, ExpansionInterface::
   constexpr std::string_view us_region = "/" USA_DIR;
   constexpr std::string_view jp_region = "/" JPN_DIR;
   constexpr std::string_view eu_region = "/" EUR_DIR;
+  constexpr std::string_view dv_region = "/" DEV_DIR;
   std::string_view base_path = configured_folder;
   std::optional<DiscIO::Region> path_region = std::nullopt;
   if (base_path.ends_with(us_region))
@@ -771,6 +870,11 @@ std::string GetGCIFolderPath(std::string configured_folder, ExpansionInterface::
   {
     base_path = base_path.substr(0, base_path.size() - eu_region.size());
     path_region = DiscIO::Region::PAL;
+  }
+  else if (base_path.ends_with(dv_region))
+  {
+    base_path = base_path.substr(0, base_path.size() - dv_region.size());
+    path_region = DiscIO::Region::DEV;
   }
 
   const DiscIO::Region used_region =

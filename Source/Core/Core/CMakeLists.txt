@@ -1,4 +1,63 @@
+# Generate blocklist header from blocklist.txt
+set(BLOCKLIST_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
+set(BLOCKLIST_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ChatBlocklist.h")
+
+# Create CMake script to generate the header
+set(BLOCKLIST_GENERATOR_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generate_blocklist.cmake")
+file(WRITE "${BLOCKLIST_GENERATOR_SCRIPT}" [=[
+# Read blocklist file
+file(READ ${INPUT_FILE} BLOCKLIST_CONTENT)
+string(STRIP "${BLOCKLIST_CONTENT}" BLOCKLIST_CONTENT)
+string(REPLACE "\n" ";" BLOCKLIST_LINES "${BLOCKLIST_CONTENT}")
+
+# Generate header content
+set(BLOCKLIST_HEADER_CONTENT "// Auto-generated from blocklist.txt\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}#pragma once\n\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}#include <unordered_set>\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}#include <string>\n\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}namespace NetPlay\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}{\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}inline const std::unordered_set<std::string>& GetChatBlocklist()\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}{\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}  static const std::unordered_set<std::string> blocked_words = {\n")
+
+foreach(LINE ${BLOCKLIST_LINES})
+  string(STRIP "${LINE}" STRIPPED_LINE)
+  if(NOT "${STRIPPED_LINE}" STREQUAL "")
+    set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}    \"${STRIPPED_LINE}\",\n")
+  endif()
+endforeach()
+
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}  };\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}  return blocked_words;\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}}\n")
+set(BLOCKLIST_HEADER_CONTENT "${BLOCKLIST_HEADER_CONTENT}}  // namespace NetPlay\n")
+
+# Write header file
+file(WRITE ${OUTPUT_FILE} "${BLOCKLIST_HEADER_CONTENT}")
+]=])
+
+# Generate header at configure time (for initial generation)
+execute_process(
+    COMMAND ${CMAKE_COMMAND} "-DINPUT_FILE=${BLOCKLIST_INPUT}" "-DOUTPUT_FILE=${BLOCKLIST_OUTPUT}" -P "${BLOCKLIST_GENERATOR_SCRIPT}"
+    RESULT_VARIABLE GENERATE_RESULT
+)
+
+if(GENERATE_RESULT)
+    message(WARNING "Could not generate blocklist header at configure time. It will be generated at build time.")
+endif()
+
+# Add custom command to regenerate header when blocklist.txt changes (works with all generators)
+add_custom_command(
+    OUTPUT "${BLOCKLIST_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND} "-DINPUT_FILE=${BLOCKLIST_INPUT}" "-DOUTPUT_FILE=${BLOCKLIST_OUTPUT}" -P "${BLOCKLIST_GENERATOR_SCRIPT}"
+    DEPENDS "${BLOCKLIST_INPUT}" "${BLOCKLIST_GENERATOR_SCRIPT}"
+    COMMENT "Generating ChatBlocklist.h from blocklist.txt"
+    VERBATIM
+)
+
 add_library(core
+  AchievementApprovedHash.h
   AchievementManager.cpp
   AchievementManager.h
   ActionReplay.cpp
@@ -123,8 +182,6 @@ add_library(core
   FifoPlayer/FifoPlayer.h
   FifoPlayer/FifoRecorder.cpp
   FifoPlayer/FifoRecorder.h
-  FreeLookConfig.cpp
-  FreeLookConfig.h
   FreeLookManager.cpp
   FreeLookManager.h
   GeckoCode.cpp
@@ -183,6 +240,8 @@ add_library(core
   HW/DSPLLE/DSPSymbols.h
   HW/DVD/DVDInterface.cpp
   HW/DVD/DVDInterface.h
+  HW/DVD/AMMediaboard.cpp
+  HW/DVD/AMMediaboard.h
   HW/DVD/DVDMath.cpp
   HW/DVD/DVDMath.h
   HW/DVD/DVDThread.cpp
@@ -194,8 +253,6 @@ add_library(core
   HW/EXI/BBA/XLINK_KAI_BBA.cpp
   HW/EXI/BBA/BuiltIn.cpp
   HW/EXI/BBA/BuiltIn.h
-  HW/EXI/BBA/NetPlayBBA.cpp
-  HW/EXI/BBA/NetPlayBBA.h
   HW/EXI/Modem/TAPServerModem.cpp
   HW/EXI/EXI_Channel.cpp
   HW/EXI/EXI_Channel.h
@@ -252,10 +309,18 @@ add_library(core
   HW/HSP/HSP_Device.h
   HW/HSP/HSP_DeviceARAMExpansion.cpp
   HW/HSP/HSP_DeviceARAMExpansion.h
+  HW/HSP/HSP_DeviceGBPlayer.cpp
+  HW/HSP/HSP_DeviceGBPlayer.h
   HW/HSP/HSP_DeviceNull.cpp
   HW/HSP/HSP_DeviceNull.h
   HW/HW.cpp
   HW/HW.h
+  HW/MagCard/C1231BR.cpp
+  HW/MagCard/C1231BR.h
+  HW/MagCard/C1231LR.cpp
+  HW/MagCard/C1231LR.h
+  HW/MagCard/MagneticCardReader.cpp
+  HW/MagCard/MagneticCardReader.h
   HW/Memmap.cpp
   HW/Memmap.h
   HW/MemoryInterface.cpp
@@ -278,6 +343,8 @@ add_library(core
   HW/SI/SI_DeviceGCSteeringWheel.h
   HW/SI/SI_DeviceKeyboard.cpp
   HW/SI/SI_DeviceKeyboard.h
+  HW/SI/SI_DeviceAMBaseboard.cpp
+  HW/SI/SI_DeviceAMBaseboard.h
   HW/SI/SI_DeviceNull.cpp
   HW/SI/SI_DeviceNull.h
   HW/SI/SI.cpp
@@ -288,6 +355,22 @@ add_library(core
   HW/StreamADPCM.h
   HW/SystemTimers.cpp
   HW/SystemTimers.h
+  HW/Triforce/DeckReader.cpp
+  HW/Triforce/DeckReader.h
+  HW/Triforce/FZeroAX.cpp
+  HW/Triforce/FZeroAX.h
+  HW/Triforce/ICCardReader.cpp
+  HW/Triforce/ICCardReader.h
+  HW/Triforce/IOPorts.cpp
+  HW/Triforce/IOPorts.h
+  HW/Triforce/JVSIO.cpp
+  HW/Triforce/JVSIO.h
+  HW/Triforce/MarioKartGP.cpp
+  HW/Triforce/MarioKartGP.h
+  HW/Triforce/SerialDevice.cpp
+  HW/Triforce/SerialDevice.h
+  HW/Triforce/Touchscreen.cpp
+  HW/Triforce/Touchscreen.h
   HW/VideoInterface.cpp
   HW/VideoInterface.h
   HW/WII_IPC.cpp
@@ -441,6 +524,8 @@ add_library(core
   IOS/USB/Emulated/Skylanders/SkylanderFigure.h
   IOS/USB/Emulated/WiiSpeak.cpp
   IOS/USB/Emulated/WiiSpeak.h
+  IOS/USB/Emulated/LogitechMic.cpp
+  IOS/USB/Emulated/LogitechMic.h
   IOS/USB/Host.cpp
   IOS/USB/Host.h
   IOS/USB/OH0/OH0.cpp
@@ -487,6 +572,7 @@ add_library(core
   NetPlayCommon.h
   NetPlayServer.cpp
   NetPlayServer.h
+  ${CMAKE_CURRENT_BINARY_DIR}/ChatBlocklist.h
   NetworkCaptureLogger.cpp
   NetworkCaptureLogger.h
   PatchEngine.cpp
@@ -516,6 +602,8 @@ add_library(core
   PowerPC/Interpreter/Interpreter_Tables.cpp
   PowerPC/Interpreter/Interpreter.cpp
   PowerPC/Interpreter/Interpreter.h
+  PowerPC/JitCommon/ConstantPropagation.cpp
+  PowerPC/JitCommon/ConstantPropagation.h
   PowerPC/JitCommon/DivUtils.cpp
   PowerPC/JitCommon/DivUtils.h
   PowerPC/JitCommon/JitAsmCommon.cpp
@@ -646,6 +734,8 @@ elseif(_M_ARM_64)
   )
 endif()
 
+target_include_directories(core PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 target_link_libraries(core
 PUBLIC
   audiocommon
@@ -656,7 +746,6 @@ PUBLIC
   inputcommon
   MbedTLS::mbedtls
   pugixml
-  RangeSet::RangeSet
   sfml-network
   videonull
   videoogl
@@ -763,7 +852,7 @@ elseif(UNIX)
 endif()
 
 # Bluez doesn't support all the communication modes on FreeBSD, so only using it on Linux
-if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+if(LINUX)
   option(ENABLE_BLUEZ "Enables bluetooth support" ON)
   if(ENABLE_BLUEZ)
     find_package(BlueZ)
@@ -805,7 +894,7 @@ if(UNIX)
   )
 endif()
 
-if(WIN32 OR LINUX)
+if(TARGET cpp-ipc::ipc)
   target_sources(core PRIVATE HW/EXI/BBA/IPC.cpp)
   target_link_libraries(core PRIVATE cpp-ipc::ipc)
 elseif(NOT ANDROID)

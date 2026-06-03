@@ -6,13 +6,12 @@
 
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QString>
 #include <QVBoxLayout>
 
 #include "Core/AchievementManager.h"
 #include "Core/Config/AchievementSettings.h"
-#include "Core/Config/FreeLookSettings.h"
-#include "Core/Config/MainSettings.h"
 #include "Core/Config/UISettings.h"
 #include "Core/Core.h"
 #include "Core/Movie.h"
@@ -22,7 +21,6 @@
 #include "DolphinQt/Config/ControllerInterface/ControllerInterfaceWindow.h"
 #include "DolphinQt/Config/ToolTipControls/ToolTipCheckBox.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
-#include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
 #include "DolphinQt/QtUtils/SignalBlocking.h"
 #include "DolphinQt/Settings.h"
 
@@ -42,6 +40,10 @@ void AchievementSettingsWidget::UpdateData(int login_failed_code)
   {
     switch (login_failed_code)
     {
+    case RC_LOGIN_REQUIRED:
+    case RC_EXPIRED_TOKEN:
+      m_common_login_failed->setText(tr("Logged Out - Credentials Expired"));
+      break;
     case RC_INVALID_CREDENTIALS:
       m_common_login_failed->setText(tr("Login Failed - Invalid Username/Password"));
       break;

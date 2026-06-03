@@ -6,8 +6,6 @@
 #include <memory>
 
 #include "Common/CommonTypes.h"
-#include "Common/Logging/Log.h"
-#include "Common/MsgHandler.h"
 #include "Core/HW/EXI/EXI_DeviceAD16.h"
 #include "Core/HW/EXI/EXI_DeviceAGP.h"
 #include "Core/HW/EXI/EXI_DeviceBaseboard.h"
@@ -22,6 +20,8 @@
 
 #ifdef HAVE_CUBEB
 #include "Core/HW/EXI/EXI_DeviceMic.h"
+#else
+#include "Common/MsgHandler.h"
 #endif
 
 namespace ExpansionInterface
@@ -166,11 +166,6 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
 
   case EXIDeviceType::EthernetIPC:
     result = std::make_unique<CEXIETHERNET>(system, BBADeviceType::IPC);
-    break;
-
-  case EXIDeviceType::EthernetNetPlay:
-    INFO_LOG_FMT(SP1, "Creating BuiltIn BBA device for NetPlay (EthernetNetPlay) on channel {}", channel_num);
-    result = std::make_unique<CEXIETHERNET>(system, BBADeviceType::BuiltIn);
     break;
 
   case EXIDeviceType::ModemTapServer:

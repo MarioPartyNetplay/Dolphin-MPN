@@ -4,12 +4,9 @@
 #include "Core/HW/SI/SI_DeviceGCSteeringWheel.h"
 
 #include <algorithm>
-#include <cmath>
-#include <cstring>
 
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
-#include "Common/Swap.h"
 #include "Core/HW/GCPad.h"
 
 namespace SerialInterface
@@ -34,9 +31,7 @@ int CSIDevice_GCSteeringWheel::RunBuffer(u8* buffer, int request_length)
   case EBufferCommands::CMD_STATUS:
   case EBufferCommands::CMD_RESET:
   {
-    const u32 id = Common::swap32(SI_GC_STEERING);
-    std::memcpy(buffer, &id, sizeof(id));
-    return sizeof(id);
+    return CreateStatusResponse(SI_GC_STEERING, buffer);
   }
   default:
     return CSIDevice_GCController::RunBuffer(buffer, request_length);
@@ -79,7 +74,7 @@ DataResponse CSIDevice_GCSteeringWheel::GetData(u32& hi, u32& low)
                                      GCPadStatus::MAIN_STICK_CENTER_Y - pad_status.stickY);
 
     // We must double these values because we are mapping half of a stick range to a 0..255 value.
-    // We're only getting half the precison we could potentially have,
+    // We're only getting half the precision we could potentially have,
     // but we'll have to redesign our GameCube controller input to fix that.
 
     // All 8 bits (Accelerate)

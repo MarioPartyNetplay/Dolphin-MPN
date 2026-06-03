@@ -45,10 +45,17 @@ public:
   CPUCoreBase* InitJitCore(PowerPC::CPUCore core);
   CPUCoreBase* GetCore() const;
 
+#ifdef _ARCH_32
+  constexpr bool WantsPageTableMappings() const { return false; }
+#else
+  bool WantsPageTableMappings() const;
+#endif
+
   void UpdateMembase();
   void JitBlockLogDump(const Core::CPUThreadGuard& guard, std::FILE* file) const;
   void WipeBlockProfilingData(const Core::CPUThreadGuard& guard);
-  void RunOnBlocks(const Core::CPUThreadGuard& guard, std::function<void(const JitBlock&)> f) const;
+  void RunOnBlocks(const Core::CPUThreadGuard& guard,
+                   const std::function<void(const JitBlock&)>& f) const;
   std::size_t GetBlockCount() const;
 
   // Memory Utilities

@@ -182,7 +182,7 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
   this->ProcessDeviceQueue();
 }
 
-void ControllerInterface::PlatformPopulateDevices(std::function<void()> callback)
+void ControllerInterface::PlatformPopulateDevices(const std::function<void()>& callback)
 {
   if (!m_is_init)
     return;
@@ -405,7 +405,7 @@ void ControllerInterface::RemoveDevice(std::function<bool(const ciface::Core::De
   this->ProcessDeviceQueue();
 }
 
-// Update input for all devices if lock can be acquired without waiting.
+// Update input for all devices.
 void ControllerInterface::UpdateInput()
 {
   // This should never happen
@@ -423,13 +423,7 @@ void ControllerInterface::UpdateInput()
   std::vector<std::weak_ptr<ciface::Core::Device>> devices_to_remove;
 
   {
-    // TODO: if we are an emulation input channel, we should probably always lock.
-    // Prefer outdated values over blocking UI or CPU thread (this avoids short but noticeable frame
-    // drops)
-    if (!m_devices_mutex.try_lock())
-      return;
-
-    std::lock_guard lk_devices(m_devices_mutex, std::adopt_lock);
+    std::lock_guard lk_devices(m_devices_mutex);
 
     tls_is_updating_devices = true;
 
@@ -523,37 +517,20 @@ bool ControllerInterface::IsMouseCenteringRequested() const
 // Register a callback to be called when a device is added or removed (as from the input backends'
 // hotplug thread), or when devices are refreshed
 // Returns a handle for later removing the callback.
-ControllerInterface::HotplugCallbackHandle
-ControllerInterface::RegisterDevicesChangedCallback(std::function<void()> callback)
+Common::EventHook
+ControllerInterface::RegisterDevicesChangedCallback(Common::HookableEvent<>::CallbackType callback)
 {
-  std::lock_guard lk(m_callbacks_mutex);
-  m_devices_changed_callbacks.emplace_back(std::move(callback));
-  
-  // Process any queued device operations after registering callback
+  // Process any queued device operations before registering callback
   this->ProcessDeviceQueue();
   
-  return std::prev(m_devices_changed_callbacks.end());
-}
-
-// Unregister a device callback.
-void ControllerInterface::UnregisterDevicesChangedCallback(const HotplugCallbackHandle& handle)
-{
-  std::lock_guard lk(m_callbacks_mutex);
-  m_devices_changed_callbacks.erase(handle);
-  
-  // Process any queued device operations after unregistering callback
-  this->ProcessDeviceQueue();
+  return m_devices_changed_event.Register(std::move(callback));
 }
 
 // Invoke all callbacks that were registered
-void ControllerInterface::InvokeDevicesChangedCallbacks() const
+void ControllerInterface::InvokeDevicesChangedCallbacks()
 {
-  m_callbacks_mutex.lock();
-  const auto devices_changed_callbacks = m_devices_changed_callbacks;
-  m_callbacks_mutex.unlock();
-  for (const auto& callback : devices_changed_callbacks)
-    callback();
-    
-  // Process any queued device operations after callbacks
-  const_cast<ControllerInterface*>(this)->ProcessDeviceQueue();
+  // Process any queued device operations before invoking callbacks
+  this->ProcessDeviceQueue();
+  
+  m_devices_changed_event.Trigger();
 }

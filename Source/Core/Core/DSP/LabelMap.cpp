@@ -7,7 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "Common/Logging/Log.h"
+#include <fmt/format.h>
+
 #include "Core/DSP/DSPTables.h"
 
 namespace DSP

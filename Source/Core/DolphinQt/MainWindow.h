@@ -31,6 +31,7 @@ class CodeWidget;
 class DiscordHandler;
 class DragEnterEvent;
 class FreeLookWindow;
+class GameCount;
 class GameList;
 class GBATASInputWindow;
 class GCTASInputWindow;
@@ -56,6 +57,7 @@ class ToolBar;
 class WatchWidget;
 class WiiTASInputWindow;
 class WiiSpeakWindow;
+class LogitechMicWindow;
 struct WindowSystemInfo;
 class ControllersPane;
 
@@ -85,7 +87,8 @@ class MainWindow final : public QMainWindow
 
 public:
   explicit MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
-                      const std::string& movie_path);
+                      const std::string& movie_path, const bool netplay_join,
+                      const std::optional<UICommon::GameFile> netplay_host);
   ~MainWindow() override;
 
   WindowSystemInfo GetWindowSystemInfo() const;
@@ -93,6 +96,7 @@ public:
   bool eventFilter(QObject* object, QEvent* event) override;
   QMenu* createPopupMenu() override;
 
+  void ShowTriforceWindow();
   void CheckForUpdatesAuto();
 
 signals:
@@ -183,6 +187,7 @@ private:
   void ShowSkylanderPortal();
   void ShowInfinityBase();
   void ShowWiiSpeakWindow();
+  void ShowLogitechMicWindow();
   void ShowMemcardManager();
   void ShowResourcePackManager();
   void ShowCheatsManager();
@@ -214,11 +219,14 @@ private:
   void OnActivateChat();
   void OnRequestGolfControl();
   void ShowTASInput();
+  void ShowOSDWindow();
 
   void ChangeDisc();
   void EjectDisc();
 
   void OpenUserFolder();
+  void OpenConfigFolder();
+  void OpenCacheFolder();
 
   QStringList PromptFileNames();
 
@@ -241,6 +249,7 @@ private:
   MenuBar* m_menu_bar;
   SearchBar* m_search_bar;
   GameList* m_game_list;
+  GameCount* m_game_count;
   RenderWidget* m_render_widget = nullptr;
   bool m_rendering_to_main;
   bool m_stop_confirm_showing = false;
@@ -259,6 +268,7 @@ private:
   SkylanderPortalWindow* m_skylander_window = nullptr;
   InfinityBaseWindow* m_infinity_window = nullptr;
   WiiSpeakWindow* m_wii_speak_window = nullptr;
+  LogitechMicWindow* m_logitech_mic_window = nullptr;
   MappingWindow* m_hotkey_window = nullptr;
   FreeLookWindow* m_freelook_window = nullptr;
   HotkeyScheduler* m_hotkey_scheduler;

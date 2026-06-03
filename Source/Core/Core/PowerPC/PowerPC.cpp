@@ -4,10 +4,9 @@
 #include "Core/PowerPC/PowerPC.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstring>
-#include <type_traits>
-#include <vector>
 
 #include "Common/Assert.h"
 #include "Common/ChunkFile.h"
@@ -78,6 +77,8 @@ void PowerPCManager::DoState(PointerWrap& p)
   // *((u64 *)&TL(m_ppc_state)) = SystemTimers::GetFakeTimeBase(); //works since we are little
   // endian and TL comes first :)
 
+  const std::array<u32, 16> old_sr = m_ppc_state.sr;
+
   p.DoArray(m_ppc_state.gpr);
   p.Do(m_ppc_state.pc);
   p.Do(m_ppc_state.npc);
@@ -94,7 +95,8 @@ void PowerPCManager::DoState(PointerWrap& p)
   p.DoArray(m_ppc_state.spr);
   p.DoArray(m_ppc_state.tlb);
   p.Do(m_ppc_state.pagetable_base);
-  p.Do(m_ppc_state.pagetable_hashmask);
+  p.Do(m_ppc_state.pagetable_mask);
+  p.Do(m_ppc_state.pagetable_update_pending);
 
   p.Do(m_ppc_state.reserve);
   p.Do(m_ppc_state.reserve_address);
@@ -102,8 +104,11 @@ void PowerPCManager::DoState(PointerWrap& p)
   m_ppc_state.iCache.DoState(p);
   m_ppc_state.dCache.DoState(p);
 
+  auto& mmu = m_system.GetMMU();
   if (p.IsReadMode())
   {
+    mmu.DoState(p, old_sr != m_ppc_state.sr);
+
     if (!m_ppc_state.m_enable_dcache)
     {
       INFO_LOG_FMT(POWERPC, "Flushing data cache");
@@ -113,9 +118,12 @@ void PowerPCManager::DoState(PointerWrap& p)
     RoundingModeUpdated(m_ppc_state);
     RecalculateAllFeatureFlags(m_ppc_state);
 
-    auto& mmu = m_system.GetMMU();
     mmu.IBATUpdated();
     mmu.DBATUpdated();
+  }
+  else
+  {
+    mmu.DoState(p, false);
   }
 
   // SystemTimers::DecrementerSet();
@@ -272,12 +280,14 @@ void PowerPCManager::Init(CPUCore cpu_core)
 void PowerPCManager::Reset()
 {
   m_ppc_state.pagetable_base = 0;
-  m_ppc_state.pagetable_hashmask = 0;
+  m_ppc_state.pagetable_mask = 0;
+  m_ppc_state.pagetable_update_pending = false;
   m_ppc_state.tlb = {};
 
   ResetRegisters();
   m_ppc_state.iCache.Reset();
   m_ppc_state.dCache.Reset();
+  m_system.GetMMU().Reset();
 }
 
 void PowerPCManager::ScheduleInvalidateCacheThreadSafe(u32 address)
@@ -562,71 +572,67 @@ void PowerPCManager::CheckExceptions()
     return;
   }
 
-  m_system.GetJitInterface().UpdateMembase();
-  MSRUpdated(m_ppc_state);
+  MSRUpdated();
 }
 
 void PowerPCManager::CheckExternalExceptions()
 {
-  u32 exceptions = m_ppc_state.Exceptions;
+  const u32 exceptions = m_ppc_state.Exceptions;
 
   // EXTERNAL INTERRUPT
   // Handling is delayed until MSR.EE=1.
-  if (exceptions && m_ppc_state.msr.EE)
+  if (exceptions == 0 || !m_ppc_state.msr.EE)
+    return;
+
+  u32 exception_vector = 0;
+
+  if (exceptions & EXCEPTION_EXTERNAL_INT)
   {
-    if (exceptions & EXCEPTION_EXTERNAL_INT)
-    {
-      // Pokemon gets this "too early", it hasn't a handler yet
-      SRR0(m_ppc_state) = m_ppc_state.npc;
-      SRR1(m_ppc_state) = m_ppc_state.msr.Hex & 0x87C0FFFF;
-      m_ppc_state.msr.LE = m_ppc_state.msr.ILE;
-      m_ppc_state.msr.Hex &= ~0x04EF36;
-      m_ppc_state.pc = m_ppc_state.npc = 0x00000500;
+    // Pokemon gets this "too early", it hasn't a handler yet
 
-      DEBUG_LOG_FMT(POWERPC, "EXCEPTION_EXTERNAL_INT");
-      m_ppc_state.Exceptions &= ~EXCEPTION_EXTERNAL_INT;
+    DEBUG_LOG_FMT(POWERPC, "EXCEPTION_EXTERNAL_INT");
+    DEBUG_ASSERT_MSG(POWERPC, m_ppc_state.msr.RI, "EXTERNAL_INT unrecoverable???");
 
-      DEBUG_ASSERT_MSG(POWERPC, (SRR1(m_ppc_state) & 0x02) != 0, "EXTERNAL_INT unrecoverable???");
-    }
-    else if (exceptions & EXCEPTION_PERFORMANCE_MONITOR)
-    {
-      SRR0(m_ppc_state) = m_ppc_state.npc;
-      SRR1(m_ppc_state) = m_ppc_state.msr.Hex & 0x87C0FFFF;
-      m_ppc_state.msr.LE = m_ppc_state.msr.ILE;
-      m_ppc_state.msr.Hex &= ~0x04EF36;
-      m_ppc_state.pc = m_ppc_state.npc = 0x00000F00;
+    exception_vector = 0x00000500;
+    m_ppc_state.Exceptions &= ~EXCEPTION_EXTERNAL_INT;
+  }
+  else if (exceptions & EXCEPTION_PERFORMANCE_MONITOR)
+  {
+    DEBUG_LOG_FMT(POWERPC, "EXCEPTION_PERFORMANCE_MONITOR");
 
-      DEBUG_LOG_FMT(POWERPC, "EXCEPTION_PERFORMANCE_MONITOR");
-      m_ppc_state.Exceptions &= ~EXCEPTION_PERFORMANCE_MONITOR;
-    }
-    else if (exceptions & EXCEPTION_DECREMENTER)
-    {
-      SRR0(m_ppc_state) = m_ppc_state.npc;
-      SRR1(m_ppc_state) = m_ppc_state.msr.Hex & 0x87C0FFFF;
-      m_ppc_state.msr.LE = m_ppc_state.msr.ILE;
-      m_ppc_state.msr.Hex &= ~0x04EF36;
-      m_ppc_state.pc = m_ppc_state.npc = 0x00000900;
+    exception_vector = 0x00000F00;
+    m_ppc_state.Exceptions &= ~EXCEPTION_PERFORMANCE_MONITOR;
+  }
+  else if (exceptions & EXCEPTION_DECREMENTER)
+  {
+    DEBUG_LOG_FMT(POWERPC, "EXCEPTION_DECREMENTER");
 
-      DEBUG_LOG_FMT(POWERPC, "EXCEPTION_DECREMENTER");
-      m_ppc_state.Exceptions &= ~EXCEPTION_DECREMENTER;
-    }
-    else
-    {
-      DEBUG_ASSERT_MSG(POWERPC, 0, "Unknown EXT interrupt: Exceptions == {:08x}", exceptions);
-      ERROR_LOG_FMT(POWERPC, "Unknown EXTERNAL INTERRUPT exception: Exceptions == {:08x}",
-                    exceptions);
-    }
-    MSRUpdated(m_ppc_state);
+    exception_vector = 0x00000900;
+    m_ppc_state.Exceptions &= ~EXCEPTION_DECREMENTER;
+  }
+  else
+  {
+    DEBUG_ASSERT_MSG(POWERPC, 0, "Unknown EXT interrupt: Exceptions == {:08x}", exceptions);
+    ERROR_LOG_FMT(POWERPC, "Unknown EXTERNAL INTERRUPT exception: Exceptions == {:08x}",
+                  exceptions);
+    return;
   }
 
-  m_system.GetJitInterface().UpdateMembase();
+  SRR0(m_ppc_state) = m_ppc_state.npc;
+  SRR1(m_ppc_state) = m_ppc_state.msr.Hex & 0x87C0FFFF;
+  m_ppc_state.msr.LE = m_ppc_state.msr.ILE;
+  m_ppc_state.msr.Hex &= ~0x04EF36;
+  m_ppc_state.pc = m_ppc_state.npc = exception_vector;
+
+  MSRUpdated();
 }
 
 bool PowerPCManager::CheckBreakPoints()
 {
   const TBreakPoint* bp = m_breakpoints.GetBreakpoint(m_ppc_state.pc);
 
-  if (!bp || !bp->is_enabled || !EvaluateCondition(m_system, bp->condition))
+  if (!m_breakpoints.IsBreakingEnabled() || !bp || !bp->is_enabled ||
+      !EvaluateCondition(m_system, bp->condition))
     return false;
 
   if (bp->log_on_hit)
@@ -656,10 +662,20 @@ bool PowerPCManager::CheckAndHandleBreakPoints()
   return false;
 }
 
-void PowerPCState::SetSR(u32 index, u32 value)
+void PowerPCManager::MSRUpdated()
 {
-  DEBUG_LOG_FMT(POWERPC, "{:08x}: MMU: Segment register {} set to {:08x}", pc, index, value);
-  sr[index] = value;
+  static_assert(UReg_MSR{}.DR.StartBit() == 4);
+  static_assert(UReg_MSR{}.IR.StartBit() == 5);
+  static_assert(FEATURE_FLAG_MSR_DR == 1 << 0);
+  static_assert(FEATURE_FLAG_MSR_IR == 1 << 1);
+
+  m_ppc_state.feature_flags = static_cast<CPUEmuFeatureFlags>(
+      (m_ppc_state.feature_flags & FEATURE_FLAG_PERFMON) | ((m_ppc_state.msr.Hex >> 4) & 0x3));
+
+  if (m_ppc_state.msr.DR && m_ppc_state.pagetable_update_pending)
+    m_system.GetMMU().PageTableUpdated();
+
+  m_system.GetJitInterface().UpdateMembase();
 }
 
 // FPSCR update functions
@@ -680,17 +696,6 @@ void RoundingModeUpdated(PowerPCState& ppc_state)
   ASSERT(Core::IsCPUThread());
 
   Common::FPU::SetSIMDMode(ppc_state.fpscr.RN, ppc_state.fpscr.NI);
-}
-
-void MSRUpdated(PowerPCState& ppc_state)
-{
-  static_assert(UReg_MSR{}.DR.StartBit() == 4);
-  static_assert(UReg_MSR{}.IR.StartBit() == 5);
-  static_assert(FEATURE_FLAG_MSR_DR == 1 << 0);
-  static_assert(FEATURE_FLAG_MSR_IR == 1 << 1);
-
-  ppc_state.feature_flags = static_cast<CPUEmuFeatureFlags>(
-      (ppc_state.feature_flags & FEATURE_FLAG_PERFMON) | ((ppc_state.msr.Hex >> 4) & 0x3));
 }
 
 void MMCRUpdated(PowerPCState& ppc_state)

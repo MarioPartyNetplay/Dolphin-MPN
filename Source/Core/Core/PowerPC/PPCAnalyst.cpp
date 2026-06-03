@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <map>
-#include <queue>
 #include <string>
 #include <vector>
 
@@ -14,8 +13,6 @@
 #include "Common/Assert.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
-#include "Common/StringUtil.h"
-#include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/HLE/HLE.h"
@@ -852,7 +849,8 @@ u32 PPCAnalyzer::Analyze(u32 address, CodeBlock* block, CodeBuffer* buffer,
     code[i].inst = inst;
     code[i].skip = false;
     block->m_stats->numCycles += opinfo->num_cycles;
-    block->m_physical_addresses.insert(result.physical_address);
+    block->m_physical_addresses.insert(result.physical_address,
+                                       result.physical_address + sizeof(UGeckoInstruction));
 
     SetInstructionStats(block, &code[i], opinfo);
 

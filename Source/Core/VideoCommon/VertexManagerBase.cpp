@@ -36,7 +36,6 @@
 #include "VideoCommon/PixelShaderManager.h"
 #include "VideoCommon/Statistics.h"
 #include "VideoCommon/TextureCacheBase.h"
-#include "VideoCommon/TextureInfo.h"
 #include "VideoCommon/VertexLoaderManager.h"
 #include "VideoCommon/VertexShaderManager.h"
 #include "VideoCommon/VideoBackendBase.h"
@@ -118,11 +117,12 @@ VertexManagerBase::~VertexManagerBase() = default;
 
 bool VertexManagerBase::Initialize()
 {
+  auto& video_events = GetVideoEvents();
+
   m_frame_end_event =
-      AfterFrameEvent::Register([this](Core::System&) { OnEndFrame(); }, "VertexManagerBase");
-  m_after_present_event = AfterPresentEvent::Register(
-      [this](const PresentInfo& pi) { m_ticks_elapsed = pi.emulated_timestamp; },
-      "VertexManagerBase");
+      video_events.after_frame_event.Register([this](Core::System&) { OnEndFrame(); });
+  m_after_present_event = video_events.after_present_event.Register(
+      [this](const PresentInfo& pi) { m_ticks_elapsed = pi.emulated_timestamp; });
   m_index_generator.Init();
   m_custom_shader_cache = std::make_unique<CustomShaderCache>();
   m_cpu_cull.Init();
@@ -442,7 +442,7 @@ void VertexManagerBase::Flush()
   if (m_draw_counter == 0)
   {
     // This is more or less the start of the Frame
-    BeforeFrameEvent::Trigger();
+    GetVideoEvents().before_frame_event.Trigger();
   }
 
   if (xfmem.numTexGen.numTexGens != bpmem.genMode.numtexgens ||
@@ -568,7 +568,7 @@ void VertexManagerBase::Flush()
     {
       for (const u32 i : used_textures)
       {
-        const auto cache_entry = g_texture_cache->Load(TextureInfo::FromStage(i));
+        const auto cache_entry = g_texture_cache->Load(i);
         if (!cache_entry)
           continue;
         const float custom_tex_scale = cache_entry->GetWidth() / float(cache_entry->native_width);
@@ -580,7 +580,7 @@ void VertexManagerBase::Flush()
     {
       for (const u32 i : used_textures)
       {
-        const auto cache_entry = g_texture_cache->Load(TextureInfo::FromStage(i));
+        const auto cache_entry = g_texture_cache->Load(i);
         if (cache_entry)
         {
           if (!Common::Contains(texture_names, cache_entry->texture_info_name))
@@ -964,7 +964,7 @@ void VertexManagerBase::OnDraw()
 
 void VertexManagerBase::OnCPUEFBAccess()
 {
-  // Check this isn't another access without any draws inbetween.
+  // Check this isn't another access without any draws in between.
   if (!m_cpu_accesses_this_frame.empty() && m_cpu_accesses_this_frame.back() == m_draw_counter)
     return;
 

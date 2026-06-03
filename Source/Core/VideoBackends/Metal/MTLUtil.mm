@@ -13,6 +13,7 @@
 
 #include "VideoCommon/Constants.h"
 #include "VideoCommon/DriverDetails.h"
+#include "VideoCommon/ShaderCompileUtils.h"
 #include "VideoCommon/Spirv.h"
 
 Metal::DeviceFeatures Metal::g_features;
@@ -244,17 +245,15 @@ void Metal::Util::PopulateBackendInfoFeatures(const VideoConfig& config, Backend
   // Initialize DriverDetails first so we can use it later
   DriverDetails::Vendor vendor = DriverDetails::VENDOR_UNKNOWN;
   std::string name = [[device name] UTF8String];
-  if (name.find("NVIDIA") != std::string::npos)
+  if (name.contains("NVIDIA"))
     vendor = DriverDetails::VENDOR_NVIDIA;
-  else if (name.find("AMD") != std::string::npos)
+  else if (name.contains("AMD"))
     vendor = DriverDetails::VENDOR_ATI;
-  else if (name.find("Intel") != std::string::npos)
+  else if (name.contains("Intel"))
     vendor = DriverDetails::VENDOR_INTEL;
-  else if (name.find("Apple") != std::string::npos)
+  else if (name.contains("Apple"))
     vendor = DriverDetails::VENDOR_APPLE;
-  const NSOperatingSystemVersion cocoa_ver = [[NSProcessInfo processInfo] operatingSystemVersion];
-  double version = cocoa_ver.majorVersion * 100 + cocoa_ver.minorVersion;
-  DriverDetails::Init(DriverDetails::API_METAL, vendor, DriverDetails::DRIVER_APPLE, version,
+  DriverDetails::Init(DriverDetails::API_METAL, vendor, DriverDetails::DRIVER_APPLE, 0.0,
                       DriverDetails::Family::UNKNOWN, std::move(name));
 
 #if TARGET_OS_OSX
@@ -490,8 +489,9 @@ MakeResourceBinding(spv::ExecutionModel stage, u32 set, u32 binding,  //
   return resource;
 }
 
-std::optional<std::string> Metal::Util::TranslateShaderToMSL(ShaderStage stage,
-                                                             std::string_view source)
+std::optional<std::string>
+Metal::Util::TranslateShaderToMSL(ShaderStage stage, std::string_view source,
+                                  VideoCommon::ShaderIncluder* shader_includer)
 {
   std::string full_source;
 
@@ -514,16 +514,19 @@ std::optional<std::string> Metal::Util::TranslateShaderToMSL(ShaderStage stage,
   switch (stage)
   {
   case ShaderStage::Vertex:
-    code = SPIRV::CompileVertexShader(full_source, APIType::Metal, glslang::EShTargetSpv_1_5);
+    code = SPIRV::CompileVertexShader(full_source, APIType::Metal, glslang::EShTargetSpv_1_5,
+                                      shader_includer);
     break;
   case ShaderStage::Geometry:
     PanicAlertFmt("Tried to compile geometry shader for Metal, but Metal doesn't support them!");
     break;
   case ShaderStage::Pixel:
-    code = SPIRV::CompileFragmentShader(full_source, APIType::Metal, glslang::EShTargetSpv_1_5);
+    code = SPIRV::CompileFragmentShader(full_source, APIType::Metal, glslang::EShTargetSpv_1_5,
+                                        shader_includer);
     break;
   case ShaderStage::Compute:
-    code = SPIRV::CompileComputeShader(full_source, APIType::Metal, glslang::EShTargetSpv_1_5);
+    code = SPIRV::CompileComputeShader(full_source, APIType::Metal, glslang::EShTargetSpv_1_5,
+                                       shader_includer);
     break;
   }
   if (!code.has_value())

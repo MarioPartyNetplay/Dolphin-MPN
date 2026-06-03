@@ -62,6 +62,8 @@ signals:
   void ChangeDisc();
   void EjectDisc();
   void OpenUserFolder();
+  void OpenConfigFolder();
+  void OpenCacheFolder();
 
   // Emulation
   void Play();
@@ -99,6 +101,7 @@ signals:
   void ShowSkylanderPortal();
   void ShowInfinityBase();
   void ShowWiiSpeakWindow();
+  void ShowLogitechMicWindow();
   void ConnectWiiRemote(int id);
 
 #ifdef USE_RETRO_ACHIEVEMENTS
@@ -129,9 +132,11 @@ signals:
   void ExportRecording();
   void ShowTASInput();
 
-  void SelectionChanged(std::shared_ptr<const UICommon::GameFile> game_file);
+  void SelectionChanged(const std::shared_ptr<const UICommon::GameFile>& game_file);
   void RecordingStatusChanged(bool recording);
   void ReadOnlyModeChanged(bool read_only);
+
+  void ConfigureOSD();
 
 private:
   void OnEmulationStateChanged(Core::State state);
@@ -191,7 +196,7 @@ private:
   void LogInstructions();
   void SearchInstruction();
 
-  void OnSelectionChanged(std::shared_ptr<const UICommon::GameFile> game_file);
+  void OnSelectionChanged(const std::shared_ptr<const UICommon::GameFile>& game_file);
   void OnRecordingStatusChanged(bool recording);
   void OnReadOnlyModeChanged(bool read_only);
   void OnDebugModeToggled(bool enabled);
@@ -209,6 +214,8 @@ private:
   QAction* m_eject_disc;
   QMenu* m_backup_menu;
   QAction* m_open_user_folder;
+  QAction* m_open_config_folder;
+  QAction* m_open_cache_folder;
 
   // Tools
   QAction* m_wad_install_action;
@@ -221,6 +228,7 @@ private:
   QAction* m_ntscj_ipl;
   QAction* m_ntscu_ipl;
   QAction* m_pal_ipl;
+  QAction* m_dev_ipl;
   QMenu* m_manage_nand_menu;
   QAction* m_import_backup;
   QAction* m_check_nand;
@@ -252,6 +260,7 @@ private:
   QAction* m_recording_start;
   QAction* m_recording_stop;
   QAction* m_recording_read_only;
+  QAction* m_movie_window;
 
   // Options
   QAction* m_boot_to_pause;
@@ -280,6 +289,7 @@ private:
   QAction* m_jit_block_linking;
   QAction* m_jit_disable_cache;
   QAction* m_jit_disable_fastmem;
+  QAction* m_jit_disable_page_table_fastmem;
   QAction* m_jit_disable_fastmem_arena;
   QAction* m_jit_disable_large_entry_points_map;
   QAction* m_jit_clear_cache;

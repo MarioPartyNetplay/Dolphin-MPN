@@ -3,13 +3,10 @@
 
 #include "Core/HW/SI/SI_DeviceGCController.h"
 
-#include <cstring>
-
 #include "Common/ChunkFile.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
-#include "Common/Swap.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/CoreTiming.h"
 #include "Core/HW/GCPad.h"
@@ -57,9 +54,7 @@ int CSIDevice_GCController::RunBuffer(u8* buffer, int request_length)
   case EBufferCommands::CMD_STATUS:
   case EBufferCommands::CMD_RESET:
   {
-    const u32 id = Common::swap32(SI_GC_CONTROLLER);
-    std::memcpy(buffer, &id, sizeof(id));
-    return sizeof(id);
+    return CreateStatusResponse(SI_GC_CONTROLLER, buffer);
   }
 
   case EBufferCommands::CMD_DIRECT:
@@ -101,7 +96,7 @@ int CSIDevice_GCController::RunBuffer(u8* buffer, int request_length)
   }
 
   // GameID packet, no response needed, nothing to do
-  // On real hardware, this is used to configure the BlueRetro controler
+  // On real hardware, this is used to configure the BlueRetro controller
   // adapter, while licensed accessories ignore this command.
   case EBufferCommands::CMD_SET_GAME_ID:
   {

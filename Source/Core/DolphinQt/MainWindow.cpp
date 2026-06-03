@@ -25,6 +25,7 @@
 
 #include <future>
 #include <optional>
+#include <utility>
 #include <variant>
 
 #if defined(__unix__) || defined(__unix) || defined(__APPLE__)
@@ -39,6 +40,7 @@
 
 #include "Common/Config/Config.h"
 #include "Common/HttpRequest.h"
+#include "Common/FileUtil.h"
 #include "Common/ScopeGuard.h"
 #include "Common/Version.h"
 #include "Common/WindowSystemInfo.h"
@@ -48,7 +50,6 @@
 #include "Core/BootManager.h"
 #include "Core/CommonTitles.h"
 #include "Core/Config/AchievementSettings.h"
-#include "Core/Config/FreeLookSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Config/UISettings.h"
@@ -62,10 +63,8 @@
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/HW/Wiimote.h"
-#include "Core/HW/WiimoteEmu/WiimoteEmu.h"
 #include "Core/HotkeyManager.h"
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
-#include "Core/IOS/USB/Bluetooth/WiimoteDevice.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayClient.h"
 #include "Core/NetPlayProto.h"
@@ -99,9 +98,11 @@
 #include "DolphinQt/Debugger/ThreadWidget.h"
 #include "DolphinQt/Debugger/WatchWidget.h"
 #include "DolphinQt/DiscordHandler.h"
+#include "DolphinQt/EmulatedUSB/LogitechMicWindow.h"
 #include "DolphinQt/EmulatedUSB/WiiSpeakWindow.h"
 #include "DolphinQt/FIFO/FIFOPlayerWindow.h"
 #include "DolphinQt/GCMemcardManager.h"
+#include "DolphinQt/GameCount.h"
 #include "DolphinQt/GameList/GameList.h"
 #include "DolphinQt/Host.h"
 #include "DolphinQt/HotkeyScheduler.h"
@@ -133,19 +134,14 @@
 #include "DolphinQt/ToolBar.h"
 #include "DolphinQt/WiiUpdate.h"
 
-#include "InputCommon/ControllerInterface/ControllerInterface.h"
-#include "InputCommon/GCAdapter.h"
-
 #include "UICommon/DiscordPresence.h"
 #include "UICommon/GameFile.h"
 #include "UICommon/ResourcePack/Manager.h"
-#include "UICommon/ResourcePack/Manifest.h"
 #include "UICommon/ResourcePack/ResourcePack.h"
 
 #include "UICommon/UICommon.h"
 
 #include "VideoCommon/NetPlayChatUI.h"
-#include "VideoCommon/VideoConfig.h"
 
 #ifdef HAVE_XRANDR
 #include "UICommon/X11Utils.h"
@@ -164,7 +160,7 @@ static void InstallSignalHandler()
   struct sigaction sa;
   sa.sa_handler = &SignalDaemon::HandleInterrupt;
   sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESETHAND;
+  sa.sa_flags = SA_RESTART | SA_RESETHAND;
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
 }
@@ -214,7 +210,7 @@ static WindowSystemInfo GetWindowSystemInfo(QWindow* window)
   return wsi;
 }
 
-static std::vector<std::string> StringListToStdVector(QStringList list)
+static std::vector<std::string> StringListToStdVector(const QStringList& list)
 {
   std::vector<std::string> result;
   result.reserve(list.size());
@@ -226,7 +222,8 @@ static std::vector<std::string> StringListToStdVector(QStringList list)
 }
 
 MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
-                       const std::string& movie_path)
+                       const std::string& movie_path, const bool netplay_join,
+                       const std::optional<UICommon::GameFile> netplay_host)
     : QMainWindow(nullptr), m_system(system)
 {
   setWindowTitle(QString::fromStdString(Common::GetScmRevStr()));
@@ -338,7 +335,15 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
 
   Host::GetInstance()->SetMainWindowHandle(reinterpret_cast<void*>(winId()));
 
-  if (m_pending_boot != nullptr)
+  if (netplay_join)
+  {
+    NetPlayJoin();
+  }
+  else if (netplay_host)
+  {
+    NetPlayHost(netplay_host.value());
+  }
+  else if (m_pending_boot != nullptr)
   {
     StartGame(std::move(m_pending_boot));
     m_pending_boot.reset();
@@ -463,6 +468,7 @@ void MainWindow::CreateComponents()
   m_menu_bar = new MenuBar(this);
   m_tool_bar = new ToolBar(this);
   m_search_bar = new SearchBar(this);
+  m_game_count = new GameCount(this);
   m_game_list = new GameList(this);
   m_render_widget = new RenderWidget;
   m_stack = new QStackedWidget(this);
@@ -486,7 +492,7 @@ void MainWindow::CreateComponents()
   m_code_widget = new CodeWidget(this);
   m_assembler_widget = new AssemblerWidget(this);
 
-  const auto request_watch = [this](QString name, u32 addr) {
+  const auto request_watch = [this](const QString& name, u32 addr) {
     m_watch_widget->AddWatch(name, addr);
   };
   const auto request_breakpoint = [this](u32 addr) { m_breakpoint_widget->AddBP(addr); };
@@ -536,6 +542,8 @@ void MainWindow::ConnectMenuBar()
   connect(m_menu_bar, &MenuBar::EjectDisc, this, &MainWindow::EjectDisc);
   connect(m_menu_bar, &MenuBar::ChangeDisc, this, &MainWindow::ChangeDisc);
   connect(m_menu_bar, &MenuBar::OpenUserFolder, this, &MainWindow::OpenUserFolder);
+  connect(m_menu_bar, &MenuBar::OpenConfigFolder, this, &MainWindow::OpenConfigFolder);
+  connect(m_menu_bar, &MenuBar::OpenCacheFolder, this, &MainWindow::OpenCacheFolder);
 
   // Emulation
   connect(m_menu_bar, &MenuBar::Pause, this, &MainWindow::Pause);
@@ -579,6 +587,7 @@ void MainWindow::ConnectMenuBar()
   connect(m_menu_bar, &MenuBar::ShowSkylanderPortal, this, &MainWindow::ShowSkylanderPortal);
   connect(m_menu_bar, &MenuBar::ShowInfinityBase, this, &MainWindow::ShowInfinityBase);
   connect(m_menu_bar, &MenuBar::ShowWiiSpeakWindow, this, &MainWindow::ShowWiiSpeakWindow);
+  connect(m_menu_bar, &MenuBar::ShowLogitechMicWindow, this, &MainWindow::ShowLogitechMicWindow);
   connect(m_menu_bar, &MenuBar::ConnectWiiRemote, this, &MainWindow::OnConnectWiiRemote);
 
 #ifdef USE_RETRO_ACHIEVEMENTS
@@ -591,6 +600,7 @@ void MainWindow::ConnectMenuBar()
   connect(m_menu_bar, &MenuBar::StopRecording, this, &MainWindow::OnStopRecording);
   connect(m_menu_bar, &MenuBar::ExportRecording, this, &MainWindow::OnExportRecording);
   connect(m_menu_bar, &MenuBar::ShowTASInput, this, &MainWindow::ShowTASInput);
+  connect(m_menu_bar, &MenuBar::ConfigureOSD, this, &MainWindow::ShowOSDWindow);
 
   // View
   connect(m_menu_bar, &MenuBar::ShowList, m_game_list, &GameList::SetListView);
@@ -750,9 +760,30 @@ void MainWindow::ConnectStack()
 
   layout->addWidget(m_game_list);
   layout->addWidget(m_search_bar);
+  layout->addWidget(m_game_count);
+  layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
 
   connect(m_search_bar, &SearchBar::Search, m_game_list, &GameList::SetSearchTerm);
+  connect(m_game_list, &GameList::GameCountUpdated, m_game_count, &GameCount::OnGameCountUpdated);
+
+  m_game_list->UpdateGameCount();
+
+  const auto update_spacing = [this](const bool game_count_is_visible) {
+    // The bottom margin of the search bar and the top margin of the game count are both suitable
+    // when the other widget is hidden, but when both are visible the gap created by the combination
+    // is too large. To fix this we set the bottom margin of the search bar to 0 when the game count
+    // is visible and set it to the top margin when the game count is hidden.
+    m_game_count->setVisible(game_count_is_visible);
+    auto* const search_layout = m_search_bar->layout();
+    QMargins search_margins = search_layout->contentsMargins();
+    const int new_bottom_margin = game_count_is_visible ? 0 : search_margins.top();
+    search_margins.setBottom(new_bottom_margin);
+    search_layout->setContentsMargins(search_margins);
+  };
+  update_spacing(Settings::Instance().IsGameCountVisible());
+
+  connect(&Settings::Instance(), &Settings::GameCountVisibilityChanged, update_spacing);
 
   m_stack->addWidget(widget);
 
@@ -828,6 +859,22 @@ void MainWindow::EjectDisc()
 void MainWindow::OpenUserFolder()
 {
   std::string path = File::GetUserPath(D_USER_IDX);
+
+  QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
+  QDesktopServices::openUrl(url);
+}
+
+void MainWindow::OpenConfigFolder()
+{
+  std::string path = File::GetUserPath(D_CONFIG_IDX);
+
+  QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
+  QDesktopServices::openUrl(url);
+}
+
+void MainWindow::OpenCacheFolder()
+{
+  std::string path = File::GetUserPath(D_CACHE_IDX);
 
   QUrl url = QUrl::fromLocalFile(QString::fromStdString(path));
   QDesktopServices::openUrl(url);
@@ -1147,6 +1194,32 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
       if (!NKitWarningDialog::ShowUnlessDisabled())
         return;
     }
+
+    const auto volume_type =
+        std::get<BootParameters::Disc>(parameters->parameters).volume->GetVolumeType();
+    if (volume_type != DiscIO::Platform::Triforce)
+    {
+      const bool triforce_hardware_sp1 =
+          Config::Get(Config::MAIN_SERIAL_PORT_1) == ExpansionInterface::EXIDeviceType::Baseboard;
+      const bool triforce_hardware_port_1 = Config::Get(Config::GetInfoForSIDevice(0)) ==
+                                            SerialInterface::SIDevices::SIDEVICE_AM_BASEBOARD;
+
+      // Some Triforce tools don't include a boot.id file, but they can still be launched.
+      if (triforce_hardware_sp1)
+      {
+        ModalMessageBox::warning(this, tr("Warning"),
+                                 tr("Non-Triforce games cannot be booted with Triforce hardware "
+                                    "attached.\nPlease remove the Triforce Baseboard from SP1."),
+                                 QMessageBox::Ok);
+      }
+      if (triforce_hardware_port_1)
+      {
+        ModalMessageBox::warning(this, tr("Warning"),
+                                 tr("Non-Triforce games cannot be booted with Triforce hardware "
+                                    "attached.\nPlease remove the Triforce Baseboard from Port 1."),
+                                 QMessageBox::Ok);
+      }
+    }
   }
 
   // If we're running, only start a new game once we've stopped the last.
@@ -1163,18 +1236,6 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
   // We need the render widget before booting.
   ShowRenderWidget();
 
-  // Configure BBA for NetPlay if enabled
-  if (NetPlay::IsNetPlayRunning())
-  {
-    auto server = Settings::Instance().GetNetPlayServer();
-    if (server && server->IsBBAModeEnabled())
-    {
-      // Set SP1 slot to use NetPlay BBA before the game starts
-      Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1), 
-                        ExpansionInterface::EXIDeviceType::EthernetNetPlay);
-      INFO_LOG_FMT(NETPLAY, "BBA mode enabled: SP1 slot configured to use NetPlay BBA before game start");
-    }
-  }
 
   // Boot up, show an error if it fails to load the game.
   if (!BootManager::BootCore(m_system, std::move(parameters),
@@ -1209,7 +1270,7 @@ void MainWindow::SetFullScreenResolution(bool fullscreen)
   DEVMODE screen_settings;
   memset(&screen_settings, 0, sizeof(screen_settings));
   screen_settings.dmSize = sizeof(screen_settings);
-  sscanf(Config::Get(Config::MAIN_FULLSCREEN_DISPLAY_RES).c_str(), "%dx%d",
+  sscanf(Config::Get(Config::MAIN_FULLSCREEN_DISPLAY_RES).c_str(), "%lux%lu",
          &screen_settings.dmPelsWidth, &screen_settings.dmPelsHeight);
   screen_settings.dmBitsPerPel = 32;
   screen_settings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
@@ -1298,6 +1359,12 @@ void MainWindow::ShowControllersWindow()
   m_settings_window->SelectPane(SettingsWindowPaneIndex::Controllers);
 }
 
+void MainWindow::ShowTriforceWindow()
+{
+  ShowSettingsWindow();
+  m_settings_window->SelectPane(SettingsWindowPaneIndex::Triforce);
+}
+
 void MainWindow::ShowFreeLookWindow()
 {
   if (!m_freelook_window)
@@ -1348,6 +1415,12 @@ void MainWindow::ShowGeneralWindow()
 {
   ShowSettingsWindow();
   m_settings_window->SelectPane(SettingsWindowPaneIndex::General);
+}
+
+void MainWindow::ShowOSDWindow()
+{
+  ShowSettingsWindow();
+  m_settings_window->SelectPane(SettingsWindowPaneIndex::OnScreenDisplay);
 }
 
 void MainWindow::ShowAboutDialog()
@@ -1516,13 +1589,25 @@ void MainWindow::ShowWiiSpeakWindow()
   m_wii_speak_window->activateWindow();
 }
 
+void MainWindow::ShowLogitechMicWindow()
+{
+  if (!m_logitech_mic_window)
+  {
+    m_logitech_mic_window = new LogitechMicWindow();
+  }
+
+  m_logitech_mic_window->show();
+  m_logitech_mic_window->raise();
+  m_logitech_mic_window->activateWindow();
+}
+
 void MainWindow::StateLoad()
 {
   QString dialog_path = (Config::Get(Config::MAIN_CURRENT_STATE_PATH).empty()) ?
                             QDir::currentPath() :
                             QString::fromStdString(Config::Get(Config::MAIN_CURRENT_STATE_PATH));
   QString path = DolphinFileDialog::getOpenFileName(
-      this, tr("Select a File"), dialog_path, tr("All Save States (*.sav *.s##);; All Files (*)"));
+      this, tr("Select a File"), dialog_path, tr("All Save States (*.sav *.s??);; All Files (*)"));
   Config::SetBase(Config::MAIN_CURRENT_STATE_PATH, QFileInfo(path).dir().path().toStdString());
   if (!path.isEmpty())
     State::LoadAs(m_system, path.toStdString());
@@ -1534,7 +1619,7 @@ void MainWindow::StateSave()
                             QDir::currentPath() :
                             QString::fromStdString(Config::Get(Config::MAIN_CURRENT_STATE_PATH));
   QString path = DolphinFileDialog::getSaveFileName(
-      this, tr("Select a File"), dialog_path, tr("All Save States (*.sav *.s##);; All Files (*)"));
+      this, tr("Select a File"), dialog_path, tr("All Save States (*.sav *.s??);; All Files (*)"));
   Config::SetBase(Config::MAIN_CURRENT_STATE_PATH, QFileInfo(path).dir().path().toStdString());
   if (!path.isEmpty())
     State::SaveAs(m_system, path.toStdString());
@@ -1762,16 +1847,6 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   Settings::Instance().GetNetPlayServer()->ChangeGame(game.GetSyncIdentifier(),
                                                       m_game_list->GetNetPlayName(game));
 
-  // Check if BBA mode is enabled and configure NetPlay server accordingly
-  const auto& settings = Settings::Instance().GetQSettings();
-  const bool bba_enabled = settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool();
-  
-  if (bba_enabled)
-  {
-    // Configure NetPlay server to use BBA-only mode
-    Settings::Instance().GetNetPlayServer()->SetBBAMode(true);
-    INFO_LOG_FMT(NETPLAY, "BBA mode enabled: NetPlay server configured for BBA-only mode");
-  }
 
   // Join our local server
   return NetPlayJoin();
@@ -1904,20 +1979,24 @@ void MainWindow::OnImportNANDBackup()
     return;
 
   ParallelProgressDialog dialog(this);
-  dialog.GetRaw()->setMinimum(0);
-  dialog.GetRaw()->setMaximum(0);
-  dialog.GetRaw()->setLabelText(tr("Importing NAND backup"));
-  dialog.GetRaw()->setCancelButton(nullptr);
-
-  auto beginning = QDateTime::currentDateTime().toMSecsSinceEpoch();
+  dialog.GetRaw()->setWindowTitle(tr("Importing NAND backup"));
 
   std::future<void> result = std::async(std::launch::async, [&] {
     DiscIO::NANDImporter().ImportNANDBin(
         file.toStdString(),
-        [&dialog, beginning] {
-          dialog.SetLabelText(
-              tr("Importing NAND backup\n Time elapsed: %1s")
-                  .arg((QDateTime::currentDateTime().toMSecsSinceEpoch() - beginning) / 1000));
+        [&dialog](DiscIO::NANDImporter::Step step, u32 cur, u32 max) {
+          switch (step)
+          {
+          case DiscIO::NANDImporter::Step::Loading:
+            dialog.SetLabelText(tr("Loading NAND..."));
+            break;
+          case DiscIO::NANDImporter::Step::Extracting:
+            dialog.SetLabelText(tr("Extracting NAND..."));
+            break;
+          }
+          dialog.SetValue(cur);
+          dialog.SetMaximum(max);
+          return dialog.WasCanceled();
         },
         [this] {
           std::optional<std::string> keys_file = RunOnObject(this, [this] {

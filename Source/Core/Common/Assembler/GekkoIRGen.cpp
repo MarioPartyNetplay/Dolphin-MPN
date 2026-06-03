@@ -17,7 +17,6 @@
 #include "Common/Assembler/AssemblerShared.h"
 #include "Common/Assembler/GekkoParser.h"
 #include "Common/Assert.h"
-#include "Common/BitUtils.h"
 
 namespace Common::GekkoAssembler::detail
 {
@@ -539,7 +538,7 @@ void GekkoIRPlugin::AddSymbolResolve(std::string_view sym, bool absolute)
   };
 
   m_fixup_stack.emplace(
-      [this, sym, absolute, source_address, err_on_fail = std::move(err_on_fail)] {
+      [this, sym, absolute, source_address, err_on_fail = std::move(err_on_fail)] mutable {
         auto label_it = m_labels.find(sym);
         if (label_it != m_labels.end())
         {
@@ -576,7 +575,7 @@ void GekkoIRPlugin::AddNumLabelSymResolve(std::string_view sym, u32 num)
   // Searching forward only
   size_t search_start_idx = static_cast<size_t>(m_numlabs.size());
   m_fixup_stack.emplace(
-      [this, num, source_address, search_start_idx, err_on_fail = std::move(err_on_fail)] {
+      [this, num, source_address, search_start_idx, err_on_fail = std::move(err_on_fail)] mutable {
         for (size_t i = search_start_idx; i < m_numlabs.size(); i++)
         {
           if (num == m_numlabs[i].first)
@@ -844,7 +843,7 @@ void GekkoIRPlugin::EvalTerminalAbs(Terminal type, const AssemblerToken& tok)
 
   case Terminal::NumLabFwd:
     m_owner->EmitErrorHere(
-        fmt::format("Forward label references not supported in fully resolved expressons"));
+        fmt::format("Forward label references not supported in fully resolved expressions"));
     break;
 
   case Terminal::NumLabBwd:

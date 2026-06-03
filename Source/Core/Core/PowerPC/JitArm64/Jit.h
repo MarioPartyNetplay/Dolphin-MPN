@@ -6,16 +6,14 @@
 #include <cstddef>
 #include <map>
 #include <optional>
-#include <tuple>
-
-#include <rangeset/rangesizeset.h>
 
 #include "Common/Arm64Emitter.h"
+#include "Common/RangeSizeSet.h"
 
-#include "Core/PowerPC/CPUCoreBase.h"
 #include "Core/PowerPC/JitArm64/JitArm64Cache.h"
 #include "Core/PowerPC/JitArm64/JitArm64_RegCache.h"
 #include "Core/PowerPC/JitArmCommon/BackPatch.h"
+#include "Core/PowerPC/JitCommon/ConstantPropagation.h"
 #include "Core/PowerPC/JitCommon/JitAsmCommon.h"
 #include "Core/PowerPC/JitCommon/JitBase.h"
 #include "Core/PowerPC/PPCAnalyst.h"
@@ -34,6 +32,8 @@ public:
 
   void Init() override;
   void Shutdown() override;
+
+  JitCommon::ConstantPropagation& GetConstantPropagation() { return m_constant_propagation; }
 
   JitBaseBlockCache* GetBlockCache() override { return &blocks; }
   bool IsInCodeSpace(const u8* ptr) const { return IsInSpace(ptr); }
@@ -111,7 +111,6 @@ public:
   void rlwimix(UGeckoInstruction inst);
   void subfex(UGeckoInstruction inst);
   void subfzex(UGeckoInstruction inst);
-  void subfcx(UGeckoInstruction inst);
   void subfic(UGeckoInstruction inst);
   void addex(UGeckoInstruction inst);
   void divwux(UGeckoInstruction inst);
@@ -122,9 +121,7 @@ public:
   void mcrf(UGeckoInstruction inst);
   void mcrxr(UGeckoInstruction inst);
   void mfsr(UGeckoInstruction inst);
-  void mtsr(UGeckoInstruction inst);
   void mfsrin(UGeckoInstruction inst);
-  void mtsrin(UGeckoInstruction inst);
   void twx(UGeckoInstruction inst);
   void mfspr(UGeckoInstruction inst);
   void mftb(UGeckoInstruction inst);
@@ -324,6 +321,8 @@ protected:
   void GenerateConvertDoubleToSingle();
   void GenerateConvertSingleToDouble();
   void GenerateFPRF(bool single);
+  void GenerateFmaddsEft();
+  void GeneratePsMaddEft();
   void GenerateQuantizedLoads();
   void GenerateQuantizedStores();
 
@@ -334,11 +333,9 @@ protected:
   // Branch Watch
   template <bool condition>
   void WriteBranchWatch(u32 origin, u32 destination, UGeckoInstruction inst,
-                        Arm64Gen::ARM64Reg reg_a, Arm64Gen::ARM64Reg reg_b,
                         BitSet32 gpr_caller_save, BitSet32 fpr_caller_save);
   void WriteBranchWatchDestInRegister(u32 origin, Arm64Gen::ARM64Reg destination,
-                                      UGeckoInstruction inst, Arm64Gen::ARM64Reg reg_a,
-                                      Arm64Gen::ARM64Reg reg_b, BitSet32 gpr_caller_save,
+                                      UGeckoInstruction inst, BitSet32 gpr_caller_save,
                                       BitSet32 fpr_caller_save);
 
   // Exits
@@ -376,13 +373,14 @@ protected:
 
   void ComputeRC0(Arm64Gen::ARM64Reg reg);
   void ComputeRC0(u32 imm);
+  void GenerateConstantOverflow(bool overflow);
   void ComputeCarry(Arm64Gen::ARM64Reg reg);  // reg must contain 0 or 1
   void ComputeCarry(bool carry);
   void ComputeCarry();
   void LoadCarry();
   void FlushCarry();
 
-  void reg_imm(u32 d, u32 a, u32 value, u32 (*do_op)(u32, u32),
+  void reg_imm(u32 d, u32 a, u32 value,
                void (ARM64XEmitter::*op)(Arm64Gen::ARM64Reg, Arm64Gen::ARM64Reg, u64,
                                          Arm64Gen::ARM64Reg),
                bool Rc = false);
@@ -395,6 +393,8 @@ protected:
   std::map<const u8*, FastmemArea> m_fault_to_handler{};
   Arm64GPRCache gpr;
   Arm64FPRCache fpr;
+
+  JitCommon::ConstantPropagation m_constant_propagation;
 
   JitArm64BlockCache blocks{*this};
 
@@ -430,10 +430,10 @@ protected:
   u8* m_near_code_end = nullptr;
   bool m_near_code_write_failed = false;
 
-  HyoutaUtilities::RangeSizeSet<u8*> m_free_ranges_near_0;
-  HyoutaUtilities::RangeSizeSet<u8*> m_free_ranges_near_1;
-  HyoutaUtilities::RangeSizeSet<u8*> m_free_ranges_far_0;
-  HyoutaUtilities::RangeSizeSet<u8*> m_free_ranges_far_1;
+  Common::RangeSizeSet<u8*> m_free_ranges_near_0;
+  Common::RangeSizeSet<u8*> m_free_ranges_near_1;
+  Common::RangeSizeSet<u8*> m_free_ranges_far_0;
+  Common::RangeSizeSet<u8*> m_free_ranges_far_1;
 
   std::unique_ptr<HostDisassembler> m_disassembler;
 };

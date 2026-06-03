@@ -4,7 +4,7 @@
 // IMPORTANT: UI etc should modify g_Config. Graphics code should read g_ActiveConfig.
 // The reason for this is to get rid of race conditions etc when the configuration
 // changes in the middle of a frame. This is done by copying g_Config to g_ActiveConfig
-// at the start of every frame. Noone should ever change members of g_ActiveConfig
+// at the start of every frame. No one should ever change members of g_ActiveConfig
 // directly.
 
 #pragma once
@@ -33,8 +33,8 @@ enum class AspectMode : int
 enum class StereoMode : int
 {
   Off,
-  SBS,
-  TAB,
+  SideBySide,
+  TopAndBottom,
   Anaglyph,
   QuadBuffer,
   Passive
@@ -191,6 +191,7 @@ struct VideoConfig final
   VideoConfig() = default;
   void Refresh();
   void VerifyValidity();
+  static void Init();
   static void Shutdown();
 
   // General
@@ -314,12 +315,10 @@ struct VideoConfig final
   // Stereoscopy
   StereoMode stereo_mode{};
   bool stereo_per_eye_resolution_full = false;
-  int iStereoDepth = 0;
-  int iStereoConvergence = 0;
-  int iStereoConvergencePercentage = 0;
+  float stereo_depth = 0;
+  float stereo_convergence = 0;
   bool bStereoSwapEyes = false;
   bool bStereoEFBMonoDepth = false;
-  int iStereoDepthPercentage = 0;
 
   // D3D only config, mostly to be merged into the above
   int iAdapter = 0;
@@ -370,7 +369,8 @@ struct VideoConfig final
   }
   bool UseGPUTextureDecoding() const
   {
-    return g_backend_info.bSupportsGPUTextureDecoding && bEnableGPUTextureDecoding;
+    return g_backend_info.bSupportsGPUTextureDecoding && bEnableGPUTextureDecoding &&
+           !bArbitraryMipmapDetection;
   }
   bool UseVertexRounding() const { return bVertexRounding && iEFBScale != 1; }
   bool ManualTextureSamplingWithCustomTextureSizes() const

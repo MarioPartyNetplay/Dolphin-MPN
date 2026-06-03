@@ -13,7 +13,6 @@
 #include "Common/CommonPaths.h"
 #include "Common/CommonTypes.h"
 #include "Common/Crypto/HMAC.h"
-#include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/NandPaths.h"
 #include "Common/Projection.h"
@@ -160,7 +159,7 @@ NetKDRequestDevice::NetKDRequestDevice(EmulationKernel& ios, const std::string& 
   // Enable all NWC24 permissions
   m_scheduler_buffer[1] = Common::swap32(-1);
 
-  m_work_queue.Reset("WiiConnect24 Worker", [this](AsyncTask task) {
+  m_work_queue.Reset("WiiConnect24 Worker", [this](const AsyncTask& task) {
     const IPCReply reply = task.handler();
     {
       std::lock_guard lg(m_async_reply_lock);

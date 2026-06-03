@@ -9,9 +9,10 @@ class ConfigBool;
 class ConfigChoice;
 class ConfigComplexChoice;
 class ConfigStringChoice;
-class ConfigSlider;
+class ConfigFloatSlider;
 class GraphicsPane;
 class QPushButton;
+class QLabel;
 class ToolTipPushButton;
 
 namespace Config
@@ -28,9 +29,6 @@ public:
   explicit EnhancementsWidget(GraphicsPane* gfx_pane);
 
 private:
-  template <typename T>
-  T ReadSetting(const Config::Info<T>& setting) const;
-
   void CreateWidgets();
   void ConnectWidgets();
   void AddDescriptions();
@@ -39,7 +37,6 @@ private:
   void UpdateAntialiasingOptions();
   void LoadPostProcessingShaders();
   void ShaderChanged();
-  void OnConfigChanged();
 
   void ConfigureColorCorrection();
   void ConfigurePostProcessingShader();
@@ -63,8 +60,10 @@ private:
 
   // Stereoscopy
   ConfigChoice* m_3d_mode;
-  ConfigSlider* m_3d_depth;
-  ConfigSlider* m_3d_convergence;
+  ConfigFloatSlider* m_3d_depth;
+  QLabel* m_3d_depth_value;
+  ConfigFloatSlider* m_3d_convergence;
+  QLabel* m_3d_convergence_value;
   ConfigBool* m_3d_swap_eyes;
   ConfigBool* m_3d_per_eye_resolution;
 

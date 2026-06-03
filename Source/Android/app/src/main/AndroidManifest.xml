@@ -44,8 +44,7 @@
         android:supportsRtl="true"
         android:isGame="true"
         android:banner="@drawable/banner_tv"
-        android:hasFragileUserData="true"
-        android:extractNativeLibs="true">
+        android:hasFragileUserData="true">
         <meta-data
             android:name="android.max_aspect"
             android:value="2.1"/>
@@ -133,6 +132,16 @@
             android:exported="false"
             android:label="@string/user_data_submenu"
             android:theme="@style/Theme.Dolphin.Main.MaterialYou" />
+
+        <activity
+            android:name=".features.netplay.ui.NetplaySetupActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Dolphin.Main" />
+
+        <activity
+            android:name=".features.netplay.ui.NetplayActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Dolphin.Main" />
 
         <activity
             android:name=".features.riivolution.ui.RiivolutionBootActivity"

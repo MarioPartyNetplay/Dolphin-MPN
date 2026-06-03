@@ -41,14 +41,16 @@ public:
   WiimoteScannerLinux();
   ~WiimoteScannerLinux() override;
 
-  bool IsReady() const override;
-  void FindWiimotes(std::vector<Wiimote*>&, Wiimote*&) override;
+  // FYI: This backend only supports connecting remotes just found via Bluetooth inquiry.
+  FindResults FindNewWiimotes() override;
+
   void Update() override;
   void RequestStopSearching() override;
 
 private:
   bool Open();
   void Close();
+  bool IsReady() const;
 
   int m_device_id{-1};
   int m_device_sock{-1};

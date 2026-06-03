@@ -31,10 +31,9 @@ import org.dolphinemu.dolphinemu.features.input.ui.ProfileDialog
 import org.dolphinemu.dolphinemu.features.input.ui.ProfileDialogPresenter
 import org.dolphinemu.dolphinemu.features.settings.model.*
 import org.dolphinemu.dolphinemu.features.settings.model.view.*
+import org.dolphinemu.dolphinemu.features.settings.model.AchievementModel.logout
 import org.dolphinemu.dolphinemu.model.GpuDriverMetadata
-import org.dolphinemu.dolphinemu.ui.main.MainPresenter
 import org.dolphinemu.dolphinemu.utils.*
-import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -100,7 +99,7 @@ class SettingsFragmentPresenter(
             }
         }
 
-    private fun loadSettingsList() {
+    fun loadSettingsList() {
         val sl = ArrayList<SettingsItem>()
         when (menuTag) {
             MenuTag.SETTINGS -> addTopLevelSettings(sl)
@@ -111,6 +110,7 @@ class SettingsFragmentPresenter(
             MenuTag.CONFIG_PATHS -> addPathsSettings(sl)
             MenuTag.CONFIG_GAME_CUBE -> addGameCubeSettings(sl)
             MenuTag.CONFIG_WII -> addWiiSettings(sl)
+            MenuTag.CONFIG_ACHIEVEMENTS -> addAchievementSettings(sl);
             MenuTag.CONFIG_ADVANCED -> addAdvancedSettings(sl)
             MenuTag.GRAPHICS -> addGraphicsSettings(sl)
             MenuTag.CONFIG_SERIALPORT1 -> addSerialPortSubSettings(sl, serialPort1Type)
@@ -200,6 +200,7 @@ class SettingsFragmentPresenter(
         sl.add(SubmenuSetting(context, R.string.paths_submenu, MenuTag.CONFIG_PATHS))
         sl.add(SubmenuSetting(context, R.string.gamecube_submenu, MenuTag.CONFIG_GAME_CUBE))
         sl.add(SubmenuSetting(context, R.string.wii_submenu, MenuTag.CONFIG_WII))
+        sl.add(SubmenuSetting(context, R.string.achievements_submenu, MenuTag.CONFIG_ACHIEVEMENTS))
         sl.add(SubmenuSetting(context, R.string.advanced_submenu, MenuTag.CONFIG_ADVANCED))
         sl.add(SubmenuSetting(context, R.string.log_submenu, MenuTag.CONFIG_LOG))
         sl.add(SubmenuSetting(context, R.string.debug_submenu, MenuTag.DEBUG))
@@ -248,7 +249,7 @@ class SettingsFragmentPresenter(
                 FloatSetting.MAIN_EMULATION_SPEED,
                 R.string.speed_limit,
                 0,
-                0f,
+                if (AchievementModel.isHardcoreModeActive()) 100f else 0f,
                 200f,
                 "%",
                 1f,
@@ -556,6 +557,14 @@ class SettingsFragmentPresenter(
             )
         )
         sl.add(
+            SwitchSetting(
+                context,
+                BooleanSetting.MAIN_AUDIO_PRESERVE_PITCH,
+                R.string.audio_preserve_pitch,
+                R.string.audio_preserve_pitch_description
+            )
+        )
+        sl.add(
             IntSliderSetting(
                 context,
                 IntSetting.MAIN_AUDIO_VOLUME,
@@ -584,57 +593,57 @@ class SettingsFragmentPresenter(
                 StringSetting.MAIN_DEFAULT_ISO,
                 R.string.default_ISO,
                 0,
-                MainPresenter.REQUEST_GAME_FILE,
+                fragmentView.activityResultLaunchers.requestGameFile,
                 null
             )
         )
         sl.add(
-            FilePicker(
+            DirectoryPicker(
                 context,
                 StringSetting.MAIN_FS_PATH,
                 R.string.wii_NAND_root,
                 0,
-                MainPresenter.REQUEST_DIRECTORY,
+                fragmentView.activityResultLaunchers.requestDirectory,
                 "/Wii"
             )
         )
         sl.add(
-            FilePicker(
+            DirectoryPicker(
                 context,
                 StringSetting.MAIN_DUMP_PATH,
                 R.string.dump_path,
                 0,
-                MainPresenter.REQUEST_DIRECTORY,
+                fragmentView.activityResultLaunchers.requestDirectory,
                 "/Dump"
             )
         )
         sl.add(
-            FilePicker(
+            DirectoryPicker(
                 context,
                 StringSetting.MAIN_LOAD_PATH,
                 R.string.load_path,
                 0,
-                MainPresenter.REQUEST_DIRECTORY,
+                fragmentView.activityResultLaunchers.requestDirectory,
                 "/Load"
             )
         )
         sl.add(
-            FilePicker(
+            DirectoryPicker(
                 context,
                 StringSetting.MAIN_RESOURCEPACK_PATH,
                 R.string.resource_pack_path,
                 0,
-                MainPresenter.REQUEST_DIRECTORY,
+                fragmentView.activityResultLaunchers.requestDirectory,
                 "/ResourcePacks"
             )
         )
         sl.add(
-            FilePicker(
+            DirectoryPicker(
                 context,
                 StringSetting.MAIN_WFS_PATH,
                 R.string.wfs_path,
                 0,
-                MainPresenter.REQUEST_DIRECTORY,
+                fragmentView.activityResultLaunchers.requestDirectory,
                 "/WFS"
             )
         )
@@ -691,6 +700,38 @@ class SettingsFragmentPresenter(
                 R.array.serialPort1DeviceEntries,
                 R.array.serialPort1DeviceValues,
                 MenuTag.CONFIG_SERIALPORT1
+            )
+        )
+
+        sl.add(HeaderSetting(context, R.string.gba_settings, 0))
+        sl.add(
+            FilePicker(
+                context,
+                StringSetting.MAIN_GBA_BIOS_PATH,
+                R.string.gba_bios_path,
+                0,
+                fragmentView.activityResultLaunchers.requestBinFile,
+                "/GBA/gba_bios.bin"
+            )
+        )
+        sl.add(
+            FilePicker(
+                context,
+                StringSetting.MAIN_GB_PLAYER_ROM,
+                R.string.gb_player_rom,
+                0,
+                fragmentView.activityResultLaunchers.requestGbaRomFile,
+                null
+            )
+        )
+        sl.add(
+            DirectoryPicker(
+                context,
+                StringSetting.MAIN_GBA_SAVES_PATH,
+                R.string.gba_saves_path,
+                0,
+                fragmentView.activityResultLaunchers.requestDirectory,
+                "/GBA/Saves/"
             )
         )
     }
@@ -784,17 +825,17 @@ class SettingsFragmentPresenter(
                 StringSetting.MAIN_WII_SD_CARD_IMAGE_PATH,
                 R.string.wii_sd_card_path,
                 0,
-                MainPresenter.REQUEST_SD_FILE,
+                fragmentView.activityResultLaunchers.requestRawFile,
                 "/Load/WiiSD.raw"
             )
         )
         sl.add(
-            FilePicker(
+            DirectoryPicker(
                 context,
                 StringSetting.MAIN_WII_SD_CARD_SYNC_FOLDER_PATH,
                 R.string.wii_sd_sync_folder,
                 0,
-                MainPresenter.REQUEST_DIRECTORY,
+                fragmentView.activityResultLaunchers.requestDirectory,
                 "/Load/WiiSDSync/"
             )
         )
@@ -912,6 +953,129 @@ class SettingsFragmentPresenter(
                 0
             )
         )
+    }
+
+    private fun addAchievementSettings(sl: ArrayList<SettingsItem>) {
+        val achievementsEnabledSetting: AbstractBooleanSetting = object : AbstractBooleanSetting {
+            override val boolean: Boolean
+                get() = BooleanSetting.ACHIEVEMENTS_ENABLED.boolean
+
+            override fun setBoolean(settings: Settings, newValue: Boolean) {
+                BooleanSetting.ACHIEVEMENTS_ENABLED.setBoolean(settings, newValue)
+                if (newValue)
+                    AchievementModel.init()
+                else
+                    AchievementModel.shutdown()
+                loadSettingsList()
+            }
+
+            override val isOverridden: Boolean
+                get() = BooleanSetting.ACHIEVEMENTS_ENABLED.isOverridden
+
+            override val isRuntimeEditable: Boolean
+                get() = BooleanSetting.ACHIEVEMENTS_ENABLED.isRuntimeEditable
+
+            override fun delete(settings: Settings): Boolean {
+                val result = BooleanSetting.ACHIEVEMENTS_ENABLED.delete(settings)
+                AchievementModel.shutdown()
+                loadSettingsList()
+                return result
+            }
+        }
+
+        sl.add(
+            SwitchSetting(
+                context,
+                achievementsEnabledSetting,
+                R.string.achievements_enabled,
+                0
+            )
+        )
+        if (BooleanSetting.ACHIEVEMENTS_ENABLED.boolean) {
+            if (StringSetting.ACHIEVEMENTS_API_TOKEN.string == "") {
+                sl.add(
+                    RunRunnable(
+                        context,
+                        R.string.achievements_login,
+                        0,
+                        0,
+                        0,
+                        false
+                    ) {
+                      fragmentView.showDialogFragment(LoginDialog(this))
+                      loadSettingsList()
+                    })
+            } else {
+                sl.add(
+                    RunRunnable(
+                        context,
+                        R.string.achievements_logout,
+                        0,
+                        0,
+                        0,
+                        false
+                    ) {
+                      logout()
+                      loadSettingsList()
+                    })
+            }
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_HARDCORE_ENABLED,
+                    R.string.achievements_hardcore_enabled,
+                    0
+                )
+            )
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_UNOFFICIAL_ENABLED,
+                    R.string.achievements_unofficial_enabled,
+                    0
+                )
+            )
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_ENCORE_ENABLED,
+                    R.string.achievements_encore_enabled,
+                    0
+                )
+            )
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_SPECTATOR_ENABLED,
+                    R.string.achievements_spectator_enabled,
+                    0
+                )
+            )
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_LEADERBOARD_TRACKER_ENABLED,
+                    R.string.achievements_leaderboard_tracker_enabled,
+                    0
+                )
+            )
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_CHALLENGE_INDICATORS_ENABLED,
+                    R.string.achievements_challenge_indicators_enabled,
+                    0
+                )
+            )
+            sl.add(
+                SwitchSetting(
+                    context,
+                    BooleanSetting.ACHIEVEMENTS_PROGRESS_ENABLED,
+                    R.string.achievements_progress_enabled,
+                    0
+                )
+            )
+        }
     }
 
     private fun addAdvancedSettings(sl: ArrayList<SettingsItem>) {
@@ -1037,7 +1201,7 @@ class SettingsFragmentPresenter(
                 R.string.overclock_title,
                 R.string.overclock_title_description,
                 0f,
-                400f,
+                500f,
                 "%",
                 1f,
                 false
@@ -1144,7 +1308,17 @@ class SettingsFragmentPresenter(
     }
 
     private fun addSerialPortSubSettings(sl: ArrayList<SettingsItem>, serialPort1Type: Int) {
-        if (serialPort1Type == 10) {
+        if (serialPort1Type == 6) {
+            // Triforce Baseboard
+            sl.add(
+                InputStringSetting(
+                    context,
+                    StringSetting.MAIN_TRIFORCE_IP_REDIRECTIONS,
+                    R.string.triforce_ip_redirections,
+                    0
+                )
+            )
+        } else if (serialPort1Type == 10) {
             // Broadband Adapter (XLink Kai)
             sl.add(HyperLinkHeaderSetting(context, R.string.xlink_kai_guide_header, 0))
             sl.add(
@@ -2044,6 +2218,14 @@ class SettingsFragmentPresenter(
         sl.add(
             InvertedSwitchSetting(
                 context,
+                BooleanSetting.MAIN_PAGE_TABLE_FASTMEM,
+                R.string.debug_page_table_fastmem,
+                0
+            )
+        )
+        sl.add(
+            InvertedSwitchSetting(
+                context,
                 BooleanSetting.MAIN_FASTMEM_ARENA,
                 R.string.debug_fastmem_arena,
                 0
@@ -2183,27 +2365,29 @@ class SettingsFragmentPresenter(
             )
         )
         sl.add(
-            IntSliderSetting(
+            FloatSliderSetting(
                 context,
-                IntSetting.GFX_STEREO_DEPTH,
+                FloatSetting.GFX_STEREO_DEPTH,
                 R.string.stereoscopy_depth,
                 R.string.stereoscopy_depth_description,
-                0,
-                100,
-                "%",
-                1
+                0f,
+                100f,
+                "",
+                1f,
+                false
             )
         )
         sl.add(
-            IntSliderSetting(
+            FloatSliderSetting(
                 context,
-                IntSetting.GFX_STEREO_CONVERGENCE_PERCENTAGE,
+                FloatSetting.GFX_STEREO_CONVERGENCE,
                 R.string.stereoscopy_convergence,
                 R.string.stereoscopy_convergence_description,
-                0,
-                200,
-                "%",
-                1
+                0f,
+                200f,
+                "",
+                0.01f,
+                true
             )
         )
         sl.add(
@@ -2218,7 +2402,7 @@ class SettingsFragmentPresenter(
 
     private fun addGcPadSubSettings(sl: ArrayList<SettingsItem>, gcPadNumber: Int, gcPadType: Int) {
         when (gcPadType) {
-            6, 8, 9, 10 -> {
+            6, 8, 9, 10, 11 -> {
                 // Emulated
                 val gcPad = EmulatedController.getGcPad(gcPadNumber)
 

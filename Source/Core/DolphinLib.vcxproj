@@ -91,10 +91,32 @@
     <BuildInfoTemplate>Common\build_info.txt.in</BuildInfoTemplate>
     <BuildInfoOutput>$(BinaryOutputDir)build_info.txt</BuildInfoOutput>
   </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PreBuildEvent>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
+      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <PreprocessorDefinitions>CURL_STATICLIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <PreBuildEvent>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
+      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <PreBuildEvent>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
+      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
+    <PreBuildEvent>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
+      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <Text Include="$(BuildInfoTemplate)" />

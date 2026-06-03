@@ -3,7 +3,6 @@
 
 #include "Core/GeckoCodeConfig.h"
 
-#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -11,25 +10,23 @@
 
 #include "Common/HttpRequest.h"
 #include "Common/IniFile.h"
-#include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
 #include "Core/CheatCodes.h"
 
 namespace Gecko
 {
-std::vector<GeckoCode> DownloadCodes(std::string gametdb_id, bool* succeeded)
+std::expected<std::vector<GeckoCode>, int> DownloadCodes(std::string_view gametdb_id)
 {
   // codes.rc24.xyz is a mirror of the now defunct geckocodes.org.
-  std::string endpoint{"https://codes.rc24.xyz/txt.php?txt=" + gametdb_id};
+  std::string endpoint{"https://codes.rc24.xyz/txt.php?txt=" + std::string(gametdb_id)};
   Common::HttpRequest http;
 
   // The server always redirects once to the same location.
   http.FollowRedirects(1);
 
   const Common::HttpRequest::Response response = http.Get(endpoint);
-  *succeeded = response.has_value();
   if (!response)
-    return {};
+    return std::unexpected{http.GetLastResponseCode()};
 
   // temp vector containing parsed codes
   std::vector<GeckoCode> gcodes;
@@ -234,7 +231,7 @@ static void SaveGeckoCode(std::vector<std::string>& lines, const GeckoCode& gcod
     lines.push_back('*' + note);
 }
 
-void SaveCodes(Common::IniFile& inifile, const std::vector<GeckoCode>& gcodes)
+void SaveCodes(Common::IniFile& inifile, std::span<const GeckoCode> gcodes)
 {
   std::vector<std::string> lines;
   std::vector<std::string> enabled_lines;

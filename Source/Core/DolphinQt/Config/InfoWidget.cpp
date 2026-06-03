@@ -15,10 +15,9 @@
 
 #include "Core/ConfigManager.h"
 
-#include "DiscIO/Blob.h"
 #include "DiscIO/Enums.h"
 #include "DiscIO/Volume.h"
-#include "DiscIO/WiiSaveBanner.h"
+#include "DiscIO/WiiBanner.h"
 
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/ImageConverter.h"
@@ -123,12 +122,6 @@ QGroupBox* InfoWidget::CreateGameDetails()
                          m_game.GetMakerID() + ")");
 
   layout->addRow(tr("Name:"), internal_name);
-  if (m_game.GetPlatform() == DiscIO::Platform::Triforce)
-  {
-    const auto triforce_id_string = QString::fromStdString(m_game.GetTriforceID());
-    auto* const triforce_id = CreateValueDisplay(triforce_id_string);
-    layout->addRow(tr("Triforce ID:"), triforce_id);
-  }
   layout->addRow(tr("Game ID:"), game_id);
   layout->addRow(tr("Country:"), country);
   layout->addRow(tr("Maker:"), maker);
@@ -190,7 +183,7 @@ QWidget* InfoWidget::CreateBannerGraphic(const QPixmap& image)
 
   QLabel* banner = new QLabel();
   banner->setPixmap(image.scaled(image.size().boundedTo(
-      QSize{DiscIO::WiiSaveBanner::BANNER_WIDTH, DiscIO::WiiSaveBanner::BANNER_HEIGHT})));
+      QSize{DiscIO::WiiBanner::BANNER_WIDTH, DiscIO::WiiBanner::BANNER_HEIGHT})));
 
   QPushButton* save = new QPushButton(tr("Save as..."));
   connect(save, &QPushButton::clicked, this, &InfoWidget::SaveBanner);

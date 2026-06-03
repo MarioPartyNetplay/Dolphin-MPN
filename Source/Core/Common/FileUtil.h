@@ -3,9 +3,7 @@
 
 #pragma once
 
-#include <cstddef>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,7 +26,8 @@ enum
 {
   D_USER_IDX,
   D_GCUSER_IDX,
-  D_WIIROOT_IDX,          // always points to User/Wii or global user-configured directory
+  D_WIIROOT_IDX,  // always points to User/Wii or global user-configured directory
+  D_TRIUSER_IDX,
   D_SESSION_WIIROOT_IDX,  // may point to minimal temporary directory for determinism
   D_CONFIG_IDX,           // global settings
   D_GAMESETTINGS_IDX,     // user-specified settings which override both the global and the default
@@ -71,6 +70,7 @@ enum
   D_GBAUSER_IDX,
   D_GBASAVES_IDX,
   D_WIISDCARDSYNCFOLDER_IDX,
+  D_WIISYSCONF_IDX,
   D_GPU_DRIVERS_EXTRACTED,
   D_GPU_DRIVERS_TMP,
   D_GPU_DRIVERS_HOOKS,
@@ -93,6 +93,7 @@ enum
   F_MEMORYWATCHERLOCATIONS_IDX,
   F_MEMORYWATCHERSOCKET_IDX,
   F_WIISDCARDIMAGE_IDX,
+  F_WIISYSCONF_IDX,
   F_DUALSHOCKUDPCLIENTCONFIG_IDX,
   F_FREELOOKCONFIG_IDX,
   F_GBABIOS_IDX,
@@ -193,7 +194,7 @@ bool CopyRegularFile(std::string_view source_path, std::string_view destination_
 bool CreateEmptyFile(const std::string& filename);
 
 // Recursive or non-recursive list of files and directories under directory.
-FSTEntry ScanDirectoryTree(std::string directory, bool recursive);
+FSTEntry ScanDirectoryTree(const std::string& directory, bool recursive);
 
 // deletes the given directory and anything under it. Returns true on success.
 bool DeleteDirRecursively(const std::string& directory);

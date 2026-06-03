@@ -35,15 +35,19 @@
 
 #include "DolphinQt/Host.h"
 #include "DolphinQt/MainWindow.h"
+#include "DolphinQt/QtUtils/AnalyticsPrompt.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
+#ifdef _WIN32
 #include "DolphinQt/QtUtils/SetWindowDecorations.h"
+#endif
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/Translation.h"
 #include "DolphinQt/Updater.h"
 
 #include "UICommon/CommandLineParse.h"
+#include "UICommon/GameFile.h"
 #include "UICommon/UICommon.h"
 #include <qstylefactory.h>
 
@@ -129,8 +133,6 @@ int main(int argc, char* argv[])
   }
 #endif
 
-  Core::DeclareAsHostThread();
-
 #ifdef __APPLE__
   // On macOS, a command line option matching the format "-psn_X_XXXXXX" is passed when
   // the application is launched for the first time. This is to set the "ProcessSerialNumber",
@@ -208,14 +210,22 @@ int main(int argc, char* argv[])
 
   std::unique_ptr<BootParameters> boot;
   bool game_specified = false;
+  std::optional<UICommon::GameFile> netplay_game = std::nullopt;
   if (options.is_set("exec"))
   {
     const std::list<std::string> paths_list = options.all("exec");
     const std::vector<std::string> paths{std::make_move_iterator(std::begin(paths_list)),
                                          std::make_move_iterator(std::end(paths_list))};
-    boot = BootParameters::GenerateFromFile(
-        paths, BootSessionData(save_state_path, DeleteSavestateAfterBoot::No));
-    game_specified = true;
+    if (options.is_set("netplay_host"))
+    {
+      netplay_game = UICommon::GameFile(paths[0]);
+    }
+    else
+    {
+      boot = BootParameters::GenerateFromFile(
+          paths, BootSessionData(save_state_path, DeleteSavestateAfterBoot::No));
+      game_specified = true;
+    }
   }
   else if (options.is_set("nand_title"))
   {
@@ -233,14 +243,53 @@ int main(int argc, char* argv[])
   }
   else if (!args.empty())
   {
-    boot = BootParameters::GenerateFromFile(
-        args.front(), BootSessionData(save_state_path, DeleteSavestateAfterBoot::No));
-    game_specified = true;
+    const std::string path = args.front();
+    if (options.is_set("netplay_host"))
+    {
+      netplay_game = UICommon::GameFile(path);
+    }
+    else
+    {
+      boot = BootParameters::GenerateFromFile(
+          path, BootSessionData(save_state_path, DeleteSavestateAfterBoot::No));
+      game_specified = true;
+    }
   }
 
   int retval;
-
-  if (save_state_path && !game_specified)
+  if (options.is_set("netplay_join") && options.is_set("netplay_host"))
+  {
+    ModalMessageBox::critical(
+        nullptr, QObject::tr("Error"),
+        QObject::tr("The --netplay_host and --netplay_join flags are mutually exclusive."));
+    retval = 1;
+  }
+  else if (options.is_set("netplay_join") && game_specified)
+  {
+    ModalMessageBox::critical(
+        nullptr, QObject::tr("Error"),
+        QObject::tr("You cannot select the game for the NetPlay session you are joining."));
+    retval = 1;
+  }
+  else if ((options.is_set("netplay_join") || options.is_set("netplay_host")) && boot)
+  {
+    ModalMessageBox::critical(nullptr, QObject::tr("Error"),
+                              QObject::tr("NetPlay does not support NAND titles."));
+    retval = 1;
+  }
+  else if (!netplay_game && options.is_set("netplay_host"))
+  {
+    ModalMessageBox::critical(nullptr, QObject::tr("Error"),
+                              QObject::tr("You must specify a game to host with NetPlay."));
+    retval = 1;
+  }
+  else if ((options.is_set("netplay_join") || netplay_game) && save_state_path)
+  {
+    ModalMessageBox::critical(nullptr, QObject::tr("Error"),
+                              QObject::tr("NetPlay does not support savestates."));
+    retval = 1;
+  }
+  else if (save_state_path && !game_specified)
   {
     ModalMessageBox::critical(
         nullptr, QObject::tr("Error"),
@@ -268,7 +317,8 @@ int main(int argc, char* argv[])
     Settings::Instance().ApplyStyle();
 
     MainWindow win{Core::System::GetInstance(), std::move(boot),
-                   static_cast<const char*>(options.get("movie"))};
+                   static_cast<const char*>(options.get("movie")), options.is_set("netplay_join"),
+                   netplay_game};
 
 
 
@@ -279,37 +329,16 @@ int main(int argc, char* argv[])
       // the dialog is only shown after the application is ready, as only then it is guaranteed that
       // the main window has been placed in its final position.
       auto* const connection_context = new QObject(&win);
-      QObject::connect(
-          qApp, &QGuiApplication::applicationStateChanged, connection_context,
-          [connection_context, &win](const Qt::ApplicationState state) {
-            if (state != Qt::ApplicationState::ApplicationActive)
-              return;
+      QObject::connect(qApp, &QGuiApplication::applicationStateChanged, connection_context,
+                       [connection_context, &win](const Qt::ApplicationState state) {
+                         if (state != Qt::ApplicationState::ApplicationActive)
+                           return;
 
-            ModalMessageBox analytics_prompt(&win);
+                         // Severe the connection after the first run.
+                         delete connection_context;
 
-            analytics_prompt.setIcon(QMessageBox::Question);
-            analytics_prompt.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-            analytics_prompt.setWindowTitle(QObject::tr("Allow Usage Statistics Reporting"));
-            analytics_prompt.setText(QObject::tr(
-                "Do you authorize Dolphin to report information to Dolphin's developers?"));
-            analytics_prompt.setInformativeText(
-                QObject::tr("If authorized, Dolphin can collect data on its performance, "
-                            "feature usage, and configuration, as well as data on your system's "
-                            "hardware and operating system.\n\n"
-                            "No private data is ever collected. This data helps us understand "
-                            "how people and emulated games use Dolphin and prioritize our "
-                            "efforts. It also helps us identify rare configurations that are "
-                            "causing bugs, performance and stability issues.\n"
-                            "This authorization can be revoked at any time through Dolphin's "
-                            "settings."));
-
-            const int answer = analytics_prompt.exec();
-
-            Config::SetBase(Config::MAIN_ANALYTICS_PERMISSION_ASKED, true);
-            Settings::Instance().SetAnalyticsEnabled(answer == QMessageBox::Yes);
-
-            DolphinAnalytics::Instance().ReloadConfig();
-          });
+                         ShowAnalyticsPrompt(&win);
+                       });
     }
 #endif
 

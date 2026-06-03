@@ -169,7 +169,7 @@ private:
   static bool Boot_WiiWAD(Core::System& system, const DiscIO::VolumeWAD& wad);
   static bool BootNANDTitle(Core::System& system, u64 title_id);
 
-  static void SetupMSR(PowerPC::PowerPCState& ppc_state);
+  static void SetupMSR(Core::System& system);
   static void SetupHID(PowerPC::PowerPCState& ppc_state, bool is_wii);
   static void SetupBAT(Core::System& system, bool is_wii);
   static bool RunApploader(Core::System& system, const Core::CPUThreadGuard& guard, bool is_wii,
@@ -222,7 +222,7 @@ struct StateFlags
 
 // Reads the state file from the NAND, then calls the passed update function to update the struct,
 // and finally writes the updated state file to the NAND.
-void UpdateStateFlags(std::function<void(StateFlags*)> update_function);
+void UpdateStateFlags(const std::function<void(StateFlags*)>& update_function);
 
 /// Create title directories for the system menu (if needed).
 ///

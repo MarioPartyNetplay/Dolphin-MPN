@@ -19,6 +19,7 @@
 #include "VideoCommon/VideoConfig.h"
 
 #define MPN_GAMEID_MP4 0x474D5045
+#define MPN_GAMEID_MP4DX 0x474D5044
 #define MPN_GAMEID_MP5 0x47503545
 #define MPN_GAMEID_MP6 0x47503645
 #define MPN_GAMEID_MP7 0x47503745

@@ -41,11 +41,13 @@
 #define USA_DIR "USA"
 #define JAP_DIR "JAP"
 #define JPN_DIR "JPN"
+#define DEV_DIR "DEV"
 
 // Subdirs in the User dir returned by GetUserPath(D_USER_IDX)
 #define GC_USER_DIR "GC"
 #define GBA_USER_DIR "GBA"
 #define WII_USER_DIR "Wii"
+#define TRI_USER_DIR "Triforce"
 #define CONFIG_DIR "Config"
 #define GAMESETTINGS_DIR "GameSettings"
 #define MAPS_DIR "Maps"
@@ -152,12 +154,12 @@
 #define WII_SETTING "setting.txt"
 
 #define GECKO_CODE_HANDLER "codehandler.bin"
-
 #define GECKO_CODE_HANDLER_MPN "codehandler.bin"
 
 // Subdirs in Sys
 #define GC_SYS_DIR "GC"
 #define WII_SYS_DIR "Wii"
+#define TRI_SYS_DIR "Triforce"
 
 // Subdirs in Config
 #define GRAPHICSMOD_CONFIG_DIR "GraphicMods"

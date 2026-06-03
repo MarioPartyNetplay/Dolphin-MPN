@@ -21,7 +21,6 @@
 #include "Common/CommonTypes.h"
 #include "Common/Crypto/SHA1.h"
 #include "Common/Logging/Log.h"
-#include "Common/NandPaths.h"
 #include "Common/Projection.h"
 #include "Common/StringUtil.h"
 #include "Common/Swap.h"
@@ -299,7 +298,7 @@ std::string TMDReader::GetGameID() const
   std::memcpy(game_id, m_bytes.data() + offsetof(TMDHeader, title_id) + 4, 4);
   std::memcpy(game_id + 4, m_bytes.data() + offsetof(TMDHeader, group_id), 2);
 
-  if (std::ranges::all_of(game_id, Common::IsPrintableCharacter))
+  if (std::ranges::all_of(game_id, Common::IsAlnum))
     return std::string(game_id, sizeof(game_id));
 
   return fmt::format("{:016x}", GetTitleId());
@@ -310,7 +309,7 @@ std::string TMDReader::GetGameTDBID() const
   const u8* begin = m_bytes.data() + offsetof(TMDHeader, title_id) + 4;
   const u8* end = begin + 4;
 
-  if (std::all_of(begin, end, Common::IsPrintableCharacter))
+  if (std::all_of(begin, end, Common::IsAlnum))
     return std::string(begin, end);
 
   return fmt::format("{:016x}", GetTitleId());
@@ -323,7 +322,7 @@ u16 TMDReader::GetNumContents() const
 
 bool TMDReader::GetContent(u16 index, Content* content) const
 {
-  if (index >= GetNumContents())
+  if (!IsValid() || index >= GetNumContents())
   {
     return false;
   }
@@ -340,7 +339,7 @@ bool TMDReader::GetContent(u16 index, Content* content) const
 
 std::vector<Content> TMDReader::GetContents() const
 {
-  std::vector<Content> contents(GetNumContents());
+  std::vector<Content> contents(IsValid() ? GetNumContents() : 0);
   for (size_t i = 0; i < contents.size(); ++i)
     GetContent(static_cast<u16>(i), &contents[i]);
   return contents;

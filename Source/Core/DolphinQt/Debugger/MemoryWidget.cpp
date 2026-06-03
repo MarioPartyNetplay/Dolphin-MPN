@@ -7,8 +7,6 @@
 #include <optional>
 #include <string>
 
-#include <fmt/printf.h>
-
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
@@ -27,7 +25,6 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-#include "Common/BitUtils.h"
 #include "Common/FileUtil.h"
 #include "Common/IOFile.h"
 #include "Core/ConfigManager.h"
@@ -429,7 +426,8 @@ void MemoryWidget::hideEvent(QHideEvent* event)
 
 void MemoryWidget::RegisterAfterFrameEventCallback()
 {
-  m_vi_end_field_event = VIEndFieldEvent::Register([this] { AutoUpdateTable(); }, "MemoryWidget");
+  m_vi_end_field_event =
+      m_system.GetVideoEvents().vi_end_field_event.Register([this] { AutoUpdateTable(); });
 }
 
 void MemoryWidget::RemoveAfterFrameEventCallback()

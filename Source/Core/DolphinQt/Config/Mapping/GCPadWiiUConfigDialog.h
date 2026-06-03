@@ -4,13 +4,13 @@
 #pragma once
 
 #include <QDialog>
-#include <optional>
 
 class QCheckBox;
 class QLabel;
 class QDialogButtonBox;
 class QVBoxLayout;
 
+#include "Common/HookableEvent.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 
 namespace ciface
@@ -23,7 +23,7 @@ class GCPadWiiUConfigDialog final : public QDialog
   Q_OBJECT
 public:
   explicit GCPadWiiUConfigDialog(int port, QWidget* parent = nullptr);
-  ~GCPadWiiUConfigDialog() override;
+  ~GCPadWiiUConfigDialog();
 
 private:
   void LoadSettings();
@@ -40,6 +40,7 @@ private:
 
   QVBoxLayout* m_layout;
   QLabel* m_status_label;
+  QLabel* m_poll_rate_label;
   QDialogButtonBox* m_button_box;
 
   // Checkboxes
@@ -47,5 +48,5 @@ private:
   QCheckBox* m_simulate_bongos;
 
   // ControllerInterface callback handle
-  std::optional<ControllerInterface::HotplugCallbackHandle> m_devices_changed_handle;
+  Common::EventHook m_devices_changed_handle;
 };

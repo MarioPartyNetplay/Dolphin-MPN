@@ -7,8 +7,8 @@
 #include <array>
 #include <deque>
 #include <optional>
+#include <span>
 #include <string_view>
-#include <type_traits>
 #include <vector>
 
 #include "Common/Assembler/AssemblerShared.h"
@@ -167,7 +167,7 @@ public:
   }
 
 private:
-  std::optional<std::string_view> RunDfa(const std::vector<DfaNode>& dfa) const;
+  std::optional<std::string_view> RunDfa(std::span<const DfaNode> dfa) const;
   void SkipWs() const;
   void FeedbackTokens() const;
   bool IdentifierHeadExtra(char h) const;

@@ -197,7 +197,12 @@ void MaterialProperty::WriteToMemory(u8*& buffer, const MaterialProperty& proper
           [&](const std::array<float, 2>& value) { write_memory(value.data(), sizeof(float) * 2); },
           [&](const std::array<float, 3>& value) { write_memory(value.data(), sizeof(float) * 3); },
           [&](const std::array<float, 4>& value) { write_memory(value.data(), sizeof(float) * 4); },
-          [&](bool value) { write_memory(&value, sizeof(bool)); }},
+
+          // Bool has the size of an int in the shader
+          [&](bool value) {
+            u32 val = static_cast<u32>(value);
+            write_memory(&val, sizeof(u32));
+          }},
       property.m_value);
 }
 
@@ -222,7 +227,7 @@ bool MaterialData::FromJson(const CustomAssetLibrary::AssetID& asset_id,
                             const picojson::object& json, MaterialData* data)
 {
   const auto parse_properties = [&](const char* name,
-                                    std::vector<MaterialProperty>* properties) -> bool {
+                                    std::vector<MaterialProperty>* material_properties) -> bool {
     const auto properties_iter = json.find(name);
     if (properties_iter == json.end())
     {
@@ -237,7 +242,7 @@ bool MaterialData::FromJson(const CustomAssetLibrary::AssetID& asset_id,
     }
     const auto& properties_array = properties_iter->second.get<picojson::array>();
 
-    if (!ParseMaterialProperties(asset_id, properties_array, properties))
+    if (!ParseMaterialProperties(asset_id, properties_array, material_properties))
       return false;
     return true;
   };

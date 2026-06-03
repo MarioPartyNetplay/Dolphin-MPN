@@ -5,8 +5,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
-#include <fmt/format.h>
+#include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -35,57 +34,15 @@ using std::isnan;
 #include "Core/System.h"
 
 template <typename T>
-static T HostRead(const Core::CPUThreadGuard& guard, u32 address);
+static T HostRead(const Core::CPUThreadGuard& guard, u32 address)
+{
+  return PowerPC::MMU::HostRead<T>(guard, address);
+}
 
 template <typename T>
-static void HostWrite(const Core::CPUThreadGuard& guard, T var, u32 address);
-
-template <>
-u8 HostRead(const Core::CPUThreadGuard& guard, u32 address)
+static void HostWrite(const Core::CPUThreadGuard& guard, T var, u32 address)
 {
-  return PowerPC::MMU::HostRead_U8(guard, address);
-}
-
-template <>
-u16 HostRead(const Core::CPUThreadGuard& guard, u32 address)
-{
-  return PowerPC::MMU::HostRead_U16(guard, address);
-}
-
-template <>
-u32 HostRead(const Core::CPUThreadGuard& guard, u32 address)
-{
-  return PowerPC::MMU::HostRead_U32(guard, address);
-}
-
-template <>
-u64 HostRead(const Core::CPUThreadGuard& guard, u32 address)
-{
-  return PowerPC::MMU::HostRead_U64(guard, address);
-}
-
-template <>
-void HostWrite(const Core::CPUThreadGuard& guard, u8 var, u32 address)
-{
-  PowerPC::MMU::HostWrite_U8(guard, var, address);
-}
-
-template <>
-void HostWrite(const Core::CPUThreadGuard& guard, u16 var, u32 address)
-{
-  PowerPC::MMU::HostWrite_U16(guard, var, address);
-}
-
-template <>
-void HostWrite(const Core::CPUThreadGuard& guard, u32 var, u32 address)
-{
-  PowerPC::MMU::HostWrite_U32(guard, var, address);
-}
-
-template <>
-void HostWrite(const Core::CPUThreadGuard& guard, u64 var, u32 address)
-{
-  PowerPC::MMU::HostWrite_U64(guard, var, address);
+  PowerPC::MMU::HostWrite<T>(guard, var, address);
 }
 
 template <typename T, typename U = T>
@@ -143,8 +100,7 @@ static double CallstackFunc(expr_func* f, vec_expr_t* args, void* c)
   const char* cstr = expr_get_str(&vec_nth(args, 0));
   if (cstr != nullptr)
   {
-    return std::ranges::any_of(
-        stack, [cstr](const auto& s) { return s.Name.find(cstr) != std::string::npos; });
+    return std::ranges::any_of(stack, [cstr](const auto& s) { return s.Name.contains(cstr); });
   }
 
   return 0;
@@ -470,7 +426,7 @@ void Expression::SynchronizeBindings(Core::System& system, SynchronizeDirection 
       else
       {
         ppc_state.msr.Hex = static_cast<u32>(static_cast<s64>(v->value));
-        PowerPC::MSRUpdated(ppc_state);
+        system.GetPowerPC().MSRUpdated();
       }
       break;
     }

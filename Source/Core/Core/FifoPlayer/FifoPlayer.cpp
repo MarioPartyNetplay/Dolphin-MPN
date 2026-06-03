@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <type_traits>
 
 #include "Common/Assert.h"
@@ -315,7 +314,7 @@ void FifoPlayer::SetFileLoadedCallback(CallbackFunc callback)
 {
   m_FileLoadedCb = std::move(callback);
 
-  // Trigger the callback immediatly if the file is already loaded.
+  // Trigger the callback immediately if the file is already loaded.
   if (GetFile() != nullptr)
   {
     m_FileLoadedCb();
@@ -644,7 +643,7 @@ void FifoPlayer::LoadMemory()
     HID4(ppc_state).SBE = 1;
   }
 
-  PowerPC::MSRUpdated(ppc_state);
+  m_system.GetPowerPC().MSRUpdated();
 
   auto& mmu = m_system.GetMMU();
   mmu.DBATUpdated();
@@ -706,12 +705,12 @@ void FifoPlayer::LoadTextureMemory()
 
 void FifoPlayer::WriteCP(u32 address, u16 value)
 {
-  m_system.GetMMU().Write_U16(value, 0xCC000000 | address);
+  m_system.GetMMU().Write<u16>(value, 0xCC000000 | address);
 }
 
 void FifoPlayer::WritePI(u32 address, u32 value)
 {
-  m_system.GetMMU().Write_U32(value, 0xCC003000 | address);
+  m_system.GetMMU().Write<u32>(value, 0xCC003000 | address);
 }
 
 void FifoPlayer::FlushWGP()
@@ -810,13 +809,13 @@ bool FifoPlayer::ShouldLoadXF(u8 reg)
 bool FifoPlayer::IsIdleSet() const
 {
   CommandProcessor::UCPStatusReg status =
-      m_system.GetMMU().Read_U16(0xCC000000 | CommandProcessor::STATUS_REGISTER);
+      m_system.GetMMU().Read<u16>(0xCC000000 | CommandProcessor::STATUS_REGISTER);
   return status.CommandIdle;
 }
 
 bool FifoPlayer::IsHighWatermarkSet() const
 {
   CommandProcessor::UCPStatusReg status =
-      m_system.GetMMU().Read_U16(0xCC000000 | CommandProcessor::STATUS_REGISTER);
+      m_system.GetMMU().Read<u16>(0xCC000000 | CommandProcessor::STATUS_REGISTER);
   return status.OverflowHiWatermark;
 }

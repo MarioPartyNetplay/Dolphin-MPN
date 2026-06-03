@@ -3,14 +3,12 @@
 
 #include "Core/Debugger/Debugger_SymbolMap.h"
 
-#include <cstdio>
 #include <functional>
 #include <string>
 
 #include <fmt/format.h>
 
 #include "Common/CommonTypes.h"
-#include "Common/StringUtil.h"
 
 #include "Core/Core.h"
 #include "Core/HW/Memmap.h"
@@ -34,18 +32,18 @@ static void WalkTheStack(const Core::CPUThreadGuard& guard,
 
   if (!IsStackBottom(guard, ppc_state.gpr[1]))
   {
-    u32 addr = PowerPC::MMU::HostRead_U32(guard, ppc_state.gpr[1]);  // SP
+    u32 addr = PowerPC::MMU::HostRead<u32>(guard, ppc_state.gpr[1]);  // SP
 
     // Walk the stack chain
     for (int count = 0; !IsStackBottom(guard, addr + 4) && (count < 20); ++count)
     {
-      u32 func_addr = PowerPC::MMU::HostRead_U32(guard, addr + 4);
+      u32 func_addr = PowerPC::MMU::HostRead<u32>(guard, addr + 4);
       stack_step(func_addr);
 
       if (IsStackBottom(guard, addr))
         break;
 
-      addr = PowerPC::MMU::HostRead_U32(guard, addr);
+      addr = PowerPC::MMU::HostRead<u32>(guard, addr);
     }
   }
 }

@@ -4,7 +4,6 @@
 #include "Core/IOS/USB/USB_HID/HIDv5.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <memory>
 #include <mutex>
 
@@ -16,21 +15,15 @@
 
 namespace IOS::HLE
 {
-constexpr u32 USBV5_VERSION = 0x50001;
-
 USB_HIDv5::~USB_HIDv5() = default;
 
 std::optional<IPCReply> USB_HIDv5::IOCtl(const IOCtlRequest& request)
 {
-  auto& system = GetSystem();
-  auto& memory = system.GetMemory();
-
   request.Log(GetDeviceName(), Common::Log::LogType::IOS_USB);
   switch (request.request)
   {
   case USB::IOCTL_USBV5_GETVERSION:
-    memory.Write_U32(USBV5_VERSION, request.buffer_out);
-    return IPCReply(IPC_SUCCESS);
+    return GetUSBVersion(request);
   case USB::IOCTL_USBV5_GETDEVICECHANGE:
     return GetDeviceChange(request);
   case USB::IOCTL_USBV5_SHUTDOWN:

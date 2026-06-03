@@ -5,10 +5,7 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <functional>
-#include <list>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -26,14 +23,14 @@
 
 namespace UICommon
 {
-static constexpr u32 CACHE_REVISION = 26;  // Last changed in PR 10084
+static constexpr u32 CACHE_REVISION = 27;  // Last changed in PR 13844
 
-std::vector<std::string> FindAllGamePaths(const std::vector<std::string>& directories_to_scan,
+std::vector<std::string> FindAllGamePaths(std::span<const std::string_view> directories_to_scan,
                                           bool recursive_scan)
 {
-  static const std::vector<std::string> search_extensions = {
-      ".gcm", ".tgc", ".bin", ".iso", ".ciso", ".gcz", ".wbfs",
-      ".wia", ".rvz", ".nfs", ".wad", ".dol",  ".elf", ".json"};
+  constexpr auto search_extensions =
+      std::to_array<std::string_view>({".gcm", ".tgc", ".bin", ".iso", ".ciso", ".gcz", ".wbfs",
+                                       ".wia", ".rvz", ".nfs", ".wad", ".dol", ".elf", ".json"});
 
   // TODO: We could process paths iteratively as they are found
   return Common::DoFileSearch(directories_to_scan, search_extensions, recursive_scan);
@@ -170,7 +167,6 @@ bool GameFileCache::UpdateAdditionalMetadata(const GameUpdatedFn& game_updated,
 bool GameFileCache::UpdateAdditionalMetadata(std::shared_ptr<GameFile>* game_file)
 {
   const bool xml_metadata_changed = (*game_file)->XMLMetadataChanged();
-  const bool wii_banner_changed = (*game_file)->WiiBannerChanged();
   const bool custom_banner_changed = (*game_file)->CustomBannerChanged();
 
   (*game_file)->DownloadDefaultCover();
@@ -178,8 +174,8 @@ bool GameFileCache::UpdateAdditionalMetadata(std::shared_ptr<GameFile>* game_fil
   const bool default_cover_changed = (*game_file)->DefaultCoverChanged();
   const bool custom_cover_changed = (*game_file)->CustomCoverChanged();
 
-  if (!xml_metadata_changed && !wii_banner_changed && !custom_banner_changed &&
-      !default_cover_changed && !custom_cover_changed)
+  if (!xml_metadata_changed && !custom_banner_changed && default_cover_changed &&
+      !custom_cover_changed)
   {
     return false;
   }
@@ -190,8 +186,6 @@ bool GameFileCache::UpdateAdditionalMetadata(std::shared_ptr<GameFile>* game_fil
   std::shared_ptr<GameFile> copy = std::make_shared<GameFile>(**game_file);
   if (xml_metadata_changed)
     copy->XMLMetadataCommit();
-  if (wii_banner_changed)
-    copy->WiiBannerCommit();
   if (custom_banner_changed)
     copy->CustomBannerCommit();
   if (default_cover_changed)

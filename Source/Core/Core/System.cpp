@@ -33,13 +33,15 @@
 #include "IOS/USB/Emulated/Infinity.h"
 #include "IOS/USB/Emulated/Skylanders/Skylander.h"
 #include "IOS/USB/USBScanner.h"
-#include "VideoCommon/Assets/CustomResourceManager.h"
 #include "VideoCommon/CommandProcessor.h"
 #include "VideoCommon/Fifo.h"
 #include "VideoCommon/GeometryShaderManager.h"
+#include "VideoCommon/PerformanceMetrics.h"
 #include "VideoCommon/PixelEngine.h"
 #include "VideoCommon/PixelShaderManager.h"
+#include "VideoCommon/Resources/CustomResourceManager.h"
 #include "VideoCommon/VertexShaderManager.h"
+#include "VideoCommon/VideoEvents.h"
 #include "VideoCommon/XFStateManager.h"
 
 namespace Core
@@ -58,6 +60,9 @@ struct System::Impl
         m_jit_interface(system), m_fifo_player(system), m_fifo_recorder(system), m_movie(system)
   {
   }
+
+  // Built first since other constructors may register hooks right away.
+  VideoEvents m_video_events;
 
   std::unique_ptr<SoundStream> m_sound_stream;
   bool m_sound_stream_running = false;
@@ -82,6 +87,7 @@ struct System::Impl
   IOS::WiiIPC m_wii_ipc;
   Memory::MemoryManager m_memory;
   MemoryInterface::MemoryInterfaceManager m_memory_interface;
+  PerformanceMetrics m_perf_metrics;
   PixelEngine::PixelEngineManager m_pixel_engine;
   PixelShaderManager m_pixel_shader_manager;
   PowerPC::PowerPCManager m_power_pc;
@@ -270,6 +276,11 @@ Movie::MovieManager& System::GetMovie() const
   return m_impl->m_movie;
 }
 
+PerformanceMetrics& System::GetPerfMetrics() const
+{
+  return m_impl->m_perf_metrics;
+}
+
 PixelEngine::PixelEngineManager& System::GetPixelEngine() const
 {
   return m_impl->m_pixel_engine;
@@ -339,4 +350,14 @@ VideoCommon::CustomResourceManager& System::GetCustomResourceManager() const
 {
   return m_impl->m_custom_resource_manager;
 }
+
+VideoEvents& System::GetVideoEvents() const
+{
+  return m_impl->m_video_events;
+}
 }  // namespace Core
+
+VideoEvents& GetVideoEvents()
+{
+  return Core::System::GetInstance().GetVideoEvents();
+}

@@ -186,6 +186,11 @@ LRESULT PlatformWin32::WndProc(const HWND hwnd, const UINT msg, const WPARAM wPa
   }
   break;
 
+  case WM_KEYDOWN:
+    if (wParam == VK_ESCAPE)
+      platform->RequestShutdown();
+    break;
+
   case WM_CLOSE:
     platform->RequestShutdown();
     break;

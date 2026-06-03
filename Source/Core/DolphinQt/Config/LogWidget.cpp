@@ -12,8 +12,6 @@
 #include <QPushButton>
 #include <QTimer>
 
-#include "Core/ConfigManager.h"
-
 #include "DolphinQt/Settings.h"
 
 // Delay in ms between calls of UpdateLog()
@@ -184,8 +182,7 @@ void LogWidget::LoadSettings()
                                                                      Qt::ScrollBarAlwaysOn);
 
   // Log - Font Selection
-  // Currently "Debugger Font" is not supported as there is no Qt Debugger, defaulting to Monospace
-  m_log_font->setCurrentIndex(std::min(settings.value(QStringLiteral("logging/font")).toInt(), 1));
+  m_log_font->setCurrentIndex(settings.value(QStringLiteral("logging/font")).toInt());
   UpdateFont();
 }
 

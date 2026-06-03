@@ -23,6 +23,8 @@
 #include <vector>
 
 #include "Common/CommonTypes.h"
+#include "Common/Functional.h"
+#include "Common/HookableEvent.h"
 #include "Common/SPSCQueue.h"
 #include "Common/Timer.h"
 #include "Core/CPUThreadConfigCallback.h"
@@ -46,7 +48,8 @@ struct Globals
   float last_OC_factor_inverted = 0.0f;
 };
 
-typedef void (*TimedCallback)(Core::System& system, u64 userdata, s64 cyclesLate);
+using TimedCallback =
+    Common::MoveOnlyFunction<void(Core::System& system, u64 userdata, s64 cyclesLate)>;
 
 struct EventType
 {
@@ -206,6 +209,7 @@ private:
   float m_config_oc_factor = 1.0f;
   float m_config_oc_inv_factor = 1.0f;
   bool m_config_sync_on_skip_idle = false;
+  bool m_config_rush_frame_presentation = false;
 
   s64 m_throttle_reference_cycle = 0;
   TimePoint m_throttle_reference_time = Clock::now();
@@ -230,7 +234,12 @@ private:
   Common::PrecisionTimer m_precision_cpu_timer;
   Common::PrecisionTimer m_precision_gpu_timer;
 
-  int m_on_state_changed_handle;
+  Common::EventHook m_core_state_changed_hook;
+  Common::EventHook m_frame_hook;
+
+  // Used to optionally minimize throttling for improving input latency.
+  std::atomic_bool m_throttled_after_presentation = false;
+  DT m_max_throttle_skip_time{};
 };
 
 }  // namespace CoreTiming

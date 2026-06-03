@@ -25,7 +25,27 @@ void ConfigChoice::OnConfigChanged()
   setCurrentIndex(ReadValue(m_setting));
 }
 
-ConfigStringChoice::ConfigStringChoice(const std::vector<std::string>& options,
+ConfigChoiceU32::ConfigChoiceU32(const QStringList& options, const Config::Info<u32>& setting,
+                                 Config::Layer* layer)
+    : ConfigControl(setting.GetLocation(), layer), m_setting(setting)
+{
+  addItems(options);
+  setCurrentIndex(ReadValue(setting));
+
+  connect(this, &QComboBox::currentIndexChanged, this, &ConfigChoiceU32::Update);
+}
+
+void ConfigChoiceU32::Update(int choice)
+{
+  SaveValue(m_setting, (u32)choice);
+}
+
+void ConfigChoiceU32::OnConfigChanged()
+{
+  setCurrentIndex(ReadValue(m_setting));
+}
+
+ConfigStringChoice::ConfigStringChoice(std::span<const std::string> options,
                                        const Config::Info<std::string>& setting,
                                        Config::Layer* layer)
     : ConfigControl(setting.GetLocation(), layer), m_setting(setting), m_text_is_data(true)
@@ -37,7 +57,7 @@ ConfigStringChoice::ConfigStringChoice(const std::vector<std::string>& options,
   connect(this, &QComboBox::currentIndexChanged, this, &ConfigStringChoice::Update);
 }
 
-ConfigStringChoice::ConfigStringChoice(const std::vector<std::pair<QString, QString>>& options,
+ConfigStringChoice::ConfigStringChoice(std::span<const std::pair<QString, QString>> options,
                                        const Config::Info<std::string>& setting,
                                        Config::Layer* layer)
     : ConfigControl(setting.GetLocation(), layer), m_setting(setting), m_text_is_data(false)
@@ -71,7 +91,7 @@ void ConfigStringChoice::OnConfigChanged()
   Load();
 }
 
-ConfigComplexChoice::ConfigComplexChoice(const InfoVariant setting1, const InfoVariant setting2,
+ConfigComplexChoice::ConfigComplexChoice(const InfoVariant& setting1, const InfoVariant& setting2,
                                          Config::Layer* layer)
     : m_layer(layer), m_setting1(setting1), m_setting2(setting2)
 {

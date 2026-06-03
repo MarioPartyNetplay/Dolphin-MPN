@@ -11,6 +11,7 @@
 
 #include "Common/Analytics.h"
 #include "Common/CommonTypes.h"
+#include "Common/Config/Config.h"
 
 #if defined(ANDROID)
 #include <functional>
@@ -108,6 +109,9 @@ class DolphinAnalytics
 public:
   // Performs lazy-initialization of a singleton and returns the instance.
   static DolphinAnalytics& Instance();
+  DolphinAnalytics(const DolphinAnalytics&) = delete;
+  DolphinAnalytics& operator=(const DolphinAnalytics&) = delete;
+  ~DolphinAnalytics();
 
 #if defined(ANDROID)
   // Get value from java.
@@ -144,7 +148,7 @@ public:
   // calling it does not guarantee when a report will actually be sent.
   //
   // This method is NOT thread-safe.
-  void ReportPerformanceInfo(PerformanceSample&& sample);
+  void ReportPerformanceInfo(PerformanceSample sample);
 
   // Forward Send method calls to the reporter.
   template <typename T>
@@ -198,4 +202,6 @@ private:
 
   std::mutex m_reporter_mutex;
   Common::AnalyticsReporter m_reporter;
+  Config::ConfigChangedCallbackID m_config_changed_callback_id{};
+  bool m_last_analytics_enabled = false;
 };

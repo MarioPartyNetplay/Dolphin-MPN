@@ -27,8 +27,8 @@ HacksWidget::HacksWidget(GraphicsPane* gfx_pane) : m_game_layer{gfx_pane->GetCon
 
   connect(gfx_pane, &GraphicsPane::BackendChanged, this, &HacksWidget::OnBackendChanged);
   OnBackendChanged(QString::fromStdString(Config::Get(Config::MAIN_GFX_BACKEND)));
-  connect(m_gpu_texture_decoding, &QCheckBox::toggled,
-          [gfx_pane] { emit gfx_pane->UseGPUTextureDecodingChanged(); });
+  connect(gfx_pane, &GraphicsPane::UpdateGPUTextureDecoding, this,
+          &HacksWidget::UpdateGPUTextureDecodingEnabled);
 }
 
 void HacksWidget::CreateWidgets()
@@ -128,7 +128,7 @@ void HacksWidget::OnBackendChanged(const QString& backend_name)
   const bool bbox = g_backend_info.bSupportsBBox;
   const bool gpu_texture_decoding = g_backend_info.bSupportsGPUTextureDecoding;
 
-  m_gpu_texture_decoding->setEnabled(gpu_texture_decoding);
+  UpdateGPUTextureDecodingEnabled();
   m_disable_bounding_box->setEnabled(bbox);
 
   const QString tooltip = tr("%1 doesn't support this feature on your system.")
@@ -214,8 +214,8 @@ void HacksWidget::AddDescriptions()
   static const char TR_GPU_DECODING_DESCRIPTION[] = QT_TR_NOOP(
       "Enables texture decoding using the GPU instead of the CPU.<br><br>This may result in "
       "performance gains in some scenarios, or on systems where the CPU is the "
-      "bottleneck.<br><br>If this setting is enabled, Arbitrary Mipmap Detection will be "
-      "disabled.<br><br>"
+      "bottleneck.<br><br>This setting is disabled when Arbitrary Mipmap Detection is "
+      "enabled.<br><br>"
       "<dolphin_emphasis>If unsure, leave this unchecked.</dolphin_emphasis>");
   static const char TR_FAST_DEPTH_CALC_DESCRIPTION[] = QT_TR_NOOP(
       "Uses a less accurate algorithm to calculate depth values.<br><br>Causes issues in a few "
@@ -259,6 +259,13 @@ void HacksWidget::AddDescriptions()
   m_save_texture_cache_state->SetDescription(tr(TR_SAVE_TEXTURE_CACHE_TO_STATE_DESCRIPTION));
   m_vertex_rounding->SetDescription(tr(TR_VERTEX_ROUNDING_DESCRIPTION));
   m_vi_skip->SetDescription(tr(TR_VI_SKIP_DESCRIPTION));
+}
+
+void HacksWidget::UpdateGPUTextureDecodingEnabled()
+{
+  const bool gpu_texture_decoding = g_backend_info.bSupportsGPUTextureDecoding;
+  m_gpu_texture_decoding->setEnabled(
+      gpu_texture_decoding && !Get(m_game_layer, Config::GFX_ENHANCE_ARBITRARY_MIPMAP_DETECTION));
 }
 
 void HacksWidget::UpdateDeferEFBCopiesEnabled()

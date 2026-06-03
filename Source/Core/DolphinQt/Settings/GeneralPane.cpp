@@ -3,8 +3,6 @@
 
 #include "DolphinQt/Settings/GeneralPane.h"
 
-#include <map>
-
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -22,9 +20,8 @@
 #include "Core/AchievementManager.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/UISettings.h"
-#include "Core/ConfigManager.h"
 #include "Core/Core.h"
-#include "Core/PowerPC/PowerPC.h"
+#include "Core/DolphinAnalytics.h"
 #include "Core/System.h"
 
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
@@ -80,8 +77,9 @@ void GeneralPane::OnEmulationStateChanged(Core::State state)
   m_checkbox_cheats->setEnabled(!running && !hardcore);
 #else   // USE_RETRO_ACHIEVEMENTS
   m_checkbox_cheats->setEnabled(!running);
-#endif  // USE_RETRO_ACHIEVEMENTS
+  m_checkbox_load_games_into_memory->setEnabled(!running);
   m_checkbox_override_region_settings->setEnabled(!running);
+#endif  // USE_RETRO_ACHIEVEMENTS
 #ifdef USE_DISCORD_PRESENCE
   m_checkbox_discord_presence->setEnabled(!running);
 #endif
@@ -105,7 +103,6 @@ void GeneralPane::ConnectLayout()
   connect(m_combobox_speedlimit, &ToolTipComboBox::currentIndexChanged, [this] {
     Config::SetBaseOrCurrent(Config::MAIN_EMULATION_SPEED,
                              m_combobox_speedlimit->currentIndex() * 0.1f);
-    Config::Save();
   });
 
   connect(m_combobox_fallback_region, &ToolTipComboBox::currentIndexChanged, this,
@@ -124,7 +121,23 @@ void GeneralPane::CreateBasic()
   m_checkbox_dualcore = new ToolTipCheckBox(tr("Enable Dual Core (speed-hack)"));
   basic_group_layout->addWidget(m_checkbox_dualcore);
 
-  m_checkbox_override_region_settings = new ToolTipCheckBox(tr("Allow Mismatched Region Settings"));
+  m_checkbox_cheats = new ConfigBool(tr("Enable Cheats"), Config::MAIN_ENABLE_CHEATS);
+  basic_group_layout->addWidget(m_checkbox_cheats);
+
+  m_checkbox_load_games_into_memory =
+      new ConfigBool(tr("Load Whole Game Into Memory"), Config::MAIN_LOAD_GAME_INTO_MEMORY);
+  basic_group_layout->addWidget(m_checkbox_load_games_into_memory);
+  m_checkbox_load_games_into_memory->SetDescription(
+      tr("Loads the running game into memory in the background."
+         "<br><br>This may improve performance with slow or high-latency storage."
+         "<br>System memory requirements will be much higher with this setting enabled."
+         "<br><br><dolphin_emphasis>If unsure, leave this unchecked.</dolphin_emphasis>"));
+
+  m_checkbox_cheats = new ConfigBool(tr("Enable Cheats"), Config::MAIN_ENABLE_CHEATS);
+  basic_group_layout->addWidget(m_checkbox_cheats);
+
+  m_checkbox_override_region_settings =
+      new ConfigBool(tr("Allow Mismatched Region Settings"), Config::MAIN_OVERRIDE_REGION_SETTINGS);
   basic_group_layout->addWidget(m_checkbox_override_region_settings);
 
   m_checkbox_auto_disc_change = new ToolTipCheckBox(tr("Change Discs Automatically"));
@@ -329,8 +342,6 @@ void GeneralPane::OnSaveConfig()
   Config::SetBaseOrCurrent(Config::MAIN_ENABLE_CHEATS, m_checkbox_cheats->isChecked());
   Settings::Instance().SetFallbackRegion(
       UpdateFallbackRegionFromIndex(m_combobox_fallback_region->currentIndex()));
-
-  settings.SaveSettings();
 }
 
 

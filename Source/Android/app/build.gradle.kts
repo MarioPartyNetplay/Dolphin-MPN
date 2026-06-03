@@ -1,18 +1,20 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    kotlin("plugin.serialization") version "1.8.21"
-    id("androidx.baselineprofile")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 @Suppress("UnstableApiUsage")
 android {
-    compileSdkVersion = "android-36"
-    ndkVersion = "27.0.12077973"
+    compileSdk = 36
+    ndkVersion = "29.0.14206865"
 
     buildFeatures {
+        compose = true
         viewBinding = true
         buildConfig = true
+        resValues = true
     }
 
     compileOptions {
@@ -21,10 +23,6 @@ android {
 
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     lint {
@@ -39,7 +37,7 @@ android {
 
     defaultConfig {
         applicationId = "org.dolphinemu.dolphinmpn"
-        minSdk = 21
+        minSdk = 24
         targetSdk = 36
 
         versionCode = getBuildVersionCode()
@@ -75,7 +73,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android.txt"),
+                getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
@@ -121,42 +119,58 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xannotation-default-target=param-property")
+    }
+}
+
 dependencies {
     baselineProfile(project(":benchmark"))
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
-    implementation("androidx.core:core-ktx:1.13.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("androidx.cardview:cardview:1.0.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("androidx.fragment:fragment-ktx:1.6.2")
-    implementation("androidx.slidingpanelayout:slidingpanelayout:1.2.0")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.core:core-splashscreen:1.0.1")
-    implementation("androidx.preference:preference-ktx:1.2.1")
-    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.cardview)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.slidingpanelayout)
+    implementation(libs.material)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.preference.ktx)
+    implementation(libs.androidx.profileinstaller)
 
     // Kotlin extensions for lifecycle components
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation(libs.androidx.lifecycle.livedata.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
 
     // Android TV UI libraries.
-    implementation("androidx.leanback:leanback:1.0.0")
-    implementation("androidx.tvprovider:tvprovider:1.0.0")
-
-    // For REST calls
-    implementation("com.android.volley:volley:1.2.1")
+    implementation(libs.androidx.leanback)
+    implementation(libs.androidx.tvprovider)
+    implementation(libs.androidx.swiperefreshlayout)
 
     // For loading game covers from disk and GameTDB
-    implementation("io.coil-kt:coil:2.6.0")
+    implementation(libs.coil)
+    implementation(libs.coil.compose)
 
     // For loading custom GPU drivers
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation(libs.kotlinx.serialization.json)
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation(libs.kotlinx.coroutines.android)
 
-    implementation("com.nononsenseapps:filepicker:4.2.1")
+    implementation(libs.filepicker)
+
+    // Jetpack Compose
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material.icons)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.runtime.livedata)
+    implementation(libs.androidx.compose.ui)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.tooling.preview)
 }
 
 fun getGitVersion(): String {

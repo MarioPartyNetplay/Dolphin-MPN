@@ -138,4 +138,21 @@ extern "C" {
     JNIEXPORT jstring JNICALL
     Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getAndroidDeviceName(
         JNIEnv* env, jobject thiz);
+        
+    // Additional utility methods
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setPlayerName(
+        JNIEnv* env, jobject thiz, jstring playerName);
+        
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getPlayerName(
+        JNIEnv* env, jobject thiz);
+        
+    JNIEXPORT void JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_setRomFolder(
+        JNIEnv* env, jobject thiz, jstring folderPath);
+        
+    JNIEXPORT jstring JNICALL
+    Java_org_dolphinemu_dolphinemu_features_netplay_NetPlayManager_getRomFolder(
+        JNIEnv* env, jobject thiz);
 }

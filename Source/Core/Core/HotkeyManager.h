@@ -12,7 +12,6 @@
 
 namespace ControllerEmu
 {
-class ControllerEmu;
 class Buttons;
 }  // namespace ControllerEmu
 
@@ -108,8 +107,8 @@ enum Hotkey
 
   HK_FREELOOK_TOGGLE,
 
-  HK_TOGGLE_STEREO_SBS,
-  HK_TOGGLE_STEREO_TAB,
+  HK_TOGGLE_STEREO_SIDE_BY_SIDE,
+  HK_TOGGLE_STEREO_TOP_AND_BOTTOM,
   HK_TOGGLE_STEREO_ANAGLYPH,
 
   HK_DECREASE_DEPTH,

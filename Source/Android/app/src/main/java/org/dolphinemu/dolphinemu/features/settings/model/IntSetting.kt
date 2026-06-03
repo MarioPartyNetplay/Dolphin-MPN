@@ -127,13 +127,6 @@ enum class IntSetting(
         0
     ),
     GFX_STEREO_MODE(Settings.FILE_GFX, Settings.SECTION_STEREOSCOPY, "StereoMode", 0),
-    GFX_STEREO_DEPTH(Settings.FILE_GFX, Settings.SECTION_STEREOSCOPY, "StereoDepth", 20),
-    GFX_STEREO_CONVERGENCE_PERCENTAGE(
-        Settings.FILE_GFX,
-        Settings.SECTION_STEREOSCOPY,
-        "StereoConvergencePercentage",
-        100
-    ),
     GFX_PERF_SAMP_WINDOW(
         Settings.FILE_GFX,
         Settings.SECTION_GFX_SETTINGS,
@@ -145,7 +138,21 @@ enum class IntSetting(
     WIIMOTE_2_SOURCE(Settings.FILE_WIIMOTE, "Wiimote2", "Source", 0),
     WIIMOTE_3_SOURCE(Settings.FILE_WIIMOTE, "Wiimote3", "Source", 0),
     WIIMOTE_4_SOURCE(Settings.FILE_WIIMOTE, "Wiimote4", "Source", 0),
-    WIIMOTE_BB_SOURCE(Settings.FILE_WIIMOTE, "BalanceBoard", "Source", 0);
+    WIIMOTE_BB_SOURCE(Settings.FILE_WIIMOTE, "BalanceBoard", "Source", 0),
+    NETPLAY_CONNECT_PORT(Settings.FILE_DOLPHIN, Settings.SECTION_INI_NETPLAY, "ConnectPort", 2626),
+    NETPLAY_HOST_PORT(Settings.FILE_DOLPHIN, Settings.SECTION_INI_NETPLAY, "HostPort", 2626),
+    NETPLAY_CLIENT_BUFFER_SIZE(
+        Settings.FILE_DOLPHIN,
+        Settings.SECTION_INI_NETPLAY,
+        "BufferSizeClient",
+        1
+    ),
+    NETPLAY_BUFFER_SIZE(
+        Settings.FILE_DOLPHIN,
+        Settings.SECTION_INI_NETPLAY,
+        "BufferSize",
+        5
+    );
 
     override val isOverridden: Boolean
         get() = NativeConfig.isOverridden(file, section, key)

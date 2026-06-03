@@ -27,7 +27,6 @@
 
 #include "Common/Assert.h"
 #include "Common/GekkoDisassembler.h"
-#include "Common/StringUtil.h"
 #include "Core/Core.h"
 #include "Core/Debugger/CodeTrace.h"
 #include "Core/Debugger/PPCDebugInterface.h"
@@ -320,6 +319,7 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
       guard ? std::make_optional(power_pc.GetPPCState().pc) : std::nullopt;
 
   const bool dark_theme = Settings::Instance().IsThemeDark();
+  const bool breaking_enabled = power_pc.GetBreakPoints().IsBreakingEnabled();
 
   m_branches.clear();
 
@@ -401,7 +401,7 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
     if (bp != nullptr)
     {
       auto icon = Resources::GetThemeIcon("debugger_breakpoint").pixmap(QSize(rowh - 2, rowh - 2));
-      if (!bp->is_enabled)
+      if (!breaking_enabled || !bp->is_enabled)
       {
         QPixmap disabled_icon(icon.size());
         disabled_icon.fill(Qt::transparent);
@@ -676,7 +676,7 @@ void CodeViewWidget::OnContextMenu()
 
   auto* note = m_ppc_symbol_db.GetNoteFromAddr(addr);
   note_edit_action->setEnabled(note != nullptr);
-  // A note cannot be added ontop of the starting address of another note.
+  // A note cannot be added on top of the starting address of another note.
   if (note != nullptr && note->address == addr)
     note_add_action->setEnabled(false);
 

@@ -7,9 +7,6 @@
 
 #include <fmt/format.h>
 #include <optional>
-#include <signal.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #ifdef _WIN32
 #include <WinSock2.h>
@@ -26,16 +23,15 @@ typedef SSIZE_T ssize_t;
 #endif
 
 #include "Common/Assert.h"
-#include "Common/Event.h"
 #include "Common/Logging/Log.h"
 #include "Common/SocketContext.h"
-#include "Common/StringUtil.h"
 #include "Core/Core.h"
 #include "Core/HW/CPU.h"
 #include "Core/HW/Memmap.h"
 #include "Core/Host.h"
 #include "Core/PowerPC/BreakPoints.h"
 #include "Core/PowerPC/Gekko.h"
+#include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCCache.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
@@ -648,6 +644,7 @@ static void WriteRegister()
   else if (id >= 71 && id < 87)
   {
     ppc_state.sr[id - 71] = re32hex(bufptr);
+    system.GetMMU().SRUpdated();
   }
   else if (id >= 88 && id < 104)
   {
@@ -662,7 +659,7 @@ static void WriteRegister()
       break;
     case 65:
       ppc_state.msr.Hex = re32hex(bufptr);
-      PowerPC::MSRUpdated(ppc_state);
+      system.GetPowerPC().MSRUpdated();
       break;
     case 66:
       ppc_state.cr.Set(re32hex(bufptr));

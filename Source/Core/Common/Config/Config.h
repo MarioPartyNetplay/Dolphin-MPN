@@ -4,7 +4,7 @@
 #pragma once
 
 #include <functional>
-#include <map>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,7 +17,7 @@ namespace Config
 {
 struct ConfigChangedCallbackID
 {
-  size_t id = -1;
+  size_t id = std::numeric_limits<size_t>::max();
 
   bool operator==(const ConfigChangedCallbackID&) const = default;
 };
@@ -62,6 +62,14 @@ T Get(LayerType layer, const Info<T>& info)
 }
 
 template <typename T>
+T Get(const Layer* game_layer, const Info<T>& setting)
+{
+  if (game_layer != nullptr)
+    return game_layer->Get(setting);
+  return Get(setting);
+}
+
+template <typename T>
 T Get(const Info<T>& info)
 {
   CachedValue<T> cached = info.GetCachedValue();
@@ -72,10 +80,10 @@ T Get(const Info<T>& info)
     cached.value = GetUncached(info);
     cached.config_version = config_version;
 
-    info.SetCachedValue(cached);
+    info.TryToSetCachedValue(cached);
   }
 
-  return cached.value;
+  return std::move(cached.value);
 }
 
 template <typename T>
@@ -133,6 +141,12 @@ void DeleteKey(LayerType layer, const Info<T>& info)
 {
   if (GetLayer(layer)->DeleteKey(info.GetLocation()))
     OnConfigChanged();
+}
+
+template <typename T>
+bool IsDefaultValue(const Info<T>& info)
+{
+  return Get(info) == info.GetDefaultValue();
 }
 
 // Used to defer OnConfigChanged until after the completion of many config changes.

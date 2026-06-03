@@ -3,6 +3,8 @@ add_library(discio
   Blob.h
   CISOBlob.cpp
   CISOBlob.h
+  CachedBlob.cpp
+  CachedBlob.h
   CompressedBlob.cpp
   CompressedBlob.h
   DirectoryBlob.cpp
@@ -60,25 +62,29 @@ add_library(discio
   WIABlob.h
   WIACompression.cpp
   WIACompression.h
+  WiiBanner.cpp
+  WiiBanner.h
   WiiEncryptionCache.cpp
   WiiEncryptionCache.h
-  WiiSaveBanner.cpp
-  WiiSaveBanner.h
+
 )
 
 target_link_libraries(discio
 PUBLIC
-  core
   BZip2::BZip2
   LibLZMA::LibLZMA
   zstd::zstd
 
 PRIVATE
   fmt::fmt
-  minizip-ng::minizip-ng
+  MINIZIP::minizip-ng
   pugixml
   ZLIB::ZLIB
 )
+
+# Link to core PRIVATE to avoid circular dependency propagation, but we need it for ARCUnpacker
+# The circular dependency (core <-> discio) is handled by CMake's dependency resolution
+target_link_libraries(discio PRIVATE core)
 
 if(MSVC)
   # Add precompiled header

@@ -16,6 +16,7 @@ class QVBoxLayout;
 #include "DolphinQt/Config/ToolTipControls/ToolTipCheckBox.h"
 #include "DolphinQt/Config/ToolTipControls/ToolTipComboBox.h"
 #include "DolphinQt/Config/ToolTipControls/ToolTipPushButton.h"
+#include "DolphinQt/Config/ConfigControls/ConfigBool.h"
 
 namespace Core
 {
@@ -45,11 +46,12 @@ private:
   ToolTipComboBox* m_combobox_speedlimit;
   ToolTipComboBox* m_combobox_update_track;
   ToolTipComboBox* m_combobox_fallback_region;
+  ToolTipComboBox* m_combobox_codehandler;
   ToolTipCheckBox* m_checkbox_dualcore;
   ToolTipCheckBox* m_checkbox_cheats;
-  ToolTipCheckBox* m_checkbox_override_region_settings;
+  ConfigBool* m_checkbox_load_games_into_memory;
+  ConfigBool* m_checkbox_override_region_settings;
   ToolTipCheckBox* m_checkbox_auto_disc_change;
-  ToolTipComboBox* m_combobox_codehandler;
 #ifdef USE_DISCORD_PRESENCE
   ToolTipCheckBox* m_checkbox_discord_presence;
 #endif

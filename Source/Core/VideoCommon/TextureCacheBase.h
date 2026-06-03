@@ -41,6 +41,7 @@ namespace VideoCommon
 {
 class CustomTextureData;
 class GameTextureAsset;
+class MaterialResource;
 }  // namespace VideoCommon
 
 constexpr std::string_view EFB_DUMP_PREFIX = "efb1";
@@ -277,7 +278,7 @@ public:
   void Invalidate();
   void ReleaseToPool(TCacheEntry* entry);
 
-  TCacheEntry* Load(const TextureInfo& texture_info);
+  TCacheEntry* Load(u32 stage);
   RcTcacheEntry GetTexture(const int textureCacheSafetyColorSampleSize,
                            const TextureInfo& texture_info);
   RcTcacheEntry GetXFBTexture(u32 address, u32 width, u32 height, u32 stride,
@@ -346,7 +347,7 @@ private:
 
   static bool DidLinkedAssetsChange(const TCacheEntry& entry);
 
-  TCacheEntry* LoadImpl(const TextureInfo& texture_info, bool force_reload);
+  TCacheEntry* LoadImpl(u32 stage, bool force_reload);
 
   bool CreateUtilityTextures();
 
@@ -407,6 +408,8 @@ private:
   void DoSaveState(PointerWrap& p);
   void DoLoadState(PointerWrap& p);
 
+  void ApplyMaterialToCacheEntry(const VideoCommon::MaterialResource& material, TCacheEntry* entry);
+
   // m_textures_by_address is the authoritive version of what's actually "in" the texture cache
   // but it's possible for invalidated TCache entries to live on elsewhere
   TexAddrCache m_textures_by_address;
@@ -464,7 +467,7 @@ private:
   void OnFrameEnd();
 
   Common::EventHook m_frame_event =
-      AfterFrameEvent::Register([this](Core::System&) { OnFrameEnd(); }, "TextureCache");
+      GetVideoEvents().after_frame_event.Register([this](Core::System&) { OnFrameEnd(); });
 
   VideoCommon::TextureUtils::TextureDumper m_texture_dumper;
 };

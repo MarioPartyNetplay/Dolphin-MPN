@@ -34,6 +34,15 @@ bool mpn_init_state()
     CurrentState.Scenes = MP4_GAMESTATES;
     CurrentState.Title = "Mario Party 4";
     break;
+  case MPN_GAMEID_MP4DX:
+    CurrentState.Addresses = &MP4_ADDRESSES;
+    CurrentState.Boards = MP4_BOARDS;
+    CurrentState.Image = "box-mp4dx";
+    CurrentState.IsMarioParty = true;
+    CurrentState.Scenes = MP4_GAMESTATES;
+    CurrentState.Title = "Mario Party 4";
+    break;
+
   case MPN_GAMEID_MP5:
     CurrentState.Addresses = &MP5_ADDRESSES;
     CurrentState.Boards = MP5_BOARDS;
@@ -142,6 +151,9 @@ bool mpn_update_state()
   if (!memory.IsInitialized())
     return false;
 
+  if (CurrentState.Addresses == NULL)
+    return false;
+
   CurrentState.PreviousSceneId = CurrentState.CurrentSceneId;
   CurrentState.CurrentSceneId = mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2);
 
@@ -167,7 +179,8 @@ void mpn_per_frame()
       SConfig::GetInstance().GetGameID() == "GP6E01" ||
       SConfig::GetInstance().GetGameID() == "GP7E01" ||
       SConfig::GetInstance().GetGameID() == "RM8E01" ||
-      SConfig::GetInstance().GetGameID() == "GMPEDX")
+      SConfig::GetInstance().GetGameID() == "GMPEDX" ||
+      SConfig::GetInstance().GetGameID() == "GMPDX2")
   {
     uint8_t Needs = 0;
 
@@ -212,7 +225,10 @@ void mpn_per_frame()
       }
     }
 
-    Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
+    if (CurrentState.Addresses == NULL)
+      Needs = MPN_NEEDS_NOTHING;
+    else
+      Needs = mpn_get_needs(mpn_read_value(CurrentState.Addresses->SceneIdAddress, 2), true);
 
     if (Needs != MPN_NEEDS_NOTHING)
     {

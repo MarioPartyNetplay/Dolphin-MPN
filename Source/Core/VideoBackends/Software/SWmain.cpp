@@ -3,7 +3,6 @@
 
 #include "VideoBackends/Software/VideoBackend.h"
 
-#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,9 +37,9 @@ public:
   bool IsFlushed() const override { return true; }
 };
 
-std::string VideoSoftware::GetName() const
+std::string VideoSoftware::GetConfigName() const
 {
-  return NAME;
+  return CONFIG_NAME;
 }
 
 std::string VideoSoftware::GetDisplayName() const

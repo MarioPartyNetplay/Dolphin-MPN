@@ -4,8 +4,8 @@
 #include "DiscIO/DiscUtils.h"
 
 #include <algorithm>
-#include <locale>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -156,7 +156,7 @@ static u64 GetBiggestReferencedOffset(const Volume& volume, const FileInfo& file
   }
 }
 
-u64 GetBiggestReferencedOffset(const Volume& volume, const std::vector<Partition>& partitions)
+u64 GetBiggestReferencedOffset(const Volume& volume, std::span<const Partition> partitions)
 {
   const u64 disc_header_size = volume.GetVolumeType() == Platform::GameCubeDisc ? 0x460 : 0x50000;
   u64 biggest_offset = disc_header_size;

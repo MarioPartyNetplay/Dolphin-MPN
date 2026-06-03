@@ -6,11 +6,8 @@
 #include <SFML/Network/Packet.hpp>
 
 #include <map>
-#include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
-#include <sstream>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -23,7 +20,6 @@
 #include "Common/TraversalClient.h"
 #include "Core/NetPlayProto.h"
 #include "Core/SyncIdentifier.h"
-#include "InputCommon/GCPadStatus.h"
 #include "UICommon/NetPlayIndex.h"
 
 namespace NetPlay
@@ -69,8 +65,6 @@ public:
 
   void AdjustPadBufferSize(unsigned int size);
   void SetHostInputAuthority(bool enable);
-  void SetBBAMode(bool enable);
-  bool IsBBAModeEnabled() const { return m_bba_mode; }
 
   void KickPlayer(PlayerId player);
 
@@ -100,9 +94,6 @@ public:
     bool IsHost() const { return pid == 1; }
   };
 
-  // BBA Packet Synchronization
-  void SendBBAPacket(const u8* data, u32 size);
-  void OnBBAPacketData(sf::Packet& packet, Client& player);
 
   bool is_connected = false;
 
@@ -188,7 +179,6 @@ private:
   bool m_codes_synced = true;
   bool m_start_pending = false;
   bool m_host_input_authority = false;
-  bool m_bba_mode = false;
   PlayerId m_current_golfer = 1;
   PlayerId m_pending_golfer = 0;
 
@@ -223,5 +213,8 @@ private:
   Common::TraversalClient* m_traversal_client = nullptr;
   NetPlayUI* m_dialog = nullptr;
   NetPlayIndex m_index;
+
+  // Chat blocklist
+  bool ContainsBlockedWord(const std::string& msg) const;
 };
 }  // namespace NetPlay

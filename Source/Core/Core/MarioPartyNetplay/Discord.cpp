@@ -30,7 +30,7 @@ bool mpn_update_discord()
   int sceneValue = -1;
   bool shouldSave = false;
 
-  if (gameID == MPN_GAMEID_MP4)
+  if (gameID == MPN_GAMEID_MP4 || gameID == MPN_GAMEID_MP4DX)
   {
     sceneValue = mpn_read_value(0x001D3CE3, 1);
     shouldSave = (sceneValue == 0x4E);

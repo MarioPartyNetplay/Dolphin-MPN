@@ -4,15 +4,13 @@
 
 #include "Core/DSP/DSPDisassembler.h"
 
-#include <algorithm>
 #include <limits>
 #include <string>
-#include <vector>
+#include <utility>
 
 #include <fmt/format.h>
 
 #include "Common/CommonTypes.h"
-#include "Common/EnumUtils.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
 
@@ -24,7 +22,7 @@ DSPDisassembler::DSPDisassembler(const AssemblerSettings& settings) : settings_(
 {
 }
 
-bool DSPDisassembler::Disassemble(const std::vector<u16>& code, std::string& text)
+bool DSPDisassembler::Disassemble(std::span<const u16> code, std::string& text)
 {
   if (code.size() > std::numeric_limits<u16>::max())
   {
@@ -108,7 +106,7 @@ std::string DSPDisassembler::DisassembleParameters(const DSPOPCTemplate& opc, u1
         if (opc.params[j].mask == 0x003f)
         {
           // Left and right shifts function essentially as a single shift by a 7-bit signed value,
-          // but are split into two intructions for clarity.
+          // but are split into two instructions for clarity.
           buf += fmt::format("#{}", (val & 0x20) != 0 ? (int(val) - 64) : int(val));
         }
         else
@@ -133,8 +131,7 @@ std::string DSPDisassembler::DisassembleParameters(const DSPOPCTemplate& opc, u1
       break;
 
     default:
-      ERROR_LOG_FMT(DSPLLE, "Unknown parameter type: {:x}",
-                    Common::ToUnderlying(opc.params[j].type));
+      ERROR_LOG_FMT(DSPLLE, "Unknown parameter type: {:x}", std::to_underlying(opc.params[j].type));
       break;
     }
   }
@@ -142,7 +139,7 @@ std::string DSPDisassembler::DisassembleParameters(const DSPOPCTemplate& opc, u1
   return buf;
 }
 
-bool DSPDisassembler::DisassembleOpcode(const std::vector<u16>& code, u16* pc, std::string& dest)
+bool DSPDisassembler::DisassembleOpcode(std::span<const u16> code, u16* pc, std::string& dest)
 {
   return DisassembleOpcode(code.data(), code.size(), pc, dest);
 }

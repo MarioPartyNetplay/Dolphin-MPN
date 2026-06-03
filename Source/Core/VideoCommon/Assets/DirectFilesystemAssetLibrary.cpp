@@ -3,24 +3,24 @@
 
 #include "VideoCommon/Assets/DirectFilesystemAssetLibrary.h"
 
-#include <algorithm>
 #include <vector>
 
 #include <fmt/std.h>
 
+#include "Common/CommonPaths.h"
 #include "Common/FileUtil.h"
 #include "Common/IOFile.h"
 #include "Common/JsonUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
 #include "Core/System.h"
-#include "VideoCommon/Assets/CustomResourceManager.h"
 #include "VideoCommon/Assets/MaterialAsset.h"
 #include "VideoCommon/Assets/MeshAsset.h"
 #include "VideoCommon/Assets/ShaderAsset.h"
 #include "VideoCommon/Assets/TextureAsset.h"
 #include "VideoCommon/Assets/TextureAssetUtils.h"
 #include "VideoCommon/RenderState.h"
+#include "VideoCommon/Resources/CustomResourceManager.h"
 
 namespace VideoCommon
 {
@@ -149,6 +149,12 @@ DirectFilesystemAssetLibrary::LoadRasterSurfaceShader(const AssetID& asset_id,
 
   if (!RasterSurfaceShaderData::FromJson(asset_id, root_obj, data))
     return {};
+
+  const std::string graphics_mod_builtin =
+      File::GetSysDirectory() + GRAPHICSMOD_DIR + "/Builtin" + "/Shaders";
+
+  data->shader_includer = std::make_unique<VideoCommon::ShaderIncluder>(
+      PathToString(pixel_shader->second.parent_path()), graphics_mod_builtin);
 
   return LoadInfo{approx_mem_size};
 }

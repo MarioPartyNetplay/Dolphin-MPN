@@ -13,7 +13,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "Common/CommonTypes.h"
@@ -119,7 +118,7 @@ public:
   virtual void OnIndexRefreshFailed(std::string error) = 0;
 
   virtual void ShowChunkedProgressDialog(const std::string& title, u64 data_size,
-                                         const std::vector<int>& players) = 0;
+                                         std::span<const int> players) = 0;
   virtual void HideChunkedProgressDialog() = 0;
   virtual void SetChunkedProgress(int pid, u64 progress) = 0;
 
@@ -144,8 +143,8 @@ public:
   void ThreadFunc();
   void SendAsync(sf::Packet&& packet, u8 channel_id = DEFAULT_CHANNEL);
 
-  NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog,
-                const std::string& name, const NetTraversalConfig& traversal_config);
+  NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog, std::string name,
+                const NetTraversalConfig& traversal_config);
   ~NetPlayClient() override;
 
   std::vector<const Player*> GetPlayers();
@@ -349,9 +348,6 @@ private:
   void OnSyncCodesDataGecko(sf::Packet& packet);
   void OnSyncCodesNotifyAR(sf::Packet& packet);
   void OnSyncCodesDataAR(sf::Packet& packet);
-  void OnBBAPacketData(sf::Packet& packet);
-  void OnBBAMode(sf::Packet& packet);
-  void SendBBAPacket(const u8* data, u32 size);
   void OnComputeGameDigest(sf::Packet& packet);
   void OnGameDigestProgress(sf::Packet& packet);
   void OnGameDigestResult(sf::Packet& packet);

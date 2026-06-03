@@ -4,7 +4,6 @@
 #pragma once
 
 #if defined(__LIBUSB__)
-#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
@@ -31,13 +30,13 @@ public:
   DeviceDescriptor GetDeviceDescriptor() const override;
   std::vector<ConfigDescriptor> GetConfigurations() const override;
   std::vector<InterfaceDescriptor> GetInterfaces(u8 config) const override;
-  std::vector<EndpointDescriptor> GetEndpoints(u8 config, u8 interface, u8 alt) const override;
+  std::vector<EndpointDescriptor> GetEndpoints(u8 config, u8 iface, u8 alt) const override;
   std::string GetErrorName(int error_code) const override;
   bool Attach() override;
-  bool AttachAndChangeInterface(u8 interface) override;
+  bool AttachAndChangeInterface(u8 iface) override;
   int CancelTransfer(u8 endpoint) override;
-  int ChangeInterface(u8 interface) override;
-  int GetNumberOfAltSettings(u8 interface) override;
+  int ChangeInterface(u8 iface) override;
+  int GetNumberOfAltSettings(u8 iface) override;
   int SetAltSetting(u8 alt_setting) override;
   int SubmitTransfer(std::unique_ptr<CtrlMessage> message) override;
   int SubmitTransfer(std::unique_ptr<BulkMessage> message) override;
@@ -61,7 +60,8 @@ private:
   {
   public:
     void AddTransfer(std::unique_ptr<TransferCommand> command, libusb_transfer* transfer);
-    void HandleTransfer(libusb_transfer* tr, std::function<s32(const TransferCommand&)> function);
+    void HandleTransfer(libusb_transfer* tr,
+                        const std::function<s32(const TransferCommand&)>& function);
     void CancelTransfers();
 
   private:

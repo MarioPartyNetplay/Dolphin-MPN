@@ -5,9 +5,8 @@
 
 #include "Common/GL/GLContext.h"
 #include "Common/GL/GLExtensions/GLExtensions.h"
+#include "Common/GL/GLUtil.h"
 #include "Common/Logging/LogManager.h"
-
-#include "Core/Config/GraphicsSettings.h"
 
 #include "VideoBackends/OGL/OGLConfig.h"
 #include "VideoBackends/OGL/OGLPipeline.h"
@@ -18,7 +17,6 @@
 
 #include "VideoCommon/AsyncShaderCompiler.h"
 #include "VideoCommon/DriverDetails.h"
-#include "VideoCommon/OnScreenDisplay.h"
 #include "VideoCommon/Present.h"
 #include "VideoCommon/VideoConfig.h"
 
@@ -231,14 +229,16 @@ OGLGfx::CreateFramebuffer(AbstractTexture* color_attachment, AbstractTexture* de
 }
 
 std::unique_ptr<AbstractShader>
-OGLGfx::CreateShaderFromSource(ShaderStage stage, std::string_view source, std::string_view name)
+OGLGfx::CreateShaderFromSource(ShaderStage stage, std::string_view source,
+                               VideoCommon::ShaderIncluder* shader_includer, std::string_view name)
 {
-  return OGLShader::CreateFromSource(stage, source, name);
+  return OGLShader::CreateFromSource(stage, source, shader_includer, name);
 }
 
-std::unique_ptr<AbstractShader>
-OGLGfx::CreateShaderFromBinary(ShaderStage stage, const void* data, size_t length,
-                               [[maybe_unused]] std::string_view name)
+std::unique_ptr<AbstractShader> OGLGfx::CreateShaderFromBinary(ShaderStage /* stage */,
+                                                               const void* /* data */,
+                                                               size_t /* length */,
+                                                               std::string_view /* name */)
 {
   return nullptr;
 }

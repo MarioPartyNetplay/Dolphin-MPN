@@ -13,8 +13,9 @@
 
 namespace IOS::HLE::USB
 {
-struct WiiSpeakState
+class WiiSpeakState final : public MicrophoneState
 {
+public:
   // Use atomic for members concurrently used by the data callback
   std::atomic<bool> sample_on;
   std::atomic<bool> mute;
@@ -24,6 +25,10 @@ struct WiiSpeakState
   bool sp_on;
 
   static constexpr u32 DEFAULT_SAMPLING_RATE = 16000;
+
+  bool IsSampleOn() const override;
+  bool IsMuted() const override;
+  u32 GetDefaultSamplingRate() const override;
 };
 
 class WiiSpeak final : public Device
@@ -35,12 +40,12 @@ public:
   DeviceDescriptor GetDeviceDescriptor() const override;
   std::vector<ConfigDescriptor> GetConfigurations() const override;
   std::vector<InterfaceDescriptor> GetInterfaces(u8 config) const override;
-  std::vector<EndpointDescriptor> GetEndpoints(u8 config, u8 interface, u8 alt) const override;
+  std::vector<EndpointDescriptor> GetEndpoints(u8 config, u8 iface, u8 alt) const override;
   bool Attach() override;
-  bool AttachAndChangeInterface(u8 interface) override;
+  bool AttachAndChangeInterface(u8 f) override;
   int CancelTransfer(u8 endpoint) override;
-  int ChangeInterface(u8 interface) override;
-  int GetNumberOfAltSettings(u8 interface) override;
+  int ChangeInterface(u8 iface) override;
+  int GetNumberOfAltSettings(u8 iface) override;
   int SetAltSetting(u8 alt_setting) override;
   int SubmitTransfer(std::unique_ptr<CtrlMessage> message) override;
   int SubmitTransfer(std::unique_ptr<BulkMessage> message) override;
