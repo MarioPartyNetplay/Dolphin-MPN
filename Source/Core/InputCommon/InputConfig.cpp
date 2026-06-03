@@ -111,7 +111,8 @@ bool InputConfig::LoadConfig()
         controller_names.push_back(controller->GetName());
     }
 
-    m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
+    if (!g_ActiveConfig.bHiresTextures1)
+      m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
     return true;
   }
   else
@@ -154,7 +155,8 @@ void InputConfig::SaveConfig()
       controller_names.push_back(controller->GetName());
   }
 
-  m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
+  if (!g_ActiveConfig.bHiresTextures1)
+    m_dynamic_input_tex_config_manager.GenerateTextures(inifile, controller_names);
   inifile.Save(ini_filename);
 }
 
@@ -226,13 +228,29 @@ bool InputConfig::IsControllerControlledByGamepadDevice(int index) const
 
 void InputConfig::GenerateControllerTextures(const Common::IniFile& file)
 {
+  if (g_ActiveConfig.bHiresTextures1)
+    return;
+
   std::vector<std::string> controller_names;
-  for (auto& controller : m_controllers)
+  for (const auto& controller : m_controllers)
   {
-    controller_names.push_back(controller->GetName());
+    if (controller)
+      controller_names.push_back(controller->GetName());
   }
 
   m_dynamic_input_tex_config_manager.GenerateTextures(file, controller_names);
+}
+
+void InputConfig::GenerateControllerTextures(const Common::IniFile& file,
+                                             const std::string& controller_name)
+{
+  if (!g_ActiveConfig.bHiresTextures1)
+  {
+    GenerateControllerTextures(file);
+    return;
+  }
+
+  m_dynamic_input_tex_config_manager.GenerateTextures(file, {controller_name});
 }
 
 void InputConfig::GenerateControllerTextures()

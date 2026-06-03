@@ -13,6 +13,8 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include "Common/FileUtil.h"
+#include "Common/IniFile.h"
 #include "Common/MathUtil.h"
 #include "Common/StringUtil.h"
 
@@ -231,7 +233,9 @@ bool ReshapableInputMapper::ApplyResults(ControllerEmu::EmulatedController* cont
                                              stick->controls[i]->control_ref.get());
   }
 
-  controller->GetConfig()->GenerateControllerTextures();
+  Common::IniFile inifile;
+  inifile.Load(File::GetUserPath(D_CONFIG_IDX) + controller->GetConfig()->GetIniName() + ".ini");
+  controller->GetConfig()->GenerateControllerTextures(inifile, controller->GetName());
 
   return true;
 }

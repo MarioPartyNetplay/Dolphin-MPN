@@ -80,8 +80,19 @@ void HiresTexture::Shutdown()
   Clear();
 }
 
+static bool TextureDirectoryIsGeneratedPack(const std::string& directory)
+{
+  return directory.find("Generated") != std::string::npos;
+}
+
 void HiresTexture::Update()
 {
+  if (!g_ActiveConfig.bHiresTextures)
+  {
+    Clear();
+    return;
+  }
+
   const std::string& game_id = SConfig::GetInstance().GetGameID();
   std::set<std::string> texture_directories =
       GetTextureDirectoriesWithGameId(File::GetUserPath(D_HIRESTEXTURES_IDX), game_id);
@@ -91,6 +102,9 @@ void HiresTexture::Update()
 
   texture_directories.insert(additional_texture_directories.begin(),
                              additional_texture_directories.end());
+
+  if (!g_ActiveConfig.bHiresTextures1)
+    std::erase_if(texture_directories, TextureDirectoryIsGeneratedPack);
 
   const std::vector<std::string_view> extensions{".png", ".dds"};
 

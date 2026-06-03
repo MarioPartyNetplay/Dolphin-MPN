@@ -12,6 +12,7 @@
 
 #include "InputCommon/DynamicInputTextures/DITConfiguration.h"
 #include "VideoCommon/HiresTextures.h"
+#include "VideoCommon/VideoConfig.h"
 
 namespace InputCommon
 {
@@ -21,6 +22,9 @@ DynamicInputTextureManager::~DynamicInputTextureManager() = default;
 
 void DynamicInputTextureManager::Load()
 {
+  if (!g_ActiveConfig.bHiresTextures1)
+    return;
+
   m_configuration.clear();
 
   const std::string& game_id = SConfig::GetInstance().GetGameID();

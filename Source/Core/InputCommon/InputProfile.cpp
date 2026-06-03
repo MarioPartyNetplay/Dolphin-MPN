@@ -86,7 +86,7 @@ void ProfileCycler::UpdateToProfile(const std::string& profile_filename,
                          display_message_ms);
     controller->LoadConfig(ini_file.GetOrCreateSection("Profile"));
     controller->UpdateReferences(g_controller_interface);
-    device_configuration->GenerateControllerTextures(ini_file);
+    device_configuration->GenerateControllerTextures(ini_file, controller->GetName());
   }
   else
   {
