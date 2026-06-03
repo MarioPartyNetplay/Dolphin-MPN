@@ -11,6 +11,7 @@
 #include "Common/HookableEvent.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Core.h"
+#include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/VideoConfig.h"
 #include "Core/MarioPartyNetplay/Gamestate.h"
 
@@ -90,6 +91,20 @@ double PerformanceMetrics::GetFPS() const
   return m_fps_counter.GetHzAvg();
 }
 
+u32 PerformanceMetrics::GetEFBWidth() const
+{
+  if (g_framebuffer_manager)
+    return g_framebuffer_manager->GetEFBWidth();
+  return 0;
+}
+
+u32 PerformanceMetrics::GetEFBHeight() const
+{
+  if (g_framebuffer_manager)
+    return g_framebuffer_manager->GetEFBHeight();
+  return 0;
+}
+
 double PerformanceMetrics::GetVPS() const
 {
   return m_vps_counter.GetHzAvg();
@@ -126,6 +141,8 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   const double fps = GetFPS();
   const double vps = GetVPS();
   const double speed = GetSpeed();
+  const u32 width = GetEFBWidth();
+  const u32 height = GetEFBHeight();
 
   static ImVec2 last_display_size(-1.0f, -1.0f);
 

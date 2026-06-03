@@ -486,7 +486,6 @@ object NativeLibrary {
     fun displayAlertMsg(
         caption: String, text: String, yesNo: Boolean, isWarning: Boolean, nonBlocking: Boolean
     ): Boolean {
-        Log.error("[NativeLibrary] Alert: $text")
         val emulationActivity = emulationActivityRef.get()
         var result = false
 

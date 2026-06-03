@@ -98,9 +98,15 @@ void VideoConfig::Refresh()
       Config::Get(Config::GFX_WIDESCREEN_HEURISTIC_STANDARD_RATIO);
   widescreen_heuristic_widescreen_ratio =
       Config::Get(Config::GFX_WIDESCREEN_HEURISTIC_WIDESCREEN_RATIO);
-  bCrop = Config::Get(Config::GFX_CROP);
+  bCropToAspectRatio = Config::Get(Config::GFX_CROP_TO_ASPECT_RATIO);
+  bCropCustom = Config::Get(Config::GFX_CROP_CUSTOM);
+  iCropCustomLeft = Config::Get(Config::GFX_CROP_CUSTOM_LEFT);
+  iCropCustomTop = Config::Get(Config::GFX_CROP_CUSTOM_TOP);
+  iCropCustomRight = Config::Get(Config::GFX_CROP_CUSTOM_RIGHT);
+  iCropCustomBottom = Config::Get(Config::GFX_CROP_CUSTOM_BOTTOM);
   iSafeTextureCache_ColorSamples = Config::Get(Config::GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES);
   bShowFPS = Config::Get(Config::GFX_SHOW_FPS);
+  bShowInternalResolution = Config::Get(Config::GFX_SHOW_INTERNAL_RESOLUTION);
   bShowFTimes = Config::Get(Config::GFX_SHOW_FTIMES);
   bShowVPS = Config::Get(Config::GFX_SHOW_VPS);
   bShowVTimes = Config::Get(Config::GFX_SHOW_VTIMES);
