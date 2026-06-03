@@ -831,7 +831,8 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     u32 cid;
     packet >> cid;
 
-    if (m_chunked_data_complete_count.find(cid) != m_chunked_data_complete_count.end())
+    const auto it = m_chunked_data_complete_count.find(cid);
+    if (it != m_chunked_data_complete_count.end())
     {
       it->second++;
       m_chunked_data_complete_event.Set();
@@ -1807,18 +1808,22 @@ bool NetPlayServer::StartGame()
   // Send PadMapping configuration to all clients
   sf::Packet pad_mapping_packet;
   pad_mapping_packet << MessageID::PadMapping;
-  for (PlayerId mapping : m_pad_map)
+  for (const auto& mapping : m_pad_map)
   {
-    pad_mapping_packet << mapping;
+    pad_mapping_packet << static_cast<u8>(mapping.players.size());
+    for (PlayerId pid : mapping.players)
+      pad_mapping_packet << pid;
   }
   SendAsyncToClients(std::move(pad_mapping_packet));
-  
+
   // Send WiimoteMapping configuration to all clients
   sf::Packet wiimote_mapping_packet;
   wiimote_mapping_packet << MessageID::WiimoteMapping;
-  for (PlayerId mapping : m_wiimote_map)
+  for (const auto& mapping : m_wiimote_map)
   {
-    wiimote_mapping_packet << mapping;
+    wiimote_mapping_packet << static_cast<u8>(mapping.players.size());
+    for (PlayerId pid : mapping.players)
+      wiimote_mapping_packet << pid;
   }
   SendAsyncToClients(std::move(wiimote_mapping_packet));
   

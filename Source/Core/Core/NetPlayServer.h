@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "Core/SyncIdentifier.h"
 #include "UICommon/NetPlayIndex.h"
 #include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
+#include "InputCommon/GCPadStatus.h"
 
 namespace NetPlay
 {

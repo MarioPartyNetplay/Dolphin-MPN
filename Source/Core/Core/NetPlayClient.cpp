@@ -1941,6 +1941,8 @@ void NetPlayClient::UpdateDevices()
     else if (has_local_player)
     {
       // Use local controller types for local controllers if they are compatible
+      const SerialInterface::SIDevices si_device =
+          Config::Get(Config::GetInfoForSIDevice(local_pad));
       if (SerialInterface::SIDevice_IsGCController(si_device))
       {
         si.ChangeDevice(si_device, pad);
@@ -1958,8 +1960,7 @@ void NetPlayClient::UpdateDevices()
     }
     else if (has_any_player)
     {
-      if (si_device != SerialInterface::SIDEVICE_AM_BASEBOARD)
-        si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
+      si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
     }
     else
     {
