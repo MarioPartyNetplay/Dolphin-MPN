@@ -769,14 +769,11 @@ endif()
 
 add_subdirectory(Externals/watcher)
 
-# Any other platform or BSD is currently unsupported by cpp-ipc
+# cpp-ipc is only supported on Windows and Linux; other platforms use libzmq.
 if(WIN32 OR LINUX OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
   add_subdirectory(Externals/cpp-ipc)
   add_definitions(-DHAVE_CPPIPC)
-endif()
-
-# Add libzmq for non-Apple platforms that aren't Android
-if(NOT APPLE AND NOT ANDROID)
+elseif(NOT ANDROID)
   add_subdirectory(Externals/libzmq)
 endif()
 
