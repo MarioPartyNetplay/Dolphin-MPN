@@ -123,6 +123,9 @@ jobs:
           zlib \
           zstd
 
+    - name: Update PKGBUILD commit
+      run: sed -i "s/^_commit=.*/_commit=${{ github.sha }}/" Distribution/PKGBUILD
+
     - name: Build
       run: |
         sudo -u builder bash -c "

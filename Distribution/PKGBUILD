@@ -19,7 +19,8 @@ depends=(
 makedepends=('cmake' 'git' 'ninja' 'qt6-tools')
 optdepends=('pulseaudio: for PulseAudio backend')
 
-source=("$pkgname::git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git")
+_commit=5450a35ce5c75d9096092a2e9bd88003912169ab
+source=("$pkgname::git+https://github.com/MarioPartyNetplay/Dolphin-MPN.git#commit=$_commit")
 sha256sums=('SKIP')
 
 pkgver() {
