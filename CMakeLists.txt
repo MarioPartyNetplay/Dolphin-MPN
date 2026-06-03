@@ -717,7 +717,8 @@ if(ENABLE_SDL)
   dolphin_find_optional_system_library(SDL3 Externals/SDL 3.2.0)
 endif()
 
-dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
+if(NOT EMSCRIPTEN)
+  dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
 endif()
 
 if(USE_UPNP)
