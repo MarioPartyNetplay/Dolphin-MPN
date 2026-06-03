@@ -5,7 +5,6 @@
 #include "ChatBlocklist.h"
 
 #include <algorithm>
-#include <cmath>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -2894,59 +2893,39 @@ void NetPlayServer::AggregatePadInputs(PadIndex pad_index)
   m_pad_inputs_by_player[pad_index].clear();
 }
 
-static void FinalizeCombinedStick(u8& out_x, u8& out_y, int sum_dx, int sum_dy, u8 center_x,
-                                  u8 center_y, u8 max_radius)
-{
-  const int len_sq = sum_dx * sum_dx + sum_dy * sum_dy;
-  const int max_len_sq = static_cast<int>(max_radius) * max_radius;
-  if (len_sq > max_len_sq && len_sq > 0)
-  {
-    const double scale =
-        static_cast<double>(max_radius) / std::sqrt(static_cast<double>(len_sq));
-    sum_dx = static_cast<int>(std::llround(sum_dx * scale));
-    sum_dy = static_cast<int>(std::llround(sum_dy * scale));
-  }
-
-  out_x = static_cast<u8>(std::clamp(sum_dx + center_x, 0, 255));
-  out_y = static_cast<u8>(std::clamp(sum_dy + center_y, 0, 255));
-}
-
-static void CombineStickPair(u8& out_x, u8& out_y, const std::vector<GCPadStatus>& inputs,
+static void PickPrimaryStick(u8& out_x, u8& out_y, const std::vector<GCPadStatus>& inputs,
                              u8 (*get_x)(const GCPadStatus&), u8 (*get_y)(const GCPadStatus&),
                              u8 center_x, u8 center_y, u8 max_radius)
 {
-  int sum_dx = 0;
-  int sum_dy = 0;
+  out_x = center_x;
+  out_y = center_y;
+
+  // Ignore analog noise / barely-touched sticks.
+  const int deadzone_radius = static_cast<int>(max_radius) / 8;
+  const int deadzone_len_sq = deadzone_radius * deadzone_radius;
+
   int best_len_sq = 0;
-  int best_dx = 0;
-  int best_dy = 0;
+  u8 best_x = center_x;
+  u8 best_y = center_y;
 
   for (const GCPadStatus& input : inputs)
   {
     const int dx = static_cast<int>(get_x(input)) - center_x;
     const int dy = static_cast<int>(get_y(input)) - center_y;
-    sum_dx += dx;
-    sum_dy += dy;
-
     const int len_sq = dx * dx + dy * dy;
     if (len_sq > best_len_sq)
     {
       best_len_sq = len_sq;
-      best_dx = dx;
-      best_dy = dy;
+      best_x = get_x(input);
+      best_y = get_y(input);
     }
   }
 
-  // Opposing inputs cancel in a vector sum; fall back to the strongest deflection so one
-  // direction still registers (orthogonal inputs are preserved by the sum).
-  const int sum_len_sq = sum_dx * sum_dx + sum_dy * sum_dy;
-  if (best_len_sq > 0 && sum_len_sq < best_len_sq / 4)
+  if (best_len_sq > deadzone_len_sq)
   {
-    sum_dx = best_dx;
-    sum_dy = best_dy;
+    out_x = best_x;
+    out_y = best_y;
   }
-
-  FinalizeCombinedStick(out_x, out_y, sum_dx, sum_dy, center_x, center_y, max_radius);
 }
 
 static u8 MainStickX(const GCPadStatus& pad)
@@ -2982,10 +2961,10 @@ GCPadStatus NetPlayServer::CombinePadInputs(const std::vector<GCPadStatus>& inpu
     result.isConnected = result.isConnected || input.isConnected;
   }
 
-  CombineStickPair(result.stickX, result.stickY, inputs, MainStickX, MainStickY,
+  PickPrimaryStick(result.stickX, result.stickY, inputs, MainStickX, MainStickY,
                    GCPadStatus::MAIN_STICK_CENTER_X, GCPadStatus::MAIN_STICK_CENTER_Y,
                    GCPadStatus::MAIN_STICK_RADIUS);
-  CombineStickPair(result.substickX, result.substickY, inputs, CStickX, CStickY,
+  PickPrimaryStick(result.substickX, result.substickY, inputs, CStickX, CStickY,
                    GCPadStatus::C_STICK_CENTER_X, GCPadStatus::C_STICK_CENTER_Y,
                    GCPadStatus::C_STICK_RADIUS);
 
