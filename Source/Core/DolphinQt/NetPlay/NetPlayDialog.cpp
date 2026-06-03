@@ -11,12 +11,14 @@
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
@@ -130,6 +132,10 @@ void NetPlayDialog::CreateMainLayout()
   m_game_button = new QPushButton;
   m_start_button = new QPushButton(tr("Start"));
   m_buffer_size_box = new QSpinBox;
+  m_buffer_size_box->setRange(0, 20);
+  m_buffer_size_box->setMinimumWidth(
+      m_buffer_size_box->fontMetrics().horizontalAdvance(QStringLiteral("00")) + 36);
+  m_buffer_size_box->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   m_buffer_label = new QLabel(tr("Buffer:"));
   m_quit_button = new QPushButton(tr("Quit"));
   m_splitter = new QSplitter(Qt::Horizontal);
@@ -246,15 +252,16 @@ void NetPlayDialog::CreateMainLayout()
   m_splitter->addWidget(m_chat_box);
   m_splitter->addWidget(m_players_box);
 
-  auto* options_widget = new QGridLayout;
+  auto* options_widget = new QWidget;
+  auto* options_layout = new QHBoxLayout(options_widget);
+  options_layout->setContentsMargins(0, 0, 0, 0);
+  options_layout->addWidget(m_start_button);
+  options_layout->addWidget(m_buffer_label);
+  options_layout->addWidget(m_buffer_size_box);
+  options_layout->addStretch();
+  options_layout->addWidget(m_quit_button);
 
-  options_widget->addWidget(m_start_button, 0, 0, Qt::AlignVCenter);
-  options_widget->addWidget(m_buffer_label, 0, 1, Qt::AlignVCenter);
-  options_widget->addWidget(m_buffer_size_box, 0, 2, Qt::AlignVCenter);
-  options_widget->addWidget(m_quit_button, 0, 3, Qt::AlignVCenter | Qt::AlignRight);
-  options_widget->setColumnStretch(3, 1000);
-
-  m_main_layout->addLayout(options_widget, 2, 0, 1, -1, Qt::AlignRight);
+  m_main_layout->addWidget(options_widget, 2, 0, 1, -1, Qt::AlignRight);
   m_main_layout->setRowStretch(1, 1000);
 
   setLayout(m_main_layout);
@@ -394,13 +401,20 @@ void NetPlayDialog::ConnectWidgets()
   });
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
+    if (state == Core::State::Uninitialized)
+    {
+      g_netplay_chat_ui.store({});
+      g_netplay_golf_ui.store({});
+    }
+
     if (isVisible())
     {
       GameStatusChanged(state != Core::State::Uninitialized);
       if ((state == Core::State::Uninitialized || state == Core::State::Stopping) &&
           !m_got_stop_request)
       {
-        Settings::Instance().GetNetPlayClient()->RequestStopGame();
+        if (const auto client = Settings::Instance().GetNetPlayClient())
+          client->RequestStopGame();
       }
       if (state == Core::State::Uninitialized)
         DisplayMessage(tr("Stopped game"), "red");
@@ -769,7 +783,9 @@ void NetPlayDialog::StopGame()
     return;
 
   m_got_stop_request = true;
-  emit Stop();
+  // NetPlayClient::StopGame() is invoked from the netplay thread; Core::Stop must run on the GUI
+  // thread.
+  QueueOnObject(this, [this] { emit Stop(); });
 }
 
 bool NetPlayDialog::IsHosting() const
@@ -791,10 +807,11 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 
   const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
 
-  if (Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
-      Core::IsRunning(Core::System::GetInstance()))
+  if (const auto chat_ui = g_netplay_chat_ui.load();
+      Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
+      Core::IsRunning(Core::System::GetInstance()) && chat_ui)
   {
-    g_netplay_chat_ui->AppendChat(msg.toStdString(),
+    chat_ui->AppendChat(msg.toStdString(),
                                   {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),
                                    static_cast<float>(c.blueF())});
   }
@@ -876,12 +893,13 @@ void NetPlayDialog::OnMsgStartGame()
 {
   DisplayMessage(tr("Started game"), "green");
 
-  g_netplay_chat_ui =
-      std::make_unique<NetPlayChatUI>([this](const std::string& message) { SendMessage(message); });
+  g_netplay_chat_ui.store(std::make_shared<NetPlayChatUI>(
+      [this](const std::string& message) { SendMessage(message); }));
 
   if (m_host_input_authority && Settings::Instance().GetNetPlayClient()->GetNetSettings().golf_mode)
   {
-    g_netplay_golf_ui = std::make_unique<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient());
+    g_netplay_golf_ui.store(
+        std::make_shared<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient()));
   }
 
   QueueOnObject(this, [this] {
@@ -900,8 +918,8 @@ void NetPlayDialog::OnMsgStartGame()
 
 void NetPlayDialog::OnMsgStopGame()
 {
-  g_netplay_chat_ui.reset();
-  g_netplay_golf_ui.reset();
+  // Overlay teardown is deferred to GameStatusChanged() once emulation has fully stopped, so the
+  // video thread cannot call Display() on a destroyed NetPlayChatUI/NetPlayGolfUI.
   QueueOnObject(this, [this] { UpdateDiscordPresence(); });
 }
 

@@ -13,7 +13,7 @@
 constexpr float DEFAULT_WINDOW_WIDTH = 220.0f;
 constexpr float DEFAULT_WINDOW_HEIGHT = 45.0f;
 
-std::unique_ptr<NetPlayGolfUI> g_netplay_golf_ui;
+std::atomic<std::shared_ptr<NetPlayGolfUI>> g_netplay_golf_ui;
 
 NetPlayGolfUI::NetPlayGolfUI(std::weak_ptr<NetPlay::NetPlayClient> netplay_client)
     : m_netplay_client{std::move(netplay_client)}

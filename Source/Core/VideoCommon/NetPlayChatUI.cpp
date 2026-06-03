@@ -10,7 +10,7 @@ constexpr float DEFAULT_WINDOW_HEIGHT = 400.0f;
 
 constexpr size_t MAX_BACKLOG_SIZE = 100;
 
-std::unique_ptr<NetPlayChatUI> g_netplay_chat_ui;
+std::atomic<std::shared_ptr<NetPlayChatUI>> g_netplay_chat_ui;
 
 NetPlayChatUI::NetPlayChatUI(std::function<void(const std::string&)> callback)
     : m_message_callback{std::move(callback)}

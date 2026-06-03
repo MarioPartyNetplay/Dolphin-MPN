@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -33,4 +34,4 @@ private:
   std::function<void(const std::string&)> m_message_callback;
 };
 
-extern std::unique_ptr<NetPlayChatUI> g_netplay_chat_ui;
+extern std::atomic<std::shared_ptr<NetPlayChatUI>> g_netplay_chat_ui;

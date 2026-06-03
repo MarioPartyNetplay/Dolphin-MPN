@@ -2116,8 +2116,8 @@ void MainWindow::OnExportRecording()
 
 void MainWindow::OnActivateChat()
 {
-  if (g_netplay_chat_ui)
-    g_netplay_chat_ui->Activate();
+  if (const auto chat_ui = g_netplay_chat_ui.load())
+    chat_ui->Activate();
 }
 
 void MainWindow::OnRequestGolfControl()

@@ -315,11 +315,17 @@ void OnScreenUI::DrawDebugText()
   if (g_ActiveConfig.bOverlayStats)
     g_stats.Display();
 
-  if (Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && g_netplay_chat_ui)
-    g_netplay_chat_ui->Display();
+  if (const auto chat_ui = g_netplay_chat_ui.load();
+      Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
+  {
+    chat_ui->Display();
+  }
 
-  if (Config::Get(Config::NETPLAY_GOLF_MODE_OVERLAY) && g_netplay_golf_ui)
-    g_netplay_golf_ui->Display();
+  if (const auto golf_ui = g_netplay_golf_ui.load();
+      Config::Get(Config::NETPLAY_GOLF_MODE_OVERLAY) && golf_ui)
+  {
+    golf_ui->Display();
+  }
 
   if (g_ActiveConfig.bOverlayProjStats)
     g_stats.DisplayProj();
