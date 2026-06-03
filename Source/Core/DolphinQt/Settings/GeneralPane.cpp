@@ -20,6 +20,7 @@
 #include "Core/AchievementManager.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/UISettings.h"
+#include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/DolphinAnalytics.h"
 #include "Core/System.h"
@@ -327,8 +328,6 @@ static DiscIO::Region UpdateFallbackRegionFromIndex(int index)
 void GeneralPane::OnSaveConfig()
 {
   Config::ConfigChangeCallbackGuard config_guard;
-
-  auto& settings = SConfig::GetInstance();
 
 #ifdef USE_DISCORD_PRESENCE
   Discord::SetDiscordPresenceEnabled(m_checkbox_discord_presence->isChecked());

@@ -141,8 +141,6 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
   const double fps = GetFPS();
   const double vps = GetVPS();
   const double speed = GetSpeed();
-  const u32 width = GetEFBWidth();
-  const u32 height = GetEFBHeight();
 
   static ImVec2 last_display_size(-1.0f, -1.0f);
 

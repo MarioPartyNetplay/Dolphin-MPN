@@ -2887,5 +2887,5 @@ int SerialInterface::CSIDevice_GCController::NetPlay_InGamePadToLocalPad(int pad
   if (NetPlay::netplay_client)
     return NetPlay::netplay_client->InGamePadToLocalPad(pad_num);
 
-  return numPAD;
+  return pad_num;
 }

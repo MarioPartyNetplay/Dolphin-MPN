@@ -255,6 +255,10 @@ void Host_UpdateDisasmDialog()
   QueueOnObject(QApplication::instance(), [] { emit Host::GetInstance()->UpdateDisasmDialog(); });
 }
 
+void Host_UpdateMainFrame()
+{
+}
+
 void Host_JitCacheInvalidation()
 {
   QueueOnObject(QApplication::instance(), [] { emit Host::GetInstance()->JitCacheInvalidation(); });

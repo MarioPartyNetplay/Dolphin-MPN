@@ -271,8 +271,6 @@ u32 GetHookByFunctionAddress(PPCSymbolDB& ppc_symbol_db, u32 address)
 
         auto& power_pc = system.GetPowerPC();
         auto& ppc_state = power_pc.GetPPCState();
-        auto& memory = system.GetMemory();
-        auto& jit_interface = system.GetJitInterface();
 
         if (patch->flags == HookFlag::Fixed)
         {
@@ -315,8 +313,6 @@ u32 GetHookByFunctionAddress(PPCSymbolDB& ppc_symbol_db, u32 address)
     u32 UnpatchRange(Core::System& system, u32 start_addr, u32 end_addr)
     {
         auto& ppc_state = system.GetPPCState();
-        auto& memory = system.GetMemory();
-        auto& jit_interface = system.GetJitInterface();
 
         u32 count = 0;
 

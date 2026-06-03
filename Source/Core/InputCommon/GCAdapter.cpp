@@ -504,10 +504,14 @@ static void StopScanThread()
   }
 }
 
+static void RefreshConfig()
 {
   bool is_adapter_wanted = false;
 
   for (int i = 0; i < SerialInterface::MAX_SI_CHANNELS; ++i)
+  {
+    is_adapter_wanted |= Config::Get(Config::GetInfoForSIDevice(i)) ==
+                         SerialInterface::SIDevices::SIDEVICE_WIIU_ADAPTER;
     s_config_rumble_enabled[i].store(Config::Get(Config::GetInfoForAdapterRumble(i)),
                                      std::memory_order_relaxed);
   }

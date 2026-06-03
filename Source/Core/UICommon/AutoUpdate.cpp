@@ -152,6 +152,15 @@ bool AutoUpdateChecker::SystemSupportsAutoUpdates()
 #endif
 }
 
+static u32 GetOwnProcessId()
+{
+#ifdef _WIN32
+  return GetCurrentProcessId();
+#else
+  return getpid();
+#endif
+}
+
 static std::string GetPlatformID()
 {
 #if defined(_WIN32)

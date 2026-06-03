@@ -3,6 +3,7 @@
 
 #include "DiscIO/WiiBanner.h"
 
+#include <span>
 #include <string>
 #include <vector>
 
@@ -82,8 +83,8 @@ void WiiBanner::ExtractARC()
 
   std::vector<std::pair<std::string, std::vector<u8>>> extractedFiles;
 
-  const auto callback = [&](const std::string& filename, const std::vector<u8>& outbytes) {
-    extractedFiles.push_back({filename, outbytes});
+  const auto callback = [&](const std::string& filename, std::span<const u8> outbytes) {
+    extractedFiles.emplace_back(filename, std::vector<u8>(outbytes.begin(), outbytes.end()));
   };
 
   m_arc_unpacker.Extract(callback);
@@ -136,7 +137,7 @@ void WiiBanner::ExtractBin(const std::vector<u8>& data)
 
   const std::string outdir = File::CreateTempDir();
 
-  const auto callback = [=](const std::string& filename, const std::vector<u8>& outbytes) {
+  const auto callback = [=](const std::string& filename, std::span<const u8> outbytes) {
     const std::string outpath = (outdir + "/" + filename);
     File::CreateFullPath(outpath);
     File::IOFile outfile(outpath, "wb");

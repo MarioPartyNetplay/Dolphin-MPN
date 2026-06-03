@@ -110,6 +110,9 @@
   <Import Project="$(ExternalsDir)Bochs_disasm\exports.props" />
   <Import Project="$(ExternalsDir)fmt\exports.props" />
   <Import Project="$(ExternalsDir)glslang\exports.props" />
+  <Import Project="$(ExternalsDir)imgui\exports.props" />
+  <Import Project="$(ExternalsDir)mGBA\exports.props" />
+  <Import Project="$(ExternalsDir)SDL\exports.props" />
   <Import Project="$(ExternalsDir)picojson\exports.props" />
   <Import Project="$(ExternalsDir)rcheevos\exports.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
