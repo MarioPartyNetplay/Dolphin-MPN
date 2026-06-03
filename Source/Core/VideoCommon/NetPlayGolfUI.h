@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <memory>
 
 namespace NetPlay
@@ -23,4 +22,5 @@ private:
   std::weak_ptr<NetPlay::NetPlayClient> m_netplay_client;
 };
 
-extern std::atomic<std::shared_ptr<NetPlayGolfUI>> g_netplay_golf_ui;
+std::shared_ptr<NetPlayGolfUI> GetNetPlayGolfUI();
+void SetNetPlayGolfUI(std::shared_ptr<NetPlayGolfUI> ui);

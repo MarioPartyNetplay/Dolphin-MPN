@@ -422,8 +422,8 @@ void NetPlayDialog::ConnectWidgets()
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
     if (state == Core::State::Uninitialized)
     {
-      g_netplay_chat_ui.store({});
-      g_netplay_golf_ui.store({});
+      SetNetPlayChatUI({});
+      SetNetPlayGolfUI({});
 
       // ForceStop and other paths may stop the core without running NetPlayClient::StopGame().
       if (const auto client = Settings::Instance().GetNetPlayClient())
@@ -830,7 +830,7 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 
   const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
 
-  if (const auto chat_ui = g_netplay_chat_ui.load();
+  if (const auto chat_ui = GetNetPlayChatUI();
       NetPlay::IsNetPlayRunning() && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
   {
     chat_ui->AppendChat(msg.toStdString(),
@@ -915,13 +915,12 @@ void NetPlayDialog::OnMsgStartGame()
 {
   DisplayMessage(tr("Started game"), "green");
 
-  g_netplay_chat_ui.store(std::make_shared<NetPlayChatUI>(
+  SetNetPlayChatUI(std::make_shared<NetPlayChatUI>(
       [this](const std::string& message) { SendMessage(message); }));
 
   if (m_host_input_authority && Settings::Instance().GetNetPlayClient()->GetNetSettings().golf_mode)
   {
-    g_netplay_golf_ui.store(
-        std::make_shared<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient()));
+    SetNetPlayGolfUI(std::make_shared<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient()));
   }
 
   QueueOnObject(this, [this] {

@@ -316,13 +316,13 @@ void OnScreenUI::DrawDebugText()
   if (g_ActiveConfig.bOverlayStats)
     g_stats.Display();
 
-  if (const auto chat_ui = g_netplay_chat_ui.load();
+  if (const auto chat_ui = GetNetPlayChatUI();
       NetPlay::IsNetPlayRunning() && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && chat_ui)
   {
     chat_ui->Display();
   }
 
-  if (const auto golf_ui = g_netplay_golf_ui.load();
+  if (const auto golf_ui = GetNetPlayGolfUI();
       NetPlay::IsNetPlayRunning() && Config::Get(Config::NETPLAY_GOLF_MODE_OVERLAY) && golf_ui)
   {
     golf_ui->Display();

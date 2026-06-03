@@ -3,6 +3,8 @@
 
 #include "VideoCommon/NetPlayChatUI.h"
 
+#include <mutex>
+
 #include <imgui.h>
 
 constexpr float DEFAULT_WINDOW_WIDTH = 220.0f;
@@ -10,7 +12,20 @@ constexpr float DEFAULT_WINDOW_HEIGHT = 400.0f;
 
 constexpr size_t MAX_BACKLOG_SIZE = 100;
 
-std::atomic<std::shared_ptr<NetPlayChatUI>> g_netplay_chat_ui;
+static std::mutex s_netplay_chat_ui_mutex;
+static std::shared_ptr<NetPlayChatUI> s_netplay_chat_ui;
+
+std::shared_ptr<NetPlayChatUI> GetNetPlayChatUI()
+{
+  std::lock_guard lock(s_netplay_chat_ui_mutex);
+  return s_netplay_chat_ui;
+}
+
+void SetNetPlayChatUI(std::shared_ptr<NetPlayChatUI> ui)
+{
+  std::lock_guard lock(s_netplay_chat_ui_mutex);
+  s_netplay_chat_ui = std::move(ui);
+}
 
 NetPlayChatUI::NetPlayChatUI(std::function<void(const std::string&)> callback)
     : m_message_callback{std::move(callback)}

@@ -2117,7 +2117,7 @@ void MainWindow::OnExportRecording()
 
 void MainWindow::OnActivateChat()
 {
-  if (const auto chat_ui = g_netplay_chat_ui.load())
+  if (const auto chat_ui = GetNetPlayChatUI())
     chat_ui->Activate();
 }
 

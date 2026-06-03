@@ -3,6 +3,7 @@
 
 #include "VideoCommon/NetPlayGolfUI.h"
 
+#include <mutex>
 #include <utility>
 
 #include <fmt/format.h>
@@ -13,7 +14,20 @@
 constexpr float DEFAULT_WINDOW_WIDTH = 220.0f;
 constexpr float DEFAULT_WINDOW_HEIGHT = 45.0f;
 
-std::atomic<std::shared_ptr<NetPlayGolfUI>> g_netplay_golf_ui;
+static std::mutex s_netplay_golf_ui_mutex;
+static std::shared_ptr<NetPlayGolfUI> s_netplay_golf_ui;
+
+std::shared_ptr<NetPlayGolfUI> GetNetPlayGolfUI()
+{
+  std::lock_guard lock(s_netplay_golf_ui_mutex);
+  return s_netplay_golf_ui;
+}
+
+void SetNetPlayGolfUI(std::shared_ptr<NetPlayGolfUI> ui)
+{
+  std::lock_guard lock(s_netplay_golf_ui_mutex);
+  s_netplay_golf_ui = std::move(ui);
+}
 
 NetPlayGolfUI::NetPlayGolfUI(std::weak_ptr<NetPlay::NetPlayClient> netplay_client)
     : m_netplay_client{std::move(netplay_client)}
