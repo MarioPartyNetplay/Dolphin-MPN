@@ -3,26 +3,23 @@
 
 #pragma once
 
+#include <array>
+
 #include <QDialog>
-#include <QDialogButtonBox>
-#include <QGridLayout>
-#include <QLabel>
-#include <QListWidget>
-#include <QCheckBox>
 
 #include "Core/NetPlayProto.h"
 
-// Forward declarations
+class QDialogButtonBox;
+class QLabel;
+class QPushButton;
+class QTableWidget;
+class QTableWidgetItem;
+class QCheckBox;
+
 namespace NetPlay
 {
 class Player;
 }
-
-class QDialogButtonBox;
-class QGridLayout;
-class QLabel;
-class QListWidget;
-class QCheckBox;
 
 class PadMappingDialog : public QDialog
 {
@@ -31,26 +28,49 @@ public:
   explicit PadMappingDialog(QWidget* parent = nullptr);
 
   int exec() override;
+  void accept() override;
 
   NetPlay::PadMappingArray GetGCPadArray();
   NetPlay::GBAConfigArray GetGBAArray();
   NetPlay::PadMappingArray GetWiimoteArray();
 
 private:
+  enum class Column : int
+  {
+    Player = 0,
+    GC1,
+    GC2,
+    GC3,
+    GC4,
+    Wii1,
+    Wii2,
+    Wii3,
+    Wii4,
+    Count
+  };
+
   void CreateWidgets();
   void ConnectWidgets();
-  void UpdatePlayerLists();
-  void OnPlayerSelectionChanged();
+  void ReloadFromServer();
+  void RefreshTable();
+  void RefreshGbaRow();
+  void SyncMappingsFromWidgets();
+  void UpdateSummary();
+  void AutoAssign();
+  void ClearAll();
 
-  QGridLayout* m_main_layout;
-  QDialogButtonBox* m_button_box;
+  static int PortForColumn(int column);
+  static bool IsGcColumn(int column);
+  static bool IsWiiColumn(int column);
 
-  // Multi-selection lists for each port
-  std::array<QListWidget*, 4> m_gc_player_lists;
-  std::array<QListWidget*, 4> m_wii_player_lists;
-  std::array<QCheckBox*, 4> m_gba_boxes;
+  QTableWidget* m_mapping_table = nullptr;
+  QLabel* m_help_label = nullptr;
+  QLabel* m_summary_label = nullptr;
+  QPushButton* m_auto_assign_button = nullptr;
+  QPushButton* m_clear_button = nullptr;
+  QDialogButtonBox* m_button_box = nullptr;
+  std::array<QCheckBox*, 4> m_gba_boxes{};
 
-  // Current mappings
   NetPlay::PadMappingArray m_pad_mapping;
   NetPlay::GBAConfigArray m_gba_config;
   NetPlay::PadMappingArray m_wii_mapping;

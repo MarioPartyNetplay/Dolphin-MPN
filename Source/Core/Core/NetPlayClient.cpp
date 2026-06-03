@@ -2210,9 +2210,17 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
   return true;
 }
 
+static bool IsSharedControllerPort(const NetPlay::PadMapping& mapping)
+{
+  return mapping.players.size() > 1;
+}
+
 bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
 {
   const int ingame_pad = LocalPadToInGamePad(local_pad);
+  if (ingame_pad >= 4)
+    return false;
+
   bool data_added = false;
   GCPadStatus pad_status;
 
@@ -2230,31 +2238,36 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
     pad_status = Pad::GetStatus(local_pad);
   }
 
+  // Multiple players on one port share a single emulated controller. Only the server-combined
+  // input may be applied; buffering local input here desyncs each peer.
+  const bool shared_port = IsSharedControllerPort(m_pad_map[ingame_pad]);
+
   if (m_host_input_authority)
   {
     if (m_local_player->pid != m_current_golfer)
     {
-      // add to packet
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
     }
-    else
+    else if (!shared_port)
     {
-      // set locally
       m_last_pad_status[ingame_pad] = pad_status;
       m_first_pad_status_received[ingame_pad] = true;
     }
   }
+  else if (shared_port)
+  {
+    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      AddPadStateToPacket(ingame_pad, pad_status, packet);
+      data_added = true;
+    }
+  }
   else
   {
-    // adjust the buffer either up or down
-    // inserting multiple padstates or dropping states
     while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {
-      // add to buffer
       m_pad_buffer[ingame_pad].Push(pad_status);
-
-      // add to packet
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
     }
@@ -2268,18 +2281,28 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
                                             sf::Packet& packet)
 {
   const int ingame_pad = LocalWiimoteToInGameWiimote(local_wiimote);
+  if (ingame_pad >= 4)
+    return false;
+
   bool data_added = false;
+  const bool shared_port = IsSharedControllerPort(m_wiimote_map[ingame_pad]);
 
-  // adjust the buffer either up or down
-  // inserting multiple padstates or dropping states
-  while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+  if (shared_port)
   {
-    // add to buffer
-    m_wiimote_buffer[ingame_pad].Push(state);
-
-    // add to packet
-    AddWiimoteStateToPacket(ingame_pad, state, packet);
-    data_added = true;
+    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      AddWiimoteStateToPacket(ingame_pad, state, packet);
+      data_added = true;
+    }
+  }
+  else
+  {
+    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      m_wiimote_buffer[ingame_pad].Push(state);
+      AddWiimoteStateToPacket(ingame_pad, state, packet);
+      data_added = true;
+    }
   }
 
   return data_added;
@@ -2501,7 +2524,7 @@ static int LocalToInGame(int local_pad, const PadMappingArray& pad_map, PlayerId
       break;
   }
 
-  return ingame_pad;
+  return ingame_pad < 4 ? ingame_pad : 4;
 }
 
 int NetPlayClient::InGamePadToLocalPad(int ingame_pad) const
