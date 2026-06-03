@@ -2292,17 +2292,10 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   }
   else if (shared_port)
   {
-    // Mirror non-shared prefill depth without pushing local input (server aggregates).
-    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      const unsigned int deficit =
-          m_target_buffer_size + 1 - static_cast<unsigned int>(m_pad_buffer[ingame_pad].Size());
-      for (unsigned int i = 0; i < deficit; ++i)
-      {
-        AddPadStateToPacket(ingame_pad, pad_status, packet);
-        data_added = true;
-      }
-    }
+    // Always send one sample per poll so the server can pair inputs from every player on this
+    // port. Gating on local buffer depth caused stale stick data when peers still had room to send.
+    AddPadStateToPacket(ingame_pad, pad_status, packet);
+    data_added = true;
   }
   else
   {
@@ -2330,16 +2323,8 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      const unsigned int deficit = m_target_buffer_size + 1 -
-                                   static_cast<unsigned int>(m_wiimote_buffer[ingame_pad].Size());
-      for (unsigned int i = 0; i < deficit; ++i)
-      {
-        AddWiimoteStateToPacket(ingame_pad, state, packet);
-        data_added = true;
-      }
-    }
+    AddWiimoteStateToPacket(ingame_pad, state, packet);
+    data_added = true;
   }
   else
   {

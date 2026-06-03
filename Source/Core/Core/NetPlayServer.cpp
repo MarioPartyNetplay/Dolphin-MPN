@@ -5,6 +5,7 @@
 #include "ChatBlocklist.h"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -853,7 +854,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     bool has_multiple_players = false;
     std::vector<PadIndex> pads_to_aggregate;
     std::vector<std::pair<PadIndex, GCPadStatus>> single_player_inputs;
-    std::map<PadIndex, unsigned int> shared_pad_entries_in_packet;
 
     while (!packet.endOfPacket())
     {
@@ -882,16 +882,12 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       {
         has_multiple_players = true;
         pads_to_aggregate.push_back(map);
-        shared_pad_entries_in_packet[map]++;
       }
       else
       {
         single_player_inputs.emplace_back(map, pad);
       }
     }
-
-    for (const auto& [pad_index, count] : shared_pad_entries_in_packet)
-      m_shared_pad_packet_counts[pad_index][player.pid] = count;
 
     // If any pad has multiple players, aggregate inputs
     if (has_multiple_players)
@@ -980,7 +976,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     bool has_multiple_players = false;
     std::vector<PadIndex> pads_to_aggregate;
     std::vector<std::pair<PadIndex, WiimoteEmu::SerializedWiimoteState>> single_player_inputs;
-    std::map<PadIndex, unsigned int> shared_wiimote_entries_in_packet;
 
     while (!packet.endOfPacket())
     {
@@ -1008,16 +1003,12 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       {
         has_multiple_players = true;
         pads_to_aggregate.push_back(map);
-        shared_wiimote_entries_in_packet[map]++;
       }
       else
       {
         single_player_inputs.emplace_back(map, pad);
       }
     }
-
-    for (const auto& [pad_index, count] : shared_wiimote_entries_in_packet)
-      m_shared_wiimote_packet_counts[pad_index][player.pid] = count;
 
     // If any pad has multiple players, aggregate inputs
     if (has_multiple_players)
@@ -1964,10 +1955,6 @@ bool NetPlayServer::StartGame()
     pad_inputs.clear();
   for (auto& wii_inputs : m_wiimote_inputs_by_player)
     wii_inputs.clear();
-  for (auto& pad_counts : m_shared_pad_packet_counts)
-    pad_counts.clear();
-  for (auto& wii_counts : m_shared_wiimote_packet_counts)
-    wii_counts.clear();
 
   return true;
 }
@@ -2853,25 +2840,14 @@ void NetPlayServer::AggregatePadInputs(PadIndex pad_index)
 
   const GCPadStatus aggregated = CombinePadInputs(inputs);
 
-  unsigned int num_copies = 1;
-  for (const PlayerId player_id : pad_players)
-  {
-    const auto it = m_shared_pad_packet_counts[pad_index].find(player_id);
-    if (it != m_shared_pad_packet_counts[pad_index].end())
-      num_copies = std::max(num_copies, it->second);
-  }
-
   sf::Packet spac;
   spac << (m_host_input_authority ? MessageID::PadHostData : MessageID::PadData);
-  for (unsigned int copy = 0; copy < num_copies; ++copy)
+  spac << pad_index << aggregated.button;
+  if (!m_gba_config.at(pad_index).enabled)
   {
-    spac << pad_index << aggregated.button;
-    if (!m_gba_config.at(pad_index).enabled)
-    {
-      spac << aggregated.analogA << aggregated.analogB << aggregated.stickX << aggregated.stickY
-           << aggregated.substickX << aggregated.substickY << aggregated.triggerLeft
-           << aggregated.triggerRight << aggregated.isConnected;
-    }
+    spac << aggregated.analogA << aggregated.analogB << aggregated.stickX << aggregated.stickY
+         << aggregated.substickX << aggregated.substickY << aggregated.triggerLeft
+         << aggregated.triggerRight << aggregated.isConnected;
   }
 
   if (m_host_input_authority)
@@ -2887,20 +2863,76 @@ void NetPlayServer::AggregatePadInputs(PadIndex pad_index)
   m_pad_inputs_by_player[pad_index].clear();
 }
 
-static int StickDeflectionSquared(u8 x, u8 y)
+static void FinalizeCombinedStick(u8& out_x, u8& out_y, int sum_dx, int sum_dy, u8 center_x,
+                                  u8 center_y, u8 max_radius)
 {
-  const int dx = static_cast<int>(x) - 128;
-  const int dy = static_cast<int>(y) - 128;
-  return dx * dx + dy * dy;
+  const int len_sq = sum_dx * sum_dx + sum_dy * sum_dy;
+  const int max_len_sq = static_cast<int>(max_radius) * max_radius;
+  if (len_sq > max_len_sq && len_sq > 0)
+  {
+    const double scale =
+        static_cast<double>(max_radius) / std::sqrt(static_cast<double>(len_sq));
+    sum_dx = static_cast<int>(std::llround(sum_dx * scale));
+    sum_dy = static_cast<int>(std::llround(sum_dy * scale));
+  }
+
+  out_x = static_cast<u8>(std::clamp(sum_dx + center_x, 0, 255));
+  out_y = static_cast<u8>(std::clamp(sum_dy + center_y, 0, 255));
 }
 
-static void UseStrongerStick(u8& out_x, u8& out_y, u8 candidate_x, u8 candidate_y)
+static void CombineStickPair(u8& out_x, u8& out_y, const std::vector<GCPadStatus>& inputs,
+                             u8 (*get_x)(const GCPadStatus&), u8 (*get_y)(const GCPadStatus&),
+                             u8 center_x, u8 center_y, u8 max_radius)
 {
-  if (StickDeflectionSquared(candidate_x, candidate_y) > StickDeflectionSquared(out_x, out_y))
+  int sum_dx = 0;
+  int sum_dy = 0;
+  int best_len_sq = 0;
+  int best_dx = 0;
+  int best_dy = 0;
+
+  for (const GCPadStatus& input : inputs)
   {
-    out_x = candidate_x;
-    out_y = candidate_y;
+    const int dx = static_cast<int>(get_x(input)) - center_x;
+    const int dy = static_cast<int>(get_y(input)) - center_y;
+    sum_dx += dx;
+    sum_dy += dy;
+
+    const int len_sq = dx * dx + dy * dy;
+    if (len_sq > best_len_sq)
+    {
+      best_len_sq = len_sq;
+      best_dx = dx;
+      best_dy = dy;
+    }
   }
+
+  // Opposing inputs cancel in a vector sum; fall back to the strongest deflection so one
+  // direction still registers (orthogonal inputs are preserved by the sum).
+  const int sum_len_sq = sum_dx * sum_dx + sum_dy * sum_dy;
+  if (best_len_sq > 0 && sum_len_sq < best_len_sq / 4)
+  {
+    sum_dx = best_dx;
+    sum_dy = best_dy;
+  }
+
+  FinalizeCombinedStick(out_x, out_y, sum_dx, sum_dy, center_x, center_y, max_radius);
+}
+
+static u8 MainStickX(const GCPadStatus& pad)
+{
+  return pad.stickX;
+}
+static u8 MainStickY(const GCPadStatus& pad)
+{
+  return pad.stickY;
+}
+static u8 CStickX(const GCPadStatus& pad)
+{
+  return pad.substickX;
+}
+static u8 CStickY(const GCPadStatus& pad)
+{
+  return pad.substickY;
 }
 
 GCPadStatus NetPlayServer::CombinePadInputs(const std::vector<GCPadStatus>& inputs)
@@ -2914,12 +2946,17 @@ GCPadStatus NetPlayServer::CombinePadInputs(const std::vector<GCPadStatus>& inpu
     result.button |= input.button;
     result.analogA = std::max(result.analogA, input.analogA);
     result.analogB = std::max(result.analogB, input.analogB);
-    UseStrongerStick(result.stickX, result.stickY, input.stickX, input.stickY);
-    UseStrongerStick(result.substickX, result.substickY, input.substickX, input.substickY);
     result.triggerLeft = std::max(result.triggerLeft, input.triggerLeft);
     result.triggerRight = std::max(result.triggerRight, input.triggerRight);
     result.isConnected = result.isConnected || input.isConnected;
   }
+
+  CombineStickPair(result.stickX, result.stickY, inputs, MainStickX, MainStickY,
+                   GCPadStatus::MAIN_STICK_CENTER_X, GCPadStatus::MAIN_STICK_CENTER_Y,
+                   GCPadStatus::MAIN_STICK_RADIUS);
+  CombineStickPair(result.substickX, result.substickY, inputs, CStickX, CStickY,
+                   GCPadStatus::C_STICK_CENTER_X, GCPadStatus::C_STICK_CENTER_Y,
+                   GCPadStatus::C_STICK_RADIUS);
 
   return result;
 }
@@ -2943,23 +2980,12 @@ void NetPlayServer::AggregateWiimoteInputs(PadIndex pad_index)
 
   const WiimoteEmu::SerializedWiimoteState aggregated = CombineWiimoteInputs(inputs);
 
-  unsigned int num_copies = 1;
-  for (const PlayerId player_id : wii_players)
-  {
-    const auto it = m_shared_wiimote_packet_counts[pad_index].find(player_id);
-    if (it != m_shared_wiimote_packet_counts[pad_index].end())
-      num_copies = std::max(num_copies, it->second);
-  }
-
   sf::Packet spac;
   spac << MessageID::WiimoteData;
-  for (unsigned int copy = 0; copy < num_copies; ++copy)
-  {
-    spac << pad_index;
-    spac << aggregated.length;
-    for (size_t i = 0; i < aggregated.length; ++i)
-      spac << aggregated.data[i];
-  }
+  spac << pad_index;
+  spac << aggregated.length;
+  for (size_t i = 0; i < aggregated.length; ++i)
+    spac << aggregated.data[i];
 
   SendToClients(spac);
 
