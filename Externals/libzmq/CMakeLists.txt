@@ -4,7 +4,9 @@ set(WITH_DOCS OFF)
 set(BUILD_SHARED OFF)
 set(BUILD_STATIC ON)
 
-add_subdirectory(libzmq)
+# libzmq errors if CMAKE_CURRENT_BINARY_DIR equals its source tree; use a
+# dedicated binary dir (needed when the parent uses an in-source layout).
+add_subdirectory(libzmq "${CMAKE_CURRENT_BINARY_DIR}/libzmq-build")
 
 dolphin_disable_warnings(objects)
 dolphin_disable_warnings(libzmq-static)

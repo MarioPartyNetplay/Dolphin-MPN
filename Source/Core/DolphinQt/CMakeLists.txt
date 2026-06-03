@@ -477,7 +477,7 @@ PRIVATE
   uicommon
   imgui
   implot
-  minizip-ng::minizip-ng
+  MINIZIP::minizip-ng
   core
 )
 
