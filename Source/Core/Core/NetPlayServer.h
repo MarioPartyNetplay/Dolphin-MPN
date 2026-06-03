@@ -199,6 +199,9 @@ private:
   // Store inputs from each player for each pad when multiple players are assigned
   std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_inputs_by_player{};
   std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_inputs_by_player{};
+  // Entries per packet from each player; used to mirror buffer prefill for shared ports
+  std::array<std::map<PlayerId, unsigned int>, 4> m_shared_pad_packet_counts{};
+  std::array<std::map<PlayerId, unsigned int>, 4> m_shared_wiimote_packet_counts{};
 
   struct
   {

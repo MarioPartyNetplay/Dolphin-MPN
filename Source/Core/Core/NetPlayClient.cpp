@@ -77,6 +77,19 @@ namespace NetPlay
 {
 using namespace WiimoteCommon;
 
+static bool IsSharedControllerPort(const PadMapping& mapping)
+{
+  return mapping.players.size() > 1;
+}
+
+static GCPadStatus DefaultConnectedPadStatus()
+{
+  GCPadStatus pad{};
+  pad.isConnected = true;
+  pad.stickX = pad.stickY = pad.substickX = pad.substickY = 128;
+  return pad;
+}
+
 static std::mutex crit_netplay_client;
 static NetPlayClient* netplay_client = nullptr;
 static bool s_si_poll_batching = false;
@@ -657,6 +670,26 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
   }
 
   UpdateDevices();
+
+  if (m_is_running.IsSet())
+  {
+    const GCPadStatus default_pad = DefaultConnectedPadStatus();
+    const WiimoteEmu::SerializedWiimoteState default_wii{};
+    for (unsigned int i = 0; i < 4; ++i)
+    {
+      if (IsSharedControllerPort(m_pad_map[i]) && m_pad_buffer[i].Size() == 0)
+      {
+        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
+          m_pad_buffer[i].Push(default_pad);
+      }
+
+      if (IsSharedControllerPort(m_wiimote_map[i]) && m_wiimote_buffer[i].Size() == 0)
+      {
+        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
+          m_wiimote_buffer[i].Push(default_wii);
+      }
+    }
+  }
 
   m_dialog->Update();
 }
@@ -1793,6 +1826,27 @@ bool NetPlayClient::StartGame(const std::string& path)
 
   ClearBuffers();
 
+  // Shared ports only fill from server-combined input. Prime identical neutral samples on every
+  // peer so GetNetPads is not stuck on frame 0 waiting for the first aggregated packet.
+  {
+    const GCPadStatus default_pad = DefaultConnectedPadStatus();
+    const WiimoteEmu::SerializedWiimoteState default_wii{};
+    for (unsigned int i = 0; i < 4; ++i)
+    {
+      if (IsSharedControllerPort(m_pad_map[i]))
+      {
+        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
+          m_pad_buffer[i].Push(default_pad);
+      }
+
+      if (IsSharedControllerPort(m_wiimote_map[i]))
+      {
+        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
+          m_wiimote_buffer[i].Push(default_wii);
+      }
+    }
+  }
+
   m_first_pad_status_received.fill(false);
 
   if (m_dialog->IsRecording())
@@ -2245,11 +2299,6 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
   return true;
 }
 
-static bool IsSharedControllerPort(const NetPlay::PadMapping& mapping)
-{
-  return mapping.players.size() > 1;
-}
-
 bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
 {
   const int ingame_pad = LocalPadToInGamePad(local_pad);
@@ -2292,10 +2341,19 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   }
   else if (shared_port)
   {
-    // Always send one sample per poll so the server can pair inputs from every player on this
-    // port. Gating on local buffer depth caused stale stick data when peers still had room to send.
-    AddPadStateToPacket(ingame_pad, pad_status, packet);
-    data_added = true;
+    // Mirror non-shared buffer depth without pushing local input (server aggregates). Always send
+    // at least one sample so every player contributes each poll; prefill when the buffer is low.
+    unsigned int num_to_send = 1;
+    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      num_to_send = m_target_buffer_size + 1 -
+                    static_cast<unsigned int>(m_pad_buffer[ingame_pad].Size());
+    }
+    for (unsigned int i = 0; i < num_to_send; ++i)
+    {
+      AddPadStateToPacket(ingame_pad, pad_status, packet);
+      data_added = true;
+    }
   }
   else
   {
@@ -2323,8 +2381,17 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    AddWiimoteStateToPacket(ingame_pad, state, packet);
-    data_added = true;
+    unsigned int num_to_send = 1;
+    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      num_to_send = m_target_buffer_size + 1 -
+                    static_cast<unsigned int>(m_wiimote_buffer[ingame_pad].Size());
+    }
+    for (unsigned int i = 0; i < num_to_send; ++i)
+    {
+      AddWiimoteStateToPacket(ingame_pad, state, packet);
+      data_added = true;
+    }
   }
   else
   {
