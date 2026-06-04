@@ -14,6 +14,7 @@
 #include <QIcon>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QStackedWidget>
@@ -25,6 +26,7 @@
 
 #include <future>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <variant>
 
@@ -1430,80 +1432,86 @@ void MainWindow::ShowAboutDialog()
   about.exec();
 }
 
+namespace
+{
+constexpr char GITHUB_RELEASES_URL[] =
+    "https://api.github.com/repos/MarioPartyNetplay/Dolphin-MPN/releases/latest";
+
+std::optional<QJsonObject> FetchLatestRelease()
+{
+  Common::HttpRequest http_request;
+  const auto response = http_request.Get(GITHUB_RELEASES_URL);
+  if (!response)
+    return std::nullopt;
+
+  const QByteArray response_data(reinterpret_cast<const char*>(response->data()),
+                                 static_cast<int>(response->size()));
+  const QJsonDocument json_doc = QJsonDocument::fromJson(response_data);
+  if (!json_doc.isObject())
+    return std::nullopt;
+
+  return json_doc.object();
+}
+
+void PresentReleaseCheckResult(MainWindow* window, const std::optional<QJsonObject>& release,
+                               const bool manual_check)
+{
+  if (!window)
+    return;
+
+  if (!release)
+  {
+    if (manual_check)
+    {
+      QMessageBox::critical(window, MainWindow::tr("Error"),
+                            MainWindow::tr("Failed to fetch update information."));
+    }
+    return;
+  }
+
+  const QString current_version = QString::fromStdString(Common::GetScmDescStr());
+  const QString latest_version = release->value(QStringLiteral("tag_name")).toString();
+
+  if (current_version == latest_version)
+  {
+    if (manual_check)
+    {
+      QMessageBox::information(window, MainWindow::tr("Info"),
+                               MainWindow::tr("You are already up to date."));
+    }
+    return;
+  }
+
+  UserInterface::Dialog::UpdateDialog updater(window, *release, false);
+#ifdef _WIN32
+  QtUtils::SetQWidgetWindowDecorations(&updater);
+#endif
+  updater.exec();
+}
+
+void CheckForUpdatesAsync(MainWindow* window, const bool manual_check)
+{
+  QPointer<MainWindow> weak_window(window);
+  std::thread([weak_window, manual_check] {
+    const std::optional<QJsonObject> release = FetchLatestRelease();
+    QMetaObject::invokeMethod(
+        qApp,
+        [weak_window, release, manual_check] {
+          PresentReleaseCheckResult(weak_window, release, manual_check);
+        },
+        Qt::QueuedConnection);
+  }).detach();
+}
+}  // namespace
+
 void MainWindow::ShowUpdateDialog()
 {
-    Common::HttpRequest httpRequest;
-
-    // Make the GET request
-    auto response = httpRequest.Get("https://api.github.com/repos/MarioPartyNetplay/Dolphin-MPN/releases/latest");
-
-    if (response)
-    {
-        // Access the underlying vector and convert it to QByteArray
-        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
-
-        // Parse the JSON response
-        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-        QJsonObject jsonObject = jsonDoc.object();
-      
-        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
-        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-        if (currentVersion != latestVersion)
-        {
-          // Create and show the UpdateDialog with the fetched data
-          bool forced = false; // Set this based on your logic
-          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-#ifdef _WIN32
-          QtUtils::SetQWidgetWindowDecorations(&updater);
-#endif
-          updater.exec();
-        } else {
-          QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
-        }
-    }
-    else
-    {
-        // Handle error
-        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
-    }
+  CheckForUpdatesAsync(this, true);
 }
 
 void MainWindow::CheckForUpdatesAuto()
 {
-    Common::HttpRequest httpRequest;
-
-    // Make the GET request
-    auto response = httpRequest.Get("https://api.github.com/repos/MarioPartyNetplay/Dolphin-MPN/releases/latest");
-
-    if (response)
-    {
-        // Access the underlying vector and convert it to QByteArray
-        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
-
-        // Parse the JSON response
-        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-        QJsonObject jsonObject = jsonDoc.object();
-      
-        QString currentVersion = QString::fromStdString(Common::GetScmDescStr());
-        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-        if (currentVersion != latestVersion)
-        {
-          // Create and show the UpdateDialog with the fetched data
-          bool forced = false; // Set this based on your logic
-          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-#ifdef _WIN32
-          QtUtils::SetQWidgetWindowDecorations(&updater);
-#endif
-          updater.exec();
-        }
-    }
-    else
-    {
-        // Handle error
-        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
-    }
+  CheckForUpdatesAsync(this, false);
 }
 
 void MainWindow::ShowHotkeyDialog()

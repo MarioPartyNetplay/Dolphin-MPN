@@ -480,28 +480,58 @@ namespace ExpansionInterface
         class IPCBBAInterface : public NetworkInterface
         {
         public:
+#ifdef HAVE_CPPIPC
             explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
 
-#ifdef HAVE_CPPIPC
+            bool Activate() override;
+            void Deactivate() override;
+            bool IsActivated() override;
+            bool SendFrame(const u8* frame, u32 size) override;
+            bool RecvInit() override;
+            void RecvStart() override;
+            void RecvStop() override;
+
+        private:
+            void ReadThreadHandler();
+
+            bool m_active{};
+            ipc::channel m_channel;
+            std::thread m_read_thread;
+            Common::Flag m_read_enabled;
+            Common::Flag m_read_thread_shutdown;
+
+#elif !defined(__ANDROID__)
+            explicit IPCBBAInterface(CEXIETHERNET* eth_ref);
+            ~IPCBBAInterface() override;
 
             bool Activate() override;
-    void Deactivate() override;
-    bool IsActivated() override;
-    bool SendFrame(const u8* frame, u32 size) override;
-    bool RecvInit() override;
-    void RecvStart() override;
-    void RecvStop() override;
+            void Deactivate() override;
+            bool IsActivated() override;
+            bool SendFrame(const u8* frame, u32 size) override;
+            bool RecvInit() override;
+            void RecvStart() override;
+            void RecvStop() override;
 
-  private:
-    void ReadThreadHandler();
+        private:
+            void ReadThreadHandler();
+            void ProxyThreadHandler();
 
-    bool m_active{};
-    ipc::channel m_channel;
-    std::thread m_read_thread;
-    Common::Flag m_read_enabled;
-    Common::Flag m_read_thread_shutdown;
+            bool m_active{};
+            void* m_context{};
+            void* m_publisher{};
+            void* m_subscriber{};
+            std::thread m_read_thread;
+            Common::Flag m_read_enabled;
+            Common::Flag m_read_thread_shutdown;
+
+            std::thread m_proxy_thread;
+            Common::Flag m_proxy_thread_shutdown;
+            std::mutex m_proxy_mutex;
+            void* m_proxy_publisher{};
+            void* m_proxy_subscriber{};
 
 #else
+            explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
 
             bool Activate() override { return false; }
             void Deactivate() override {}
