@@ -769,11 +769,12 @@ endif()
 
 add_subdirectory(Externals/watcher)
 
-# cpp-ipc is only supported on Windows and Linux; other platforms use libzmq.
+# cpp-ipc: Windows, Linux, FreeBSD, QNX. libzmq IPC: other Unix (not Android/macOS).
+# macOS uses stub IPC until the ZMQ BBA path is fixed (see HAVE_ZMQ_IPC in EXI_DeviceEthernet.h).
 if(WIN32 OR LINUX OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "QNX")
   add_subdirectory(Externals/cpp-ipc)
   add_definitions(-DHAVE_CPPIPC)
-elseif(NOT ANDROID)
+elseif(NOT ANDROID AND NOT APPLE)
   add_subdirectory(Externals/libzmq)
   add_definitions(-DHAVE_ZMQ_IPC)
 endif()

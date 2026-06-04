@@ -480,9 +480,8 @@ private:
   class IPCBBAInterface : public NetworkInterface
   {
   public:
-    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
-
 #ifdef HAVE_CPPIPC
+    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
 
     bool Activate() override;
     void Deactivate() override;
@@ -502,6 +501,7 @@ private:
     Common::Flag m_read_thread_shutdown;
 
 #else
+    explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
 
     bool Activate() override { return false; }
     void Deactivate() override {}
