@@ -33,6 +33,10 @@ file(GLOB_RECURSE extra_libs "${DOLPHIN_BUNDLE_PATH}/Contents/MacOS/*.dylib")
 # is fixed and in our minimum CMake version.
 set(extra_dirs "/usr/local/lib" "/lib" "/usr/lib")
 
+if(DEFINED ENV{HOME})
+  list(APPEND extra_dirs "$ENV{HOME}/deps/lib")
+endif()
+
 # BundleUtilities is overly verbose, so disable most of its messages
 function(message)
   if(NOT ARGV MATCHES "^STATUS;")

@@ -11,6 +11,13 @@ struct DualShockUDPServer
   std::string description;
   std::string server_address;
   int server_port;
+
+  DualShockUDPServer() = default;
+  DualShockUDPServer(std::string description_, std::string server_address_, int server_port_)
+      : description(std::move(description_)), server_address(std::move(server_address_)),
+        server_port(server_port_)
+  {
+  }
 };
 
 namespace DualShockUDPSettings

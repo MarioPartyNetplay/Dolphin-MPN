@@ -3,73 +3,6 @@ on:
   push: null
   pull_request: null
 jobs:
-  #build_android:
-  #  name: Android arm64
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - name: Checkout Repository
-  #      uses: actions/checkout@v5
-  #      with:
-  #        submodules: recursive
-  #    
-  #    - name: Cache Gradle packages
-  #      uses: actions/cache@v4
-  #      with:
-  #        path: |
-  #          ~/.gradle/caches
-  #          ~/.gradle/wrapper
-  #        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ github.sha }}
-  #        restore-keys: |
-  #          ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-
-  #          ${{ runner.os }}-gradle-
-  #    
-  #    - name: Cache Android SDK
-  #      uses: actions/cache@v4
-  #      with:
-  #        path: |
-  #          ~/.android
-  #          ~/.local/share/android
-  #        key: ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-${{ github.sha }}
-  #        restore-keys: |
-  #          ${{ runner.os }}-android-${{ hashFiles('**/build.gradle*', '**/gradle.properties') }}-
-  #          ${{ runner.os }}-android-
-  #    
-  #    - name: Setup Android SDK
-  #      uses: actions/setup-java@v4
-  #      with:
-  #        distribution: 'temurin'
-  #        java-version: '17'
-  #    
-  #    - name: Setup Android SDK
-  #      run: |
-  #        # Use the existing Android SDK from the runner
-  #        export ANDROID_HOME=/usr/local/lib/android/sdk
-  #        export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-  #        
-  #        # Accept licenses and install required components if not already present
-  #        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-  #        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" || true
-  #        
-  #        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-  #        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-  #    
-  #    - name: Build APK
-  #      run: |
-  #        cd Source/Android
-  #        ./gradlew assembleRelease
-  #        
-  #        # Rename the APK to DolphinMPN-android.apk
-  #        find . -name "*.apk" -path "*/release/*" | head -1 | xargs -I {} cp {} DolphinMPN-android.apk
-  #        
-  #        # Create OUT directory and move APK
-  #        mkdir -p OUT
-  #        mv DolphinMPN-android.apk OUT/
-  #    
-  #    - name: Upload Build Artifact
-  #      uses: actions/upload-artifact@v4
-  #      with:
-  #        name: DolphinMPN-android
-  #        path: Source/Android/OUT/
   build_archlinux:
     name: Arch Linux x86_64
     runs-on: ubuntu-latest
@@ -365,9 +298,9 @@ jobs:
           build
           ~/.cache/cmake
           ~/.cache/ninja
-        key: ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-${{ github.sha }}
+        key: ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp', '.github/workflows/ci.yml') }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp') }}-
+          ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**', '**/*.cpp', '**/*.h', '**/*.hpp', '.github/workflows/ci.yml') }}-
           ${{ runner.os }}-cmake-macos-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**') }}-
           ${{ runner.os }}-cmake-macos-
     - name: Generate CMake Files
@@ -401,6 +334,8 @@ jobs:
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
           -DCMAKE_C_FLAGS="-arch x86_64"
           -DCMAKE_CXX_FLAGS="-arch x86_64"
+          # Embed Qt/SDL deps into the .app so the DMG runs on machines without ~/deps.
+          -DPOSTPROCESS_BUNDLE=ON
 
           -G Ninja
         )
@@ -413,7 +348,25 @@ jobs:
         # Ensure architecture is set for the build
         export CMAKE_OSX_ARCHITECTURES=x86_64
         export ARCHFLAGS="-arch x86_64"
+        ninja -t clean dolphin-mpn
         ninja dolphin-mpn
+
+    - name: Verify macOS bundle
+      run: |
+        APP="build/Binaries/DolphinQt.app"
+        EXE="$APP/Contents/MacOS/DolphinQt"
+        test -f "$EXE" || { echo "Missing $EXE"; exit 1; }
+        test -f "$APP/Contents/Frameworks/libQt6Core.6.dylib" || {
+          echo "Qt libraries were not bundled into Frameworks (POSTPROCESS_BUNDLE failed)"
+          ls -la "$APP/Contents/Frameworks/" || true
+          exit 1
+        }
+        if otool -l "$EXE" | grep -q '/Users/runner/deps'; then
+          echo "Bundle still references CI-only rpath /Users/runner/deps"
+          otool -l "$EXE" | grep -A2 LC_RPATH
+          exit 1
+        fi
+        echo "Bundle verification passed"
 
     - name: Prepare Build Artifacts
       run: >
@@ -435,7 +388,7 @@ jobs:
         
   build_windows_x86_64:
     name: Windows x86_64
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
     - uses: actions/checkout@v5
       with:
@@ -463,17 +416,6 @@ jobs:
       run: msbuild "Source\dolphin-emu.sln" /verbosity:minimal
         /property:Configuration=Release /property:Platform=x64
 
-    #- name: Trusted Signing
-    #  uses: azure/trusted-signing-action@v0.5.1
-    #  with:
-    #    azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-    #    azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-    #    azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-    #    endpoint: https://eus.codesigning.azure.net/
-    #    trusted-signing-account-name: TabithaHanegan
-    #    certificate-profile-name: vscx-certificate-profile
-    #    files-folder: Binary/x64/
-    #    files-folder-filter: exe,dll
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
