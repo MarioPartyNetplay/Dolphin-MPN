@@ -483,6 +483,8 @@ namespace ExpansionInterface
 #ifdef HAVE_CPPIPC
             explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
 
+#ifdef HAVE_CPPIPC
+
             bool Activate() override;
             void Deactivate() override;
             bool IsActivated() override;
@@ -491,14 +493,14 @@ namespace ExpansionInterface
             void RecvStart() override;
             void RecvStop() override;
 
-        private:
-            void ReadThreadHandler();
+  private:
+    void ReadThreadHandler();
 
-            bool m_active{};
-            ipc::channel m_channel;
-            std::thread m_read_thread;
-            Common::Flag m_read_enabled;
-            Common::Flag m_read_thread_shutdown;
+    bool m_active{};
+    ipc::channel m_channel;
+    std::thread m_read_thread;
+    Common::Flag m_read_enabled;
+    Common::Flag m_read_thread_shutdown;
 
 #elif !defined(__ANDROID__)
             explicit IPCBBAInterface(CEXIETHERNET* eth_ref);
@@ -531,7 +533,6 @@ namespace ExpansionInterface
             void* m_proxy_subscriber{};
 
 #else
-            explicit IPCBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
 
             bool Activate() override { return false; }
             void Deactivate() override {}
