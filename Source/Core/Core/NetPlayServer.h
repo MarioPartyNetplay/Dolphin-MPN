@@ -152,9 +152,9 @@ private:
   void UpdateWiimoteMapping();
   
   // Input aggregation functions
-  void AggregatePadInputs(PadIndex pad_index);
+  void AggregatePadInputs(PadIndex pad_index, unsigned int num_copies = 1);
   GCPadStatus CombinePadInputs(const std::vector<GCPadStatus>& inputs);
-  void AggregateWiimoteInputs(PadIndex pad_index);
+  void AggregateWiimoteInputs(PadIndex pad_index, unsigned int num_copies = 1);
   WiimoteEmu::SerializedWiimoteState CombineWiimoteInputs(const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs);
   std::vector<std::pair<std::string, std::string>> GetInterfaceListInternal() const;
   void ChunkedDataThreadFunc();
@@ -199,9 +199,6 @@ private:
   // Store inputs from each player for each pad when multiple players are assigned
   std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_inputs_by_player{};
   std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_inputs_by_player{};
-  // Entries per packet from each player; used to mirror buffer prefill for shared ports
-  std::array<std::map<PlayerId, unsigned int>, 4> m_shared_pad_packet_counts{};
-  std::array<std::map<PlayerId, unsigned int>, 4> m_shared_wiimote_packet_counts{};
 
   struct
   {
