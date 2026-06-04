@@ -2341,9 +2341,15 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   }
   else if (shared_port)
   {
-    // Mirror non-shared buffer depth without pushing local input (server aggregates one frame per
-    // sample). Do not gate on buffer size with a single sample — that starved the FIFO.
-    while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    // Mirror non-shared buffer depth without pushing local input (server aggregates). Always send
+    // at least one sample so every player contributes each poll; prefill when the buffer is low.
+    unsigned int num_to_send = 1;
+    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      num_to_send = m_target_buffer_size + 1 -
+                    static_cast<unsigned int>(m_pad_buffer[ingame_pad].Size());
+    }
+    for (unsigned int i = 0; i < num_to_send; ++i)
     {
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
@@ -2375,7 +2381,13 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    unsigned int num_to_send = 1;
+    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      num_to_send = m_target_buffer_size + 1 -
+                    static_cast<unsigned int>(m_wiimote_buffer[ingame_pad].Size());
+    }
+    for (unsigned int i = 0; i < num_to_send; ++i)
     {
       AddWiimoteStateToPacket(ingame_pad, state, packet);
       data_added = true;
