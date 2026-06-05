@@ -11,6 +11,7 @@
 #include "Common/IOFile.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
+#include "Common/NandPaths.h"
 #include "Core/IOS/ES/Formats.h"
 
 namespace DiscIO
@@ -134,11 +135,7 @@ bool NANDImporter::ExtractFiles()
 std::string NANDImporter::GetPath(const NANDFSTEntry& entry, const std::string& parent_path)
 {
   std::string name(entry.name, strnlen(entry.name, sizeof(NANDFSTEntry::name)));
-
-  if (name.front() == '/' || parent_path.back() == '/')
-    return parent_path + name;
-
-  return parent_path + '/' + name;
+  return parent_path + '/' + Common::EscapeFileName(name);
 }
 
 bool NANDImporter::ProcessEntry(u16 entry_number, const std::string& parent_path)
@@ -153,7 +150,7 @@ bool NANDImporter::ProcessEntry(u16 entry_number, const std::string& parent_path
 
     const NANDFSTEntry entry = m_superblock->fst[entry_number];
 
-    const std::string path = GetPath(entry, parent_path);
+    const std::string path = entry_number == 0 ? parent_path : GetPath(entry, parent_path);
     INFO_LOG_FMT(DISCIO, "Entry: {} Path: {}", entry, path);
 
     Type type = static_cast<Type>(entry.mode & 3);
