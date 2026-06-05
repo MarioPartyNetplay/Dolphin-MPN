@@ -2341,8 +2341,8 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   }
   else if (shared_port)
   {
-    // Mirror non-shared buffer depth without pushing local input (server aggregates). Always send
-    // at least one sample so every player contributes each poll; prefill when the buffer is low.
+    // Always contribute at least one sample per poll so the server can pair every player. Send
+    // additional catch-up samples only while the receive buffer is below target depth.
     unsigned int num_to_send = 1;
     if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {

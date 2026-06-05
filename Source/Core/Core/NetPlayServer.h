@@ -5,6 +5,7 @@
 
 #include <SFML/Network/Packet.hpp>
 
+#include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -152,9 +153,9 @@ private:
   void UpdateWiimoteMapping();
   
   // Input aggregation functions
-  void AggregatePadInputs(PadIndex pad_index);
+  void TryEmitAggregatedPadInputs(PadIndex pad_index);
   GCPadStatus CombinePadInputs(const std::vector<GCPadStatus>& inputs);
-  void AggregateWiimoteInputs(PadIndex pad_index);
+  void TryEmitAggregatedWiimoteInputs(PadIndex pad_index);
   WiimoteEmu::SerializedWiimoteState CombineWiimoteInputs(const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs);
   std::vector<std::pair<std::string, std::string>> GetInterfaceListInternal() const;
   void ChunkedDataThreadFunc();
@@ -196,12 +197,11 @@ private:
   std::unordered_map<u32, std::vector<std::pair<PlayerId, u64>>> m_timebase_by_frame;
   bool m_desync_detected = false;
 
-  // Store inputs from each player for each pad when multiple players are assigned
-  std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_inputs_by_player{};
-  std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_inputs_by_player{};
-  // Entries per packet from each player; used to mirror buffer depth on shared ports
-  std::array<std::map<PlayerId, unsigned int>, 4> m_shared_pad_packet_counts{};
-  std::array<std::map<PlayerId, unsigned int>, 4> m_shared_wiimote_packet_counts{};
+  // Per-player input queues for shared ports; one aggregated frame is emitted when every assigned
+  // player has at least one sample queued.
+  std::array<std::map<PlayerId, std::deque<GCPadStatus>>, 4> m_pad_input_queues{};
+  std::array<std::map<PlayerId, std::deque<WiimoteEmu::SerializedWiimoteState>>, 4>
+      m_wiimote_input_queues{};
 
   struct
   {
