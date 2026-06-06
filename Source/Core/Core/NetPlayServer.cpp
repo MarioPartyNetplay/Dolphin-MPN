@@ -702,6 +702,24 @@ void NetPlayServer::AdjustPadBufferSize(unsigned int size)
 
   m_target_buffer_size = size;
 
+  const size_t max_queue_size = m_target_buffer_size + 1;
+  for (auto& pad_queues : m_pad_input_queues)
+  {
+    for (auto& [_, queue] : pad_queues)
+    {
+      while (queue.size() > max_queue_size)
+        queue.pop_front();
+    }
+  }
+  for (auto& wii_queues : m_wiimote_input_queues)
+  {
+    for (auto& [_, queue] : wii_queues)
+    {
+      while (queue.size() > max_queue_size)
+        queue.pop_front();
+    }
+  }
+
   // not needed on clients with host input authority
   if (!m_host_input_authority)
   {
@@ -874,7 +892,11 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
       if (pad_players.size() > 1)
       {
-        m_pad_input_queues[map][player.pid].push_back(pad);
+        auto& queue = m_pad_input_queues[map][player.pid];
+        queue.push_back(pad);
+        const size_t max_queue_size = m_target_buffer_size + 1;
+        while (queue.size() > max_queue_size)
+          queue.pop_front();
         pads_to_emit.push_back(map);
       }
       else
@@ -989,7 +1011,11 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
       if (wii_players.size() > 1)
       {
-        m_wiimote_input_queues[map][player.pid].push_back(pad);
+        auto& queue = m_wiimote_input_queues[map][player.pid];
+        queue.push_back(pad);
+        const size_t max_queue_size = m_target_buffer_size + 1;
+        while (queue.size() > max_queue_size)
+          queue.pop_front();
         pads_to_emit.push_back(map);
       }
       else

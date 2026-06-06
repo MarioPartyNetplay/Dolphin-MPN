@@ -224,6 +224,7 @@ protected:
   };
 
   void ClearBuffers();
+  void ResyncSharedPortBuffers();
 
   struct
   {
@@ -257,7 +258,7 @@ protected:
   // try to keep in-flight to the other clients. In host input authority mode, this is how
   // many incoming input packets need to be queued up before the client starts
   // speeding up the game to drain the buffer.
-  unsigned int m_target_buffer_size = 20;
+  unsigned int m_target_buffer_size = 0;
   bool m_host_input_authority = false;
   PlayerId m_current_golfer = 1;
 

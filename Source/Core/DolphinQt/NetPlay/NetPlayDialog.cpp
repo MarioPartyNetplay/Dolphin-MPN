@@ -382,9 +382,16 @@ void NetPlayDialog::ConnectWidgets()
     const auto client = Settings::Instance().GetNetPlayClient();
     const auto server = Settings::Instance().GetNetPlayServer();
     if (server && !m_host_input_authority)
+    {
+      // Server broadcasts PadBuffer to all clients (including host); avoid a duplicate chat line.
       server->AdjustPadBufferSize(value);
-    else
+    }
+    else if (client)
+    {
       client->AdjustPadBufferSize(value);
+    }
+
+    m_buffer_size = value;
   });
 
   const auto hia_function = [this](bool enable) {
@@ -540,7 +547,7 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
 {
   m_nickname = std::move(nickname);
   m_use_traversal = use_traversal;
-  m_buffer_size = 0;
+  m_buffer_size = m_buffer_size_box->value();
   m_old_player_count = 0;
 
   m_room_box->clear();
@@ -967,6 +974,10 @@ void NetPlayDialog::OnPadBufferChanged(u32 buffer)
     const QSignalBlocker blocker(m_buffer_size_box);
     m_buffer_size_box->setValue(buffer);
   });
+
+  if (static_cast<int>(buffer) == m_buffer_size)
+    return;
+
   DisplayMessage(m_host_input_authority ? tr("Max buffer size changed to %1").arg(buffer) :
                                           tr("Buffer size changed to %1").arg(buffer),
                  "darkcyan");
@@ -1183,6 +1194,7 @@ void NetPlayDialog::LoadSettings()
   const bool hide_remote_gbas = Config::Get(Config::NETPLAY_HIDE_REMOTE_GBAS);
 
   m_buffer_size_box->setValue(buffer_size);
+  m_buffer_size = buffer_size;
 
   if (!savedata_load)
     m_savedata_none_action->setChecked(true);
