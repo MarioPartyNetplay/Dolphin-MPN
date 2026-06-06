@@ -383,8 +383,12 @@ void NetPlayDialog::ConnectWidgets()
     const auto server = Settings::Instance().GetNetPlayServer();
     if (server && !m_host_input_authority)
     {
-      // Server broadcasts PadBuffer to all clients (including host); avoid a duplicate chat line.
       server->AdjustPadBufferSize(value);
+      // Apply locally immediately so in-game input buffering updates without waiting on the loopback.
+      if (client)
+        client->ApplyPadBufferSize(static_cast<unsigned int>(value));
+      DisplayMessage(tr("Buffer size changed to %1").arg(value), "darkcyan");
+      m_buffer_size = value;
     }
     else if (client)
     {

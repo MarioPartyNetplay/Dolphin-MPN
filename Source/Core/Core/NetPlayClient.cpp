@@ -672,7 +672,7 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
   UpdateDevices();
 
   if (m_is_running.IsSet())
-    ResyncSharedPortBuffers();
+    ResyncPortBuffers();
 
   m_dialog->Update();
 }
@@ -693,7 +693,7 @@ void NetPlayClient::OnWiimoteMapping(sf::Packet& packet)
   }
 
   if (m_is_running.IsSet())
-    ResyncSharedPortBuffers();
+    ResyncPortBuffers();
 
   m_dialog->Update();
 }
@@ -807,11 +807,7 @@ void NetPlayClient::OnPadBuffer(sf::Packet& packet)
   u32 size = 0;
   packet >> size;
 
-  if (m_target_buffer_size == size)
-    return;
-
-  m_target_buffer_size = size;
-  ResyncSharedPortBuffers();
+  ApplyPadBufferSize(size);
   m_dialog->OnPadBufferChanged(size);
 }
 
@@ -1818,7 +1814,7 @@ bool NetPlayClient::StartGame(const std::string& path)
 
   // Shared ports only fill from server-combined input. Prime to the current buffer target so
   // GetNetPads is not stuck on frame 0 waiting for the first aggregated packet.
-  ResyncSharedPortBuffers();
+  ResyncPortBuffers();
 
   m_first_pad_status_received.fill(false);
 
@@ -2012,7 +2008,7 @@ void NetPlayClient::ClearBuffers()
 }
 
 // called from ---NETPLAY--- thread
-void NetPlayClient::ResyncSharedPortBuffers()
+void NetPlayClient::ResyncPortBuffers()
 {
   if (!m_is_running.IsSet())
     return;
@@ -2022,22 +2018,29 @@ void NetPlayClient::ResyncSharedPortBuffers()
 
   for (unsigned int i = 0; i < 4; ++i)
   {
-    if (IsSharedControllerPort(m_pad_map[i]))
+    if (!m_pad_map[i].players.empty())
     {
       while (m_pad_buffer[i].Size() > m_target_buffer_size + 1)
         m_pad_buffer[i].Pop();
 
-      while (m_pad_buffer[i].Size() <= m_target_buffer_size)
-        m_pad_buffer[i].Push(default_pad);
+      // Shared ports are fed only by the server; prime neutral frames to the new target depth.
+      if (IsSharedControllerPort(m_pad_map[i]))
+      {
+        while (m_pad_buffer[i].Size() <= m_target_buffer_size)
+          m_pad_buffer[i].Push(default_pad);
+      }
     }
 
-    if (IsSharedControllerPort(m_wiimote_map[i]))
+    if (!m_wiimote_map[i].players.empty())
     {
       while (m_wiimote_buffer[i].Size() > m_target_buffer_size + 1)
         m_wiimote_buffer[i].Pop();
 
-      while (m_wiimote_buffer[i].Size() <= m_target_buffer_size)
-        m_wiimote_buffer[i].Push(default_wii);
+      if (IsSharedControllerPort(m_wiimote_map[i]))
+      {
+        while (m_wiimote_buffer[i].Size() <= m_target_buffer_size)
+          m_wiimote_buffer[i].Push(default_wii);
+      }
     }
   }
 
@@ -2806,10 +2809,18 @@ const PadMappingArray& NetPlayClient::GetWiimoteMapping() const
   return m_wiimote_map;
 }
 
+void NetPlayClient::ApplyPadBufferSize(const unsigned int size)
+{
+  if (m_target_buffer_size == size)
+    return;
+
+  m_target_buffer_size = size;
+  ResyncPortBuffers();
+}
+
 void NetPlayClient::AdjustPadBufferSize(const unsigned int size)
 {
-  m_target_buffer_size = size;
-  ResyncSharedPortBuffers();
+  ApplyPadBufferSize(size);
   m_dialog->OnPadBufferChanged(size);
 }
 
