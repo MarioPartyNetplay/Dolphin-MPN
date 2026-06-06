@@ -390,8 +390,6 @@ void NetPlayDialog::ConnectWidgets()
     {
       client->AdjustPadBufferSize(value);
     }
-
-    m_buffer_size = value;
   });
 
   const auto hia_function = [this](bool enable) {
