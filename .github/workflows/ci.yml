@@ -388,7 +388,7 @@ jobs:
         
   build_windows_x86_64:
     name: Windows x86_64
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
     - uses: actions/checkout@v5
       with:
