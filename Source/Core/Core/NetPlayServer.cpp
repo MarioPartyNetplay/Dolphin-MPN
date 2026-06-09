@@ -710,6 +710,12 @@ void NetPlayServer::AdjustPadBufferSize(unsigned int size)
 
   m_target_buffer_size = size;
 
+  // Drop stale per-player samples so shared-port aggregation stays aligned after resize.
+  for (auto& pad_inputs : m_pad_inputs_by_player)
+    pad_inputs.clear();
+  for (auto& wii_inputs : m_wiimote_inputs_by_player)
+    wii_inputs.clear();
+
   // not needed on clients with host input authority
   if (!m_host_input_authority)
   {

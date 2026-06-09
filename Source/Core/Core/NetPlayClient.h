@@ -224,6 +224,7 @@ protected:
   };
 
   void ClearBuffers();
+  void ResyncBuffersForTargetSize();
 
   struct
   {

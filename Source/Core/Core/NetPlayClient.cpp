@@ -821,7 +821,11 @@ void NetPlayClient::OnPadBuffer(sf::Packet& packet)
   u32 size = 0;
   packet >> size;
 
+  std::lock_guard lkg(m_crit.game);
   m_target_buffer_size = size;
+  if (m_is_running.IsSet())
+    ResyncBuffersForTargetSize();
+
   m_dialog->OnPadBufferChanged(size);
 }
 
@@ -1824,28 +1828,7 @@ bool NetPlayClient::StartGame(const std::string& path)
   m_is_running.Set();
   NetPlay_Enable(this);
 
-  ClearBuffers();
-
-  // Shared ports only fill from server-combined input. Prime identical neutral samples on every
-  // peer so GetNetPads is not stuck on frame 0 waiting for the first aggregated packet.
-  {
-    const GCPadStatus default_pad = DefaultConnectedPadStatus();
-    const WiimoteEmu::SerializedWiimoteState default_wii{};
-    for (unsigned int i = 0; i < 4; ++i)
-    {
-      if (IsSharedControllerPort(m_pad_map[i]))
-      {
-        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-          m_pad_buffer[i].Push(default_pad);
-      }
-
-      if (IsSharedControllerPort(m_wiimote_map[i]))
-      {
-        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-          m_wiimote_buffer[i].Push(default_wii);
-      }
-    }
-  }
+  ResyncBuffersForTargetSize();
 
   m_first_pad_status_received.fill(false);
 
@@ -2036,6 +2019,35 @@ void NetPlayClient::ClearBuffers()
     while (m_wiimote_buffer[i].Size())
       m_wiimote_buffer[i].Pop();
   }
+}
+
+// called from ---GUI--- and ---NETPLAY--- threads (under m_crit.game)
+void NetPlayClient::ResyncBuffersForTargetSize()
+{
+  ClearBuffers();
+
+  // Shared ports only fill from server-combined input. Prime identical neutral samples on every
+  // peer so GetNetPads is not stuck waiting for the first aggregated packet, and so every player
+  // on the port resumes sending at the same buffer depth after a target size change.
+  const GCPadStatus default_pad = DefaultConnectedPadStatus();
+  const WiimoteEmu::SerializedWiimoteState default_wii{};
+  for (unsigned int i = 0; i < 4; ++i)
+  {
+    if (IsSharedControllerPort(m_pad_map[i]))
+    {
+      for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
+        m_pad_buffer[i].Push(default_pad);
+    }
+
+    if (IsSharedControllerPort(m_wiimote_map[i]))
+    {
+      for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
+        m_wiimote_buffer[i].Push(default_wii);
+    }
+  }
+
+  m_gc_pad_event.Set();
+  m_wii_pad_event.Set();
 }
 
 // called from ---NETPLAY--- thread
@@ -2789,7 +2801,11 @@ const PadMappingArray& NetPlayClient::GetWiimoteMapping() const
 
 void NetPlayClient::AdjustPadBufferSize(const unsigned int size)
 {
+  std::lock_guard lkg(m_crit.game);
   m_target_buffer_size = size;
+  if (m_is_running.IsSet())
+    ResyncBuffersForTargetSize();
+
   m_dialog->OnPadBufferChanged(size);
 }
 
