@@ -122,9 +122,6 @@ void GeneralPane::CreateBasic()
   m_checkbox_dualcore = new ToolTipCheckBox(tr("Enable Dual Core (speed-hack)"));
   basic_group_layout->addWidget(m_checkbox_dualcore);
 
-  m_checkbox_cheats = new ConfigBool(tr("Enable Cheats"), Config::MAIN_ENABLE_CHEATS);
-  basic_group_layout->addWidget(m_checkbox_cheats);
-
   m_checkbox_load_games_into_memory =
       new ConfigBool(tr("Load Whole Game Into Memory"), Config::MAIN_LOAD_GAME_INTO_MEMORY);
   basic_group_layout->addWidget(m_checkbox_load_games_into_memory);
@@ -133,9 +130,6 @@ void GeneralPane::CreateBasic()
          "<br><br>This may improve performance with slow or high-latency storage."
          "<br>System memory requirements will be much higher with this setting enabled."
          "<br><br><dolphin_emphasis>If unsure, leave this unchecked.</dolphin_emphasis>"));
-
-  m_checkbox_cheats = new ConfigBool(tr("Enable Cheats"), Config::MAIN_ENABLE_CHEATS);
-  basic_group_layout->addWidget(m_checkbox_cheats);
 
   m_checkbox_override_region_settings =
       new ConfigBool(tr("Allow Mismatched Region Settings"), Config::MAIN_OVERRIDE_REGION_SETTINGS);
