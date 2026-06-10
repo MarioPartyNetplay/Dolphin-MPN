@@ -134,7 +134,7 @@ void NetPlayDialog::CreateMainLayout()
   m_game_button = new QPushButton;
   m_start_button = new QPushButton(tr("Start"));
   m_buffer_size_box = new QSpinBox;
-  m_buffer_size_box->setRange(0, 20);
+  m_buffer_size_box->setRange(1, 99);
   m_buffer_size_box->setAlignment(Qt::AlignRight);
   {
     QStyleOptionSpinBox spinbox_option;
