@@ -82,6 +82,18 @@ static bool IsSharedControllerPort(const PadMapping& mapping)
   return mapping.players.size() > 1;
 }
 
+// How many upstream samples a shared-port player should send this poll. Matches non-shared fill
+// (send while size <= target) and always contributes one sample at steady-state depth so the
+// server can pair every player every frame.
+static unsigned int SharedPortSamplesToSend(unsigned int buffer_size, unsigned int target_buffer_size)
+{
+  if (buffer_size <= target_buffer_size)
+    return target_buffer_size + 1 - buffer_size;
+  if (buffer_size == target_buffer_size + 1)
+    return 1;
+  return 0;
+}
+
 static GCPadStatus DefaultConnectedPadStatus()
 {
   GCPadStatus pad{};
@@ -675,15 +687,19 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
   {
     const GCPadStatus default_pad = DefaultConnectedPadStatus();
     const WiimoteEmu::SerializedWiimoteState default_wii{};
+    const bool skip_golfer_shared_prefill =
+        m_host_input_authority && m_local_player->pid == m_current_golfer;
     for (unsigned int i = 0; i < 4; ++i)
     {
-      if (IsSharedControllerPort(m_pad_map[i]) && m_pad_buffer[i].Size() == 0)
+      if (IsSharedControllerPort(m_pad_map[i]) && m_pad_buffer[i].Size() == 0 &&
+          !skip_golfer_shared_prefill)
       {
         for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
           m_pad_buffer[i].Push(default_pad);
       }
 
-      if (IsSharedControllerPort(m_wiimote_map[i]) && m_wiimote_buffer[i].Size() == 0)
+      if (IsSharedControllerPort(m_wiimote_map[i]) && m_wiimote_buffer[i].Size() == 0 &&
+          !skip_golfer_shared_prefill)
       {
         for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
           m_wiimote_buffer[i].Push(default_wii);
@@ -757,7 +773,14 @@ void NetPlayClient::OnPadData(sf::Packet& packet)
 
     // Trusting server for good map value (>=0 && <4)
     // add to pad buffer
-    m_pad_buffer.at(map).Push(pad);
+    auto& buffer = m_pad_buffer.at(map);
+    if (IsSharedControllerPort(m_pad_map.at(map)))
+    {
+      // Drop bursts that would let this peer run ahead while others are still waiting for input.
+      while (buffer.Size() >= m_target_buffer_size + 1)
+        buffer.Pop();
+    }
+    buffer.Push(pad);
     m_gc_pad_event.Set();
   }
 }
@@ -811,7 +834,13 @@ void NetPlayClient::OnWiimoteData(sf::Packet& packet)
 
     // Trusting server for good map value (>=0 && <4)
     // add to pad buffer
-    m_wiimote_buffer.at(map).Push(pad);
+    auto& buffer = m_wiimote_buffer.at(map);
+    if (IsSharedControllerPort(m_wiimote_map.at(map)))
+    {
+      while (buffer.Size() >= m_target_buffer_size + 1)
+        buffer.Pop();
+    }
+    buffer.Push(pad);
     m_wii_pad_event.Set();
   }
 }
@@ -2029,6 +2058,13 @@ void NetPlayClient::ResyncSharedPortBuffers()
   const WiimoteEmu::SerializedWiimoteState default_wii{};
   for (unsigned int i = 0; i < 4; ++i)
   {
+    // HIA golfers relay aggregated shared-port input via SendPadHostPoll; prefill blocks that.
+    if (m_host_input_authority && m_local_player->pid == m_current_golfer &&
+        IsSharedControllerPort(m_pad_map[i]))
+    {
+      continue;
+    }
+
     if (IsSharedControllerPort(m_pad_map[i]))
     {
       while (m_pad_buffer[i].Size())
@@ -2036,6 +2072,12 @@ void NetPlayClient::ResyncSharedPortBuffers()
 
       for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
         m_pad_buffer[i].Push(default_pad);
+    }
+
+    if (m_host_input_authority && m_local_player->pid == m_current_golfer &&
+        IsSharedControllerPort(m_wiimote_map[i]))
+    {
+      continue;
     }
 
     if (IsSharedControllerPort(m_wiimote_map[i]))
@@ -2364,12 +2406,8 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   {
     // Mirror non-shared buffer depth without pushing local input (server aggregates one frame per
     // sample once every assigned player has contributed).
-    unsigned int num_to_send = 0;
-    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      num_to_send = m_target_buffer_size + 1 -
-                    static_cast<unsigned int>(m_pad_buffer[ingame_pad].Size());
-    }
+    const unsigned int num_to_send = SharedPortSamplesToSend(
+        static_cast<unsigned int>(m_pad_buffer[ingame_pad].Size()), m_target_buffer_size);
     for (unsigned int i = 0; i < num_to_send; ++i)
     {
       AddPadStateToPacket(ingame_pad, pad_status, packet);
@@ -2402,12 +2440,8 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    unsigned int num_to_send = 0;
-    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      num_to_send = m_target_buffer_size + 1 -
-                    static_cast<unsigned int>(m_wiimote_buffer[ingame_pad].Size());
-    }
+    const unsigned int num_to_send = SharedPortSamplesToSend(
+        static_cast<unsigned int>(m_wiimote_buffer[ingame_pad].Size()), m_target_buffer_size);
     for (unsigned int i = 0; i < num_to_send; ++i)
     {
       AddWiimoteStateToPacket(ingame_pad, state, packet);
@@ -2465,7 +2499,14 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 
     for (size_t i = 0; i < m_pad_map.size(); i++)
     {
-      if (m_pad_map[i].players.empty() || m_pad_buffer[i].Size() > 0)
+      if (m_pad_map[i].players.empty())
+        continue;
+
+      const bool shared_port = IsSharedControllerPort(m_pad_map[i]);
+      if (!shared_port && m_pad_buffer[i].Size() > 0)
+        continue;
+
+      if (shared_port && m_pad_buffer[i].Size() > m_target_buffer_size)
         continue;
 
       const GCPadStatus& pad_status = m_last_pad_status[i];
@@ -2483,7 +2524,9 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
       m_first_pad_status_received_event.Wait();
     }
 
-    if (m_pad_buffer[pad_num].Size() == 0)
+    const bool shared_port = IsSharedControllerPort(m_pad_map[pad_num]);
+    if ((!shared_port && m_pad_buffer[pad_num].Size() == 0) ||
+        (shared_port && m_pad_buffer[pad_num].Size() <= m_target_buffer_size))
     {
       const GCPadStatus& pad_status = m_last_pad_status[pad_num];
       m_pad_buffer[pad_num].Push(pad_status);

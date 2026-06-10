@@ -875,7 +875,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
       if (pad_players.size() > 1)
       {
-        m_pad_input_queues[map][player.pid].push_back(pad);
+        auto& queue = m_pad_input_queues[map][player.pid];
+        queue.push_back(pad);
+        while (queue.size() > m_target_buffer_size + 1)
+          queue.pop_front();
         pads_to_emit.push_back(map);
       }
       else
@@ -990,7 +993,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
       if (wii_players.size() > 1)
       {
-        m_wiimote_input_queues[map][player.pid].push_back(pad);
+        auto& queue = m_wiimote_input_queues[map][player.pid];
+        queue.push_back(pad);
+        while (queue.size() > m_target_buffer_size + 1)
+          queue.pop_front();
         pads_to_emit.push_back(map);
       }
       else
