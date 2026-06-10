@@ -82,14 +82,6 @@ static bool IsSharedControllerPort(const PadMapping& mapping)
   return mapping.players.size() > 1;
 }
 
-static GCPadStatus DefaultConnectedPadStatus()
-{
-  GCPadStatus pad{};
-  pad.isConnected = true;
-  pad.stickX = pad.stickY = pad.substickX = pad.substickY = 128;
-  return pad;
-}
-
 static std::mutex crit_netplay_client;
 static NetPlayClient* netplay_client = nullptr;
 static bool s_si_poll_batching = false;
@@ -754,16 +746,12 @@ void NetPlayClient::OnPadData(sf::Packet& packet)
     }
 
     // Trusting server for good map value (>=0 && <4)
-    if (IsSharedControllerPort(m_pad_map.at(map)) && LocalPlayerOnPad(m_pad_map.at(map)))
-    {
-      // Contributors manage buffer depth locally; only track the latest combined sample.
-      m_last_aggregated_pad.at(map) = pad;
-      m_has_last_aggregated_pad.at(map) = true;
-    }
-    else
-    {
-      m_pad_buffer.at(map).Push(pad);
-    }
+    // Every peer (including the players sharing this port) must apply the exact same
+    // server-combined input sequence, losslessly and in order. A contributor cannot compute the
+    // combined input locally, so it relies entirely on this aggregated stream just like everyone
+    // else. Buffering anything locally for shared ports diverges the per-port input sequence
+    // across peers and desyncs.
+    m_pad_buffer.at(map).Push(pad);
     m_gc_pad_event.Set();
   }
 }
@@ -816,15 +804,9 @@ void NetPlayClient::OnWiimoteData(sf::Packet& packet)
     }
 
     // Trusting server for good map value (>=0 && <4)
-    if (IsSharedControllerPort(m_wiimote_map.at(map)) && LocalPlayerOnPad(m_wiimote_map.at(map)))
-    {
-      m_last_aggregated_wiimote.at(map) = pad;
-      m_has_last_aggregated_wiimote.at(map) = true;
-    }
-    else
-    {
-      m_wiimote_buffer.at(map).Push(pad);
-    }
+    // Shared Wii ports follow the same rule as shared GC ports: consume the server-combined
+    // stream losslessly on every peer (see OnPadData).
+    m_wiimote_buffer.at(map).Push(pad);
     m_wii_pad_event.Set();
   }
 }
@@ -1840,7 +1822,6 @@ bool NetPlayClient::StartGame(const std::string& path)
   NetPlay_Enable(this);
 
   ClearBuffers();
-  PrimeSharedPortBuffers();
 
   m_first_pad_status_received.fill(false);
 
@@ -2032,39 +2013,8 @@ void NetPlayClient::ClearBuffers()
       m_wiimote_buffer[i].Pop();
   }
 
-  m_has_last_aggregated_pad.fill(false);
-  m_has_last_aggregated_wiimote.fill(false);
-}
-
-// called from ---GUI--- thread at game start (under m_crit.game)
-void NetPlayClient::PrimeSharedPortBuffers()
-{
-  // Contributors on shared ports prime the FIFO locally (like non-shared ports) so depth is not
-  // limited by RTT. Only at game start — buffer size changes adjust the fill target only.
-  const GCPadStatus default_pad = DefaultConnectedPadStatus();
-  const WiimoteEmu::SerializedWiimoteState default_wii{};
-
-  for (unsigned int i = 0; i < 4; ++i)
-  {
-    if (IsSharedControllerPort(m_pad_map[i]) && LocalPlayerOnPad(m_pad_map[i]))
-    {
-      m_last_aggregated_pad[i] = default_pad;
-      m_has_last_aggregated_pad[i] = true;
-      for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-        m_pad_buffer[i].Push(default_pad);
-    }
-
-    if (IsSharedControllerPort(m_wiimote_map[i]) && LocalPlayerOnPad(m_wiimote_map[i]))
-    {
-      m_last_aggregated_wiimote[i] = default_wii;
-      m_has_last_aggregated_wiimote[i] = true;
-      for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-        m_wiimote_buffer[i].Push(default_wii);
-    }
-  }
-
-  m_gc_pad_event.Set();
-  m_wii_pad_event.Set();
+  m_shared_pad_in_flight.fill(0);
+  m_shared_wiimote_in_flight.fill(0);
 }
 
 bool NetPlayClient::LocalPlayerOnPad(const PadMapping& mapping) const
@@ -2264,6 +2214,13 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
 
   m_pad_buffer[pad_nb].Pop(*pad_status);
 
+  // A combined frame we sent for has now been consumed; free a pipeline slot for this shared port.
+  if (IsSharedControllerPort(m_pad_map[pad_nb]) && LocalPlayerOnPad(m_pad_map[pad_nb]) &&
+      m_shared_pad_in_flight[pad_nb] > 0)
+  {
+    --m_shared_pad_in_flight[pad_nb];
+  }
+
   auto& movie = Core::System::GetInstance().GetMovie();
   if (movie.IsRecordingInput())
   {
@@ -2330,6 +2287,13 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
 
     m_wiimote_buffer[entry.wiimote].Pop(*entry.state);
 
+    if (IsSharedControllerPort(m_wiimote_map[entry.wiimote]) &&
+        LocalPlayerOnPad(m_wiimote_map[entry.wiimote]) &&
+        m_shared_wiimote_in_flight[entry.wiimote] > 0)
+    {
+      --m_shared_wiimote_in_flight[entry.wiimote];
+    }
+
     DEBUG_LOG_FMT(NETPLAY, "Exiting WiimoteUpdate() with wiimote {}, state [{:02x}]", entry.wiimote,
                   fmt::join(std::span(entry.state->data.data(), entry.state->length), ", "));
   }
@@ -2377,20 +2341,26 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
       m_first_pad_status_received[ingame_pad] = true;
     }
   }
+  else if (shared_port)
+  {
+    // Multiple players share this emulated controller. We can't buffer locally because the value
+    // the game must see is the server-combined input, which we don't know yet. Instead we keep a
+    // pipeline of our own input frames in flight so the server aggregates ahead and the combined
+    // results (returned via OnPadData) keep m_pad_buffer near the target depth. This restores a
+    // jitter buffer while staying perfectly deterministic: every peer still applies only the
+    // server-combined stream, losslessly and in order.
+    while (m_shared_pad_in_flight[ingame_pad] <= static_cast<int>(m_target_buffer_size))
+    {
+      AddPadStateToPacket(ingame_pad, pad_status, packet);
+      ++m_shared_pad_in_flight[ingame_pad];
+      data_added = true;
+    }
+  }
   else
   {
     while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {
-      if (shared_port)
-      {
-        if (!m_has_last_aggregated_pad[ingame_pad])
-          break;
-        m_pad_buffer[ingame_pad].Push(m_last_aggregated_pad[ingame_pad]);
-      }
-      else
-      {
-        m_pad_buffer[ingame_pad].Push(pad_status);
-      }
+      m_pad_buffer[ingame_pad].Push(pad_status);
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
     }
@@ -2410,20 +2380,25 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
   bool data_added = false;
   const bool shared_port = IsSharedControllerPort(m_wiimote_map[ingame_pad]);
 
-  while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+  if (shared_port)
   {
-    if (shared_port)
+    // See PollLocalPad: shared ports are driven by the server-combined stream. Keep a pipeline of
+    // our own frames in flight so the aggregated results keep the buffer near target depth.
+    while (m_shared_wiimote_in_flight[ingame_pad] <= static_cast<int>(m_target_buffer_size))
     {
-      if (!m_has_last_aggregated_wiimote[ingame_pad])
-        break;
-      m_wiimote_buffer[ingame_pad].Push(m_last_aggregated_wiimote[ingame_pad]);
+      AddWiimoteStateToPacket(ingame_pad, state, packet);
+      ++m_shared_wiimote_in_flight[ingame_pad];
+      data_added = true;
     }
-    else
+  }
+  else
+  {
+    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {
       m_wiimote_buffer[ingame_pad].Push(state);
+      AddWiimoteStateToPacket(ingame_pad, state, packet);
+      data_added = true;
     }
-    AddWiimoteStateToPacket(ingame_pad, state, packet);
-    data_added = true;
   }
 
   return data_added;

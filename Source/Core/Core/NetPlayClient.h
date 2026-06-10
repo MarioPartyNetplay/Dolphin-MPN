@@ -221,7 +221,6 @@ protected:
   };
 
   void ClearBuffers();
-  void PrimeSharedPortBuffers();
   bool LocalPlayerOnPad(const PadMapping& mapping) const;
 
   struct
@@ -237,12 +236,13 @@ protected:
   std::array<Common::SPSCQueue<GCPadStatus>, 4> m_pad_buffer;
   std::array<Common::SPSCQueue<WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_buffer;
 
-  // Latest server-combined input for shared ports; contributors buffer duplicates locally (same
-  // model as non-shared ports using local input) so pipeline depth is not tied to RTT.
-  std::array<GCPadStatus, 4> m_last_aggregated_pad{};
-  std::array<bool, 4> m_has_last_aggregated_pad{};
-  std::array<WiimoteEmu::SerializedWiimoteState, 4> m_last_aggregated_wiimote{};
-  std::array<bool, 4> m_has_last_aggregated_wiimote{};
+  // Shared ports can't be buffered locally (the value the game sees is the server-combined input),
+  // so instead we pipeline: a contributor keeps up to m_target_buffer_size+1 of its own input
+  // frames "in flight" (sent upstream but not yet consumed as a combined frame). This lets the
+  // server aggregate ahead and pre-fill every peer's buffer to the target depth, restoring a
+  // jitter buffer without any peer ever inventing combined input locally. CPU-thread only.
+  std::array<int, 4> m_shared_pad_in_flight{};
+  std::array<int, 4> m_shared_wiimote_in_flight{};
 
   std::array<GCPadStatus, 4> m_last_pad_status{};
   std::array<bool, 4> m_first_pad_status_received{};

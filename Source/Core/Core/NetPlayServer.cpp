@@ -3021,8 +3021,10 @@ void NetPlayServer::TryEmitAggregatedWiimoteInputs(PadIndex pad_index)
 
 WiimoteEmu::SerializedWiimoteState NetPlayServer::CombineWiimoteInputs(const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs)
 {
-  // For Wiimote inputs, just use the first input for now
-  // This could be enhanced to combine button presses and other inputs
+  // Wiimote state is an opaque serialized report; merging two reports byte-wise can produce an
+  // invalid state, so we deterministically take the first contributor's input. This is computed
+  // only here on the server and broadcast to everyone, so it is consistent across peers (no
+  // desync) — it just does not truly merge multiple Wiimotes on a shared port yet.
   return inputs[0];
 }
 }  // namespace NetPlay
