@@ -43,7 +43,9 @@
 #include "Core/Config/WiimoteSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/GeckoCode.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #include "Core/HW/EXI/EXI.h"
+#include "Core/HW/EXI/EXI_Device.h"
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
 #ifdef HAS_LIBMGBA
 #include "Core/HW/GBACore.h"
@@ -118,6 +120,8 @@ NetPlayClient::~NetPlayClient()
   {
     Disconnect();
   }
+
+  ExpansionInterface::RegisterBBAPacketSender(nullptr);
 
   if (Common::g_MainNetHost.get() == m_client)
   {
@@ -485,6 +489,14 @@ void NetPlayClient::OnData(sf::Packet& packet)
 
   case MessageID::GameDigestAbort:
     OnGameDigestAbort();
+    break;
+
+  case MessageID::BBAPacketData:
+    OnBBAPacketData(packet);
+    break;
+
+  case MessageID::BBAMode:
+    OnBBAMode(packet);
     break;
 
   default:
@@ -994,11 +1006,13 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     packet >> m_net_settings.golf_mode;
     packet >> m_net_settings.use_fma;
     packet >> m_net_settings.hide_remote_gbas;
+    packet >> m_net_settings.bba_mode;
 
     for (size_t i = 0; i < sizeof(m_net_settings.sram); ++i)
       packet >> m_net_settings.sram[i];
 
     m_net_settings.is_hosting = m_local_player->IsHost();
+    ApplyBBAMode(m_net_settings.bba_mode);
   }
 
   m_dialog->OnMsgStartGame();
@@ -2117,9 +2131,11 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
   // In BBA mode, we only sync BBA packets, not controller inputs
   if (m_net_settings.bba_mode)
   {
-    // In BBA mode, everyone uses local pad 0 (first controller slot)
-    // since we're only syncing BBA packets, not controller inputs
-    *pad_status = Pad::GetStatus(0);
+    const int local_pad = InGamePadToLocalPad(pad_nb);
+    if (local_pad < 4)
+      *pad_status = Pad::GetStatus(local_pad);
+    else
+      *pad_status = DefaultConnectedPadStatus();
     return true;
   }
 
@@ -2808,6 +2824,74 @@ void NetPlayClient::AdjustPadBufferSize(const unsigned int size)
 {
   ApplyPadBufferSize(size);
   m_dialog->OnPadBufferChanged(size);
+}
+
+void NetPlayClient::ApplyBBAMode(const bool enable)
+{
+  m_net_settings.bba_mode = enable;
+
+  if (enable)
+  {
+    ExpansionInterface::RegisterBBAPacketSender([this](const u8* data, u32 size) {
+      SendBBAPacket(data, size);
+    });
+    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
+                       ExpansionInterface::EXIDeviceType::EthernetNetPlay);
+  }
+  else
+  {
+    ExpansionInterface::RegisterBBAPacketSender(nullptr);
+    Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
+                       ExpansionInterface::EXIDeviceType::None);
+  }
+}
+
+void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
+{
+  u32 packet_size = 0;
+  packet >> packet_size;
+
+  if (packet_size == 0 || packet_size > 1518)
+    return;
+
+  std::vector<u8> bba_data(packet_size);
+  for (u32 i = 0; i < packet_size; ++i)
+    packet >> bba_data[i];
+
+  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+}
+
+void NetPlayClient::OnBBAMode(sf::Packet& packet)
+{
+  bool bba_mode = false;
+  packet >> bba_mode;
+
+  ApplyBBAMode(bba_mode);
+
+  if (bba_mode)
+    m_dialog->AppendChat(_trans("BBA mode enabled"));
+  else
+    m_dialog->AppendChat(_trans("BBA mode disabled: Input synchronization enabled"));
+}
+
+void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
+{
+  if (!m_is_connected || !m_net_settings.bba_mode || !data || size == 0)
+    return;
+
+  if (size > 1518)
+  {
+    ERROR_LOG_FMT(NETPLAY, "BBA packet too large: {} bytes", size);
+    return;
+  }
+
+  sf::Packet packet;
+  packet << MessageID::BBAPacketData;
+  packet << size;
+  for (u32 i = 0; i < size; ++i)
+    packet << data[i];
+
+  SendAsync(std::move(packet));
 }
 
 void NetPlayClient::SetWiiSyncData(std::unique_ptr<IOS::HLE::FS::FileSystem> fs,

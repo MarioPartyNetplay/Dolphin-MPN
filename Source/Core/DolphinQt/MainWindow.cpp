@@ -1239,6 +1239,14 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
   // We need the render widget before booting.
   ShowRenderWidget();
 
+  if (NetPlay::IsNetPlayRunning())
+  {
+    if (auto* server = Settings::Instance().GetNetPlayServer(); server && server->IsBBAModeEnabled())
+    {
+      Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
+                         ExpansionInterface::EXIDeviceType::EthernetNetPlay);
+    }
+  }
 
   // Boot up, show an error if it fails to load the game.
   if (!BootManager::BootCore(m_system, std::move(parameters),
@@ -1856,6 +1864,9 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   Settings::Instance().GetNetPlayServer()->ChangeGame(game.GetSyncIdentifier(),
                                                       m_game_list->GetNetPlayName(game));
 
+  const auto& settings = Settings::Instance().GetQSettings();
+  if (settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool())
+    Settings::Instance().GetNetPlayServer()->SetBBAMode(true);
 
   // Join our local server
   return NetPlayJoin();

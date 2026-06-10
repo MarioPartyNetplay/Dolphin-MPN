@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -213,6 +214,7 @@ enum class BBADeviceType
   TAPSERVER,
   BuiltIn,
   IPC,
+  NetPlay,
 };
 
 class CEXIETHERNET : public IEXIDevice
@@ -512,6 +514,29 @@ private:
     void RecvStop() override {}
 
 #endif
+  };
+
+  class NetPlayBBAInterface : public NetworkInterface
+  {
+  public:
+    explicit NetPlayBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
+
+    bool Activate() override;
+    void Deactivate() override;
+    bool IsActivated() override;
+    bool SendFrame(const u8* frame, u32 size) override;
+    bool RecvInit() override;
+    void RecvStart() override;
+    void RecvStop() override;
+
+    void InjectPacket(const u8* data, u32 size);
+
+  private:
+    std::function<void(const u8*, u32)> m_injector_callback;
+    u64 m_injector_id = 0;
+    bool m_active = false;
+    bool m_shutdown = false;
+    bool m_receiving = false;
   };
 
   std::unique_ptr<NetworkInterface> m_network_interface;

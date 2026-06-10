@@ -41,6 +41,7 @@ enum class EXIDeviceType : int
   EthernetBuiltIn,
   ModemTapServer,
   EthernetIPC,
+  EthernetNetPlay,
   None = 0xFF
 };
 
@@ -106,6 +107,7 @@ struct fmt::formatter<ExpansionInterface::EXIDeviceType>
       _trans("Broadband Adapter (HLE)"),
       _trans("Modem Adapter (tapserver)"),
       _trans("Broadband Adapter (IPC)"),
+      _trans("Broadband Adapter (NetPlay)"),
   };
 
   constexpr formatter() : EnumFormatter(names) {}

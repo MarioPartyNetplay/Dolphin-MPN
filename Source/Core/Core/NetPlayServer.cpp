@@ -62,6 +62,7 @@
 #include "Core/NetPlayClient.h"  //for NetPlayUI
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
 
 #include "DiscIO/Enums.h"
@@ -117,6 +118,8 @@ NetPlayServer::~NetPlayServer()
 #ifdef USE_UPNP
   Common::UPnP::StopPortmapping();
 #endif
+
+  ExpansionInterface::RegisterBBAPacketSender(nullptr);
 }
 
 // called from ---GUI--- thread
@@ -177,6 +180,9 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
     if (forward_port && !traversal_config.use_traversal)
       Common::UPnP::TryPortmapping(port);
 #endif
+
+    ExpansionInterface::RegisterBBAPacketSender(
+        [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
   }
 }
 
@@ -481,7 +487,7 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
     SendResponseToPlayer(new_player, MessageID::PadBuffer, m_target_buffer_size);
 
   SendResponseToPlayer(new_player, MessageID::HostInputAuthority, m_host_input_authority);
-
+  SendResponseToPlayer(new_player, MessageID::BBAMode, m_bba_mode);
 
   for (const auto& existing_player : std::views::values(m_players))
   {
@@ -733,6 +739,22 @@ void NetPlayServer::SetHostInputAuthority(const bool enable)
     AdjustPadBufferSize(m_target_buffer_size);
 }
 
+void NetPlayServer::SetBBAMode(const bool enable)
+{
+  std::lock_guard lkg(m_crit.game);
+
+  m_bba_mode = enable;
+  m_settings.bba_mode = enable;
+
+  INFO_LOG_FMT(NETPLAY, "BBA mode {}: input synchronization will be {}",
+               enable ? "enabled" : "disabled", enable ? "disabled (BBA-only)" : "enabled");
+
+  sf::Packet spac;
+  spac << MessageID::BBAMode;
+  spac << m_bba_mode;
+  SendAsyncToClients(std::move(spac));
+}
+
 void NetPlayServer::SendAsync(sf::Packet&& packet, const PlayerId pid, const u8 channel_id)
 {
   {
@@ -844,7 +866,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::PadData:
   {
     // Skip input synchronization if BBA mode is enabled
-    if (false)  // BBA mode removed
+    if (m_bba_mode)
       break;
 
     // if this is pad data from the last game still being received, ignore it
@@ -925,7 +947,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::PadHostData:
   {
     // Skip input synchronization if BBA mode is enabled
-    if (false)  // BBA mode removed
+    if (m_bba_mode)
       break;
 
     // Kick player if they're not the golfer.
@@ -960,7 +982,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   case MessageID::WiimoteData:
   {
     // Skip input synchronization if BBA mode is enabled
-    if (false)  // BBA mode removed
+    if (m_bba_mode)
       break;
 
     // if this is Wiimote data from the last game still being received, ignore it
@@ -1025,6 +1047,10 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     }
   }
   break;
+
+  case MessageID::BBAPacketData:
+    OnBBAPacketData(packet, player);
+    break;
 
   case MessageID::GolfRequest:
   {
@@ -1578,10 +1604,13 @@ bool NetPlayServer::SetupNetSettings()
 
   for (ExpansionInterface::Slot slot : ExpansionInterface::SLOTS)
   {
-    ExpansionInterface::EXIDeviceType device;
-    device = Config::Get(Config::GetInfoForEXIDevice(slot));
-    settings.exi_device[slot] = device;
+    if (slot == ExpansionInterface::Slot::SP1 && m_bba_mode)
+      settings.exi_device[slot] = ExpansionInterface::EXIDeviceType::EthernetNetPlay;
+    else
+      settings.exi_device[slot] = Config::Get(Config::GetInfoForEXIDevice(slot));
   }
+
+  settings.bba_mode = m_bba_mode;
 
   settings.memcard_size_override = Config::Get(Config::MAIN_MEMORY_CARD_SIZE);
 
@@ -1935,6 +1964,7 @@ bool NetPlayServer::StartGame()
   spac << m_settings.golf_mode;
   spac << m_settings.use_fma;
   spac << m_settings.hide_remote_gbas;
+  spac << m_settings.bba_mode;
 
   for (size_t i = 0; i < sizeof(m_settings.sram); ++i)
     spac << m_settings.sram[i];
@@ -3047,5 +3077,49 @@ WiimoteEmu::SerializedWiimoteState NetPlayServer::CombineWiimoteInputs(const std
   // For Wiimote inputs, just use the first input for now
   // This could be enhanced to combine button presses and other inputs
   return inputs[0];
+}
+
+void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& player)
+{
+  u32 packet_size = 0;
+  packet >> packet_size;
+
+  if (packet_size == 0 || packet_size > 1518)
+    return;
+
+  std::vector<u8> bba_data(packet_size);
+  for (u32 i = 0; i < packet_size; ++i)
+    packet >> bba_data[i];
+
+  INFO_LOG_FMT(NETPLAY, "Received BBA packet from player {}: {} bytes", player.pid, packet_size);
+
+  sf::Packet bba_packet;
+  bba_packet << MessageID::BBAPacketData;
+  bba_packet << packet_size;
+  for (u8 byte : bba_data)
+    bba_packet << byte;
+
+  SendAsyncToClients(std::move(bba_packet), player.pid);
+  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+}
+
+void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
+{
+  if (!data || size == 0)
+    return;
+
+  if (size > 1518)
+  {
+    ERROR_LOG_FMT(NETPLAY, "BBA packet too large: {} bytes", size);
+    return;
+  }
+
+  sf::Packet packet;
+  packet << MessageID::BBAPacketData;
+  packet << size;
+  for (u32 i = 0; i < size; ++i)
+    packet << data[i];
+
+  SendAsyncToClients(std::move(packet));
 }
 }  // namespace NetPlay

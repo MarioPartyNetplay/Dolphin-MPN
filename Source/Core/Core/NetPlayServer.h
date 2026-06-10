@@ -69,6 +69,8 @@ public:
 
   void AdjustPadBufferSize(unsigned int size);
   void SetHostInputAuthority(bool enable);
+  void SetBBAMode(bool enable);
+  bool IsBBAModeEnabled() const { return m_bba_mode; }
 
   void KickPlayer(PlayerId player);
 
@@ -189,6 +191,7 @@ private:
   bool m_codes_synced = true;
   bool m_start_pending = false;
   bool m_host_input_authority = false;
+  bool m_bba_mode = false;
   PlayerId m_current_golfer = 1;
   PlayerId m_pending_golfer = 0;
 
@@ -199,7 +202,10 @@ private:
 
   void InitSharedPortHeldInputs();
 
-  // Per-player input queues for shared ports. Aggregation uses the latest sample from each player,
+  void SendBBAPacket(const u8* data, u32 size);
+  void OnBBAPacketData(sf::Packet& packet, Client& player);
+
+  // Per-player input queues for shared ports.
   // holding the previous value when a peer is temporarily behind (same cadence as single-player).
   std::array<std::map<PlayerId, std::deque<GCPadStatus>>, 4> m_pad_input_queues{};
   std::array<std::map<PlayerId, std::deque<WiimoteEmu::SerializedWiimoteState>>, 4>
