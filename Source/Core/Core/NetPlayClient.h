@@ -21,6 +21,7 @@
 #include "Common/TraversalClient.h"
 #include "Core/NetPlayProto.h"
 #include "Core/SyncIdentifier.h"
+#include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
 #include "InputCommon/GCPadStatus.h"
 
 class BootSessionData;
@@ -33,11 +34,6 @@ class FileSystem;
 namespace UICommon
 {
 class GameFile;
-}
-
-namespace WiimoteEmu
-{
-struct SerializedWiimoteState;
 }
 
 namespace NetPlay
