@@ -225,8 +225,6 @@ protected:
   };
 
   void ClearBuffers();
-  void ResyncSharedPortBuffers();
-  void ResyncBuffersForTargetSize();
 
   struct
   {
