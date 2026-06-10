@@ -529,6 +529,12 @@ void NetPlayClient::OnPlayerLeave(sf::Packet& packet)
     m_players.erase(it);
   }
 
+  if (m_is_running.IsSet())
+  {
+    m_gc_pad_event.Set();
+    m_wii_pad_event.Set();
+  }
+
   m_dialog->Update();
 }
 
@@ -671,6 +677,12 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
 
   UpdateDevices();
 
+  if (m_is_running.IsSet())
+  {
+    m_gc_pad_event.Set();
+    m_wii_pad_event.Set();
+  }
+
   m_dialog->Update();
 }
 
@@ -687,6 +699,12 @@ void NetPlayClient::OnWiimoteMapping(sf::Packet& packet)
       packet >> pid;
       mapping.players.push_back(pid);
     }
+  }
+
+  if (m_is_running.IsSet())
+  {
+    m_gc_pad_event.Set();
+    m_wii_pad_event.Set();
   }
 
   m_dialog->Update();

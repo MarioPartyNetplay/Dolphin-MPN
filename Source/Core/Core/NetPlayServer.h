@@ -197,17 +197,14 @@ private:
   std::unordered_map<u32, std::vector<std::pair<PlayerId, u64>>> m_timebase_by_frame;
   bool m_desync_detected = false;
 
-  void InitSharedPortHeldInputs();
+  void ClearPlayerInputState(PlayerId pid);
+  bool ShouldStopGameOnDisconnect(PlayerId pid) const;
 
-  // Per-player input queues for shared ports. Aggregation uses the latest sample from each player,
-  // holding the previous value when a peer is temporarily behind (same cadence as single-player).
+  // Per-player input queues for shared ports. Aggregation emits one combined sample only when
+  // every contributor on the port has submitted the next frame (lockstep).
   std::array<std::map<PlayerId, std::deque<GCPadStatus>>, 4> m_pad_input_queues{};
   std::array<std::map<PlayerId, std::deque<WiimoteEmu::SerializedWiimoteState>>, 4>
       m_wiimote_input_queues{};
-  std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_held_input{};
-  std::array<std::map<PlayerId, bool>, 4> m_pad_held_valid{};
-  std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_held_input{};
-  std::array<std::map<PlayerId, bool>, 4> m_wiimote_held_valid{};
 
   struct
   {
