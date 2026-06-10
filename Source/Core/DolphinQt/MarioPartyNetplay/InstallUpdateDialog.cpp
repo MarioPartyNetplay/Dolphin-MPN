@@ -3,11 +3,18 @@
 *  Copyright (C) 2025 Tabitha Hanegan <tabithahanegan.com>
 */
 
+#include "Common/Hash.h"
 #include "Common/MinizipUtil.h"
 #include "InstallUpdateDialog.h"
 #include "DownloadWorker.h"
 
+#include <array>
+#include <cstring>
+#include <optional>
+
 #include <QCoreApplication>
+#include <QFile>
+#include <QFileInfo>
 #include <QProcess>
 #include <QDir>
 #include <QTextStream>
@@ -252,7 +259,7 @@ void InstallUpdateDialog::install()
       }
     }
 
-    startZipExtraction(fullFilePath, extract_directory);
+    startZipExtraction(fullFilePath, extract_directory, appPath);
     return;
   }
 
@@ -261,16 +268,76 @@ void InstallUpdateDialog::install()
   reject();
 }
 
+namespace
+{
+bool IsUserDataPath(const char* filename)
+{
+  if (!filename)
+    return false;
+
+  return strncmp(filename, "User/", 5) == 0 || strncmp(filename, "User\\", 5) == 0;
+}
+
+std::optional<u32> ComputeFileCRC32(const QString& path)
+{
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly))
+    return std::nullopt;
+
+  u32 crc = Common::StartCRC32();
+  std::array<char, 256 * 1024> buffer{};
+
+  while (true)
+  {
+    const qint64 bytes_read = file.read(buffer.data(), static_cast<qint64>(buffer.size()));
+    if (bytes_read < 0)
+      return std::nullopt;
+    if (bytes_read == 0)
+      break;
+
+    crc = Common::UpdateCRC32(crc, reinterpret_cast<const u8*>(buffer.data()),
+                              static_cast<size_t>(bytes_read));
+  }
+
+  return crc;
+}
+
+bool InstalledFileMatchesZipEntry(const std::string& install_dir, const mz_zip_file* file_info)
+{
+  if (!file_info || !file_info->filename)
+    return false;
+
+  const size_t name_len = strlen(file_info->filename);
+  if (name_len == 0 || file_info->filename[name_len - 1] == '/')
+    return false;
+
+  const QString install_path =
+      QString::fromStdString(install_dir + "/" + file_info->filename);
+  const QFileInfo installed_file(install_path);
+  if (!installed_file.exists() || !installed_file.isFile())
+    return false;
+
+  if (static_cast<uint64_t>(installed_file.size()) != file_info->uncompressed_size)
+    return false;
+
+  const std::optional<u32> crc = ComputeFileCRC32(installed_file.absoluteFilePath());
+  return crc && *crc == file_info->crc;
+}
+}  // namespace
+
 void InstallUpdateDialog::startZipExtraction(const QString& full_file_path,
-                                             const QString& extract_directory)
+                                             const QString& extract_directory,
+                                             const QString& install_directory)
 {
   struct ExtractionContext
   {
     QString full_file_path;
     QString extract_directory;
+    QString install_directory;
   };
 
-  auto* context = new ExtractionContext{full_file_path, extract_directory};
+  auto* context =
+      new ExtractionContext{full_file_path, extract_directory, install_directory};
   auto* thread = new QThread;
   auto* worker = new QObject;
 
@@ -279,18 +346,29 @@ void InstallUpdateDialog::startZipExtraction(const QString& full_file_path,
   connect(thread, &QThread::started, worker, [this, context, worker, thread] {
     const bool ok = unzipFile(
         context->full_file_path.toStdString(), context->extract_directory.toStdString(),
-        [this](const int current, const int total) {
+        context->install_directory.toStdString(),
+        [this](const int current, const int total, const int skipped) {
           QMetaObject::invokeMethod(
               this,
-              [this, current, total] {
+              [this, current, total, skipped] {
                 if (total <= 0)
                   return;
 
                 const int extraction_progress = (current * 100) / total;
                 stepProgressBar->setValue(extraction_progress);
                 progressBar->setValue(50 + (current * 45 / total));
-                stepLabel->setText(
-                    QStringLiteral("(%1/%2) files extracted...").arg(current).arg(total));
+                if (skipped > 0)
+                {
+                  stepLabel->setText(QStringLiteral("(%1/%2) processed, %3 unchanged...")
+                                         .arg(current)
+                                         .arg(total)
+                                         .arg(skipped));
+                }
+                else
+                {
+                  stepLabel->setText(
+                      QStringLiteral("(%1/%2) files extracted...").arg(current).arg(total));
+                }
               },
               Qt::QueuedConnection);
         });
@@ -386,80 +464,93 @@ void InstallUpdateDialog::finishInstallAfterExtract(const QString& extract_direc
 }
 
 
-bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::string& destDir, std::function<void(int, int)> progressCallback)
+bool InstallUpdateDialog::unzipFile(const std::string& zipFilePath, const std::string& destDir,
+                                    const std::string& installDir,
+                                    std::function<void(int, int, int)> progressCallback)
 {
-    void* reader = mz_zip_reader_create();
-    if (!reader)
-        return false;
-    
-    if (mz_zip_reader_open_file(reader, zipFilePath.c_str()) != MZ_OK)
+  void* reader = mz_zip_reader_create();
+  if (!reader)
+    return false;
+
+  if (mz_zip_reader_open_file(reader, zipFilePath.c_str()) != MZ_OK)
+  {
+    mz_zip_reader_delete(&reader);
+    return false;
+  }
+
+  int total_files = 0;
+  for (int32_t count_status = mz_zip_reader_goto_first_entry(reader); count_status == MZ_OK;
+       count_status = mz_zip_reader_goto_next_entry(reader))
+  {
+    total_files++;
+  }
+
+  int32_t entry_status = mz_zip_reader_goto_first_entry(reader);
+  int current_file = 0;
+  int skipped_files = 0;
+  int last_reported = 0;
+
+  while (entry_status == MZ_OK)
+  {
+    mz_zip_file* file_info = nullptr;
+    mz_zip_reader_entry_get_info(reader, &file_info);
+    if (file_info == nullptr)
     {
-        mz_zip_reader_delete(&reader);
-        return false;
+      mz_zip_reader_close(reader);
+      mz_zip_reader_delete(&reader);
+      return false;
     }
-    
-    // First pass: count total files
-    int total_files = 0;
-    int32_t count_status = mz_zip_reader_goto_first_entry(reader);
-    while (count_status == MZ_OK)
+
+    const bool is_user_file = IsUserDataPath(file_info->filename);
+    const size_t name_len = strlen(file_info->filename);
+    const bool is_directory = name_len > 0 && file_info->filename[name_len - 1] == '/';
+
+    if (!is_user_file)
     {
-        total_files++;
-        count_status = mz_zip_reader_goto_next_entry(reader);
-    }
-    
-    // Reset to first entry for extraction
-    int32_t entry_status = mz_zip_reader_goto_first_entry(reader);
-    int current_file = 0;
-    
-    while (entry_status == MZ_OK)
-    {
-        mz_zip_file* file_info = nullptr;
-        mz_zip_reader_entry_get_info(reader, &file_info);
-        if (file_info == nullptr)
+      const bool already_installed =
+          !is_directory && InstalledFileMatchesZipEntry(installDir, file_info);
+
+      if (already_installed)
+      {
+        skipped_files++;
+      }
+      else
+      {
+        const std::string out_path = destDir + "/" + file_info->filename;
+        if (is_directory)
         {
+          QDir().mkpath(QString::fromStdString(out_path));
+        }
+        else
+        {
+          QDir().mkpath(QFileInfo(QString::fromStdString(out_path)).path());
+          if (mz_zip_reader_entry_save_file(reader, out_path.c_str()) != MZ_OK)
+          {
             mz_zip_reader_close(reader);
             mz_zip_reader_delete(&reader);
             return false;
+          }
         }
-        
-        // Skip files in the User/ directory to preserve user data
-        std::string filename_str(file_info->filename);
-        bool is_user_file = (filename_str.find("User/") == 0 || 
-                            filename_str.find("User\\") == 0);
-        
-        if (!is_user_file)
-        {
-            std::string out_path = destDir + "/" + file_info->filename;
-            if (file_info->filename[strlen(file_info->filename) - 1] == '/')
-            {
-                // Directory
-                QDir().mkpath(QString::fromStdString(out_path));
-            }
-            else
-            {
-                // File
-                QDir().mkpath(QFileInfo(QString::fromStdString(out_path)).path());
-                if (mz_zip_reader_entry_save_file(reader, out_path.c_str()) != MZ_OK)
-                {
-                    mz_zip_reader_close(reader);
-                    mz_zip_reader_delete(&reader);
-                    return false;
-                }
-            }
-        }
-        
-        current_file++;
-        if (progressCallback)
-        {
-            progressCallback(current_file, total_files);
-        }
-        
-        entry_status = mz_zip_reader_goto_next_entry(reader);
+      }
     }
-    
-    mz_zip_reader_close(reader);
-    mz_zip_reader_delete(&reader);
-    return true;
+
+    current_file++;
+    if (progressCallback &&
+        (current_file - last_reported >= 50 || current_file == total_files))
+    {
+      last_reported = current_file;
+      progressCallback(current_file, total_files, skipped_files);
+    }
+
+    entry_status = mz_zip_reader_goto_next_entry(reader);
+  }
+
+  if (progressCallback)
+    progressCallback(total_files, total_files, skipped_files);
+
+  mz_zip_reader_close(reader);
+  mz_zip_reader_delete(&reader);
+  return true;
 }
 
 void InstallUpdateDialog::writeAndRunScript(QStringList stringList)
