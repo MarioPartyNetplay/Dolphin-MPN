@@ -821,11 +821,9 @@ void NetPlayClient::OnPadBuffer(sf::Packet& packet)
   u32 size = 0;
   packet >> size;
 
-  std::lock_guard lkg(m_crit.game);
+  // Only update the fill target. Do not trim or inject pad data mid-game; that diverges FIFO
+  // depth across peers and causes desyncs. Depth converges naturally via PollLocalPad.
   m_target_buffer_size = size;
-  if (m_is_running.IsSet())
-    ResyncBuffersForTargetSize();
-
   m_dialog->OnPadBufferChanged(size);
 }
 
@@ -2022,10 +2020,8 @@ void NetPlayClient::ClearBuffers()
 }
 
 // called from ---GUI--- and ---NETPLAY--- threads (under m_crit.game)
-void NetPlayClient::ResyncBuffersForTargetSize()
+void NetPlayClient::ResyncSharedPortBuffers()
 {
-  ClearBuffers();
-
   // Shared ports only fill from server-combined input. Prime identical neutral samples on every
   // peer so GetNetPads is not stuck waiting for the first aggregated packet, and so every player
   // on the port resumes sending at the same buffer depth after a target size change.
@@ -2035,12 +2031,18 @@ void NetPlayClient::ResyncBuffersForTargetSize()
   {
     if (IsSharedControllerPort(m_pad_map[i]))
     {
+      while (m_pad_buffer[i].Size())
+        m_pad_buffer[i].Pop();
+
       for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
         m_pad_buffer[i].Push(default_pad);
     }
 
     if (IsSharedControllerPort(m_wiimote_map[i]))
     {
+      while (m_wiimote_buffer[i].Size())
+        m_wiimote_buffer[i].Pop();
+
       for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
         m_wiimote_buffer[i].Push(default_wii);
     }
@@ -2048,6 +2050,13 @@ void NetPlayClient::ResyncBuffersForTargetSize()
 
   m_gc_pad_event.Set();
   m_wii_pad_event.Set();
+}
+
+// called from ---GUI--- thread at game start (under m_crit.game)
+void NetPlayClient::ResyncBuffersForTargetSize()
+{
+  ClearBuffers();
+  ResyncSharedPortBuffers();
 }
 
 // called from ---NETPLAY--- thread
@@ -2354,8 +2363,14 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   else if (shared_port)
   {
     // Mirror non-shared buffer depth without pushing local input (server aggregates one frame per
-    // sample). Do not gate on buffer size with a single sample — that starved the FIFO.
-    while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    // sample once every assigned player has contributed).
+    unsigned int num_to_send = 0;
+    if (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      num_to_send = m_target_buffer_size + 1 -
+                    static_cast<unsigned int>(m_pad_buffer[ingame_pad].Size());
+    }
+    for (unsigned int i = 0; i < num_to_send; ++i)
     {
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
@@ -2387,7 +2402,13 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    unsigned int num_to_send = 0;
+    if (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      num_to_send = m_target_buffer_size + 1 -
+                    static_cast<unsigned int>(m_wiimote_buffer[ingame_pad].Size());
+    }
+    for (unsigned int i = 0; i < num_to_send; ++i)
     {
       AddWiimoteStateToPacket(ingame_pad, state, packet);
       data_added = true;
@@ -2801,11 +2822,7 @@ const PadMappingArray& NetPlayClient::GetWiimoteMapping() const
 
 void NetPlayClient::AdjustPadBufferSize(const unsigned int size)
 {
-  std::lock_guard lkg(m_crit.game);
-  m_target_buffer_size = size;
-  if (m_is_running.IsSet())
-    ResyncBuffersForTargetSize();
-
+  ApplyPadBufferSize(size);
   m_dialog->OnPadBufferChanged(size);
 }
 

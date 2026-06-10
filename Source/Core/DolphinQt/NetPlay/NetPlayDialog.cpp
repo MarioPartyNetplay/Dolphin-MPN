@@ -150,10 +150,11 @@ void NetPlayDialog::CreateMainLayout()
                              m_buffer_size_box)
             .width();
     m_buffer_size_box->setFixedWidth(
-        m_buffer_size_box->fontMetrics().horizontalAdvance(QStringLiteral("00")) +
+        m_buffer_size_box->fontMetrics().horizontalAdvance(QStringLiteral("000")) +
         spinbox_buttons_width +
         2 * widget_style->pixelMetric(QStyle::PM_SpinBoxFrameWidth, &spinbox_option,
-                                      m_buffer_size_box));
+                                      m_buffer_size_box) +
+        8);
   }
   m_buffer_size_box->setFixedHeight(m_start_button->sizeHint().height());
   m_buffer_label = new QLabel(tr("Buffer:"));
@@ -382,9 +383,18 @@ void NetPlayDialog::ConnectWidgets()
     const auto client = Settings::Instance().GetNetPlayClient();
     const auto server = Settings::Instance().GetNetPlayServer();
     if (server && !m_host_input_authority)
+    {
       server->AdjustPadBufferSize(value);
-    else
+      // Apply locally immediately so in-game input buffering updates without waiting on loopback.
+      if (client)
+        client->ApplyPadBufferSize(static_cast<unsigned int>(value));
+      DisplayMessage(tr("Buffer size changed to %1").arg(value), "darkcyan");
+      m_buffer_size = value;
+    }
+    else if (client)
+    {
       client->AdjustPadBufferSize(value);
+    }
   });
 
   const auto hia_function = [this](bool enable) {
@@ -963,6 +973,9 @@ void NetPlayDialog::OnPlayerDisconnect(const std::string& player)
 
 void NetPlayDialog::OnPadBufferChanged(u32 buffer)
 {
+  if (static_cast<int>(buffer) == m_buffer_size)
+    return;
+
   QueueOnObject(this, [this, buffer] {
     const QSignalBlocker blocker(m_buffer_size_box);
     m_buffer_size_box->setValue(buffer);
@@ -1183,6 +1196,7 @@ void NetPlayDialog::LoadSettings()
   const bool hide_remote_gbas = Config::Get(Config::NETPLAY_HIDE_REMOTE_GBAS);
 
   m_buffer_size_box->setValue(buffer_size);
+  m_buffer_size = buffer_size;
 
   if (!savedata_load)
     m_savedata_none_action->setChecked(true);

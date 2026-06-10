@@ -209,6 +209,7 @@ public:
   const GBAConfigArray& GetGBAConfig() const;
   const PadMappingArray& GetWiimoteMapping() const;
 
+  void ApplyPadBufferSize(unsigned int size) { m_target_buffer_size = size; }
   void AdjustPadBufferSize(unsigned int size);
 
   void SetWiiSyncData(std::unique_ptr<IOS::HLE::FS::FileSystem> fs, std::vector<u64> titles,
@@ -224,6 +225,7 @@ protected:
   };
 
   void ClearBuffers();
+  void ResyncSharedPortBuffers();
   void ResyncBuffersForTargetSize();
 
   struct
