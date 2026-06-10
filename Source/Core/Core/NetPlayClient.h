@@ -225,6 +225,8 @@ protected:
   };
 
   void ClearBuffers();
+  void PrimeSharedPortBuffers();
+  bool LocalPlayerOnPad(const PadMapping& mapping) const;
 
   struct
   {
@@ -238,6 +240,13 @@ protected:
 
   std::array<Common::SPSCQueue<GCPadStatus>, 4> m_pad_buffer;
   std::array<Common::SPSCQueue<WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_buffer;
+
+  // Latest server-combined input for shared ports; contributors buffer duplicates locally (same
+  // model as non-shared ports using local input) so pipeline depth is not tied to RTT.
+  std::array<GCPadStatus, 4> m_last_aggregated_pad{};
+  std::array<bool, 4> m_has_last_aggregated_pad{};
+  std::array<WiimoteEmu::SerializedWiimoteState, 4> m_last_aggregated_wiimote{};
+  std::array<bool, 4> m_has_last_aggregated_wiimote{};
 
   std::array<GCPadStatus, 4> m_last_pad_status{};
   std::array<bool, 4> m_first_pad_status_received{};
