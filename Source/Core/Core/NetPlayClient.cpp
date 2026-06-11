@@ -2091,6 +2091,15 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     return true;
   }
 
+  // Wii games assign players to wiimote_map, not pad_map. Unmapped GC pad ports must
+  // return immediately or SI polling deadlocks waiting for data nobody will send.
+  if (m_pad_map[pad_nb].players.empty())
+  {
+    *pad_status = {};
+    pad_status->isConnected = false;
+    return true;
+  }
+
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
@@ -2243,23 +2252,37 @@ u64 NetPlayClient::GetInitialRTCValue() const
 // called from ---CPU--- thread
 bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entries)
 {
-  // Check if BBA mode is enabled - if so, disable Wiimote synchronization
-  // In BBA mode, we only sync BBA packets, not controller inputs
+  // A properly serialized neutral Wiimote state used for unmapped/BBA ports.
+  // A default-constructed SerializedWiimoteState has length 0 and causes
+  // DeserializeDesiredState to panic, so always use SerializeDesiredState.
+  const WiimoteEmu::SerializedWiimoteState neutral_state =
+      WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
+
+  // BBA mode: controller inputs are not synced, just return neutral state for
+  // any Wiimote that isn't locally controlled.
   if (m_net_settings.bba_mode)
   {
-    // In BBA mode, everyone gets a default Wiimote state
-    // since we're only syncing BBA packets, not controller inputs
     for (const WiimoteDataBatchEntry& entry : entries)
     {
-      // Create a default/empty Wiimote state for all Wiimote requests
-      WiimoteEmu::SerializedWiimoteState default_state{};
-      *entry.state = default_state;
+      if (m_wiimote_map[entry.wiimote].players.empty() ||
+          InGameWiimoteToLocalWiimote(entry.wiimote) >= 4)
+      {
+        *entry.state = neutral_state;
+      }
     }
     return true;
   }
 
   for (const WiimoteDataBatchEntry& entry : entries)
   {
+    // If no player is assigned to this Wiimote port nobody will ever send
+    // data for it, so return neutral state immediately to avoid a softlock.
+    if (m_wiimote_map[entry.wiimote].players.empty())
+    {
+      *entry.state = neutral_state;
+      continue;
+    }
+
     const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
     DEBUG_LOG_FMT(NETPLAY,
                   "Entering WiimoteUpdate() with wiimote {}, local_wiimote {}, state [{:02x}]",
@@ -2273,14 +2296,12 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
         SendAsync(std::move(packet));
     }
 
-    // Now, we either use the data pushed earlier, or wait for the
-    // other clients to send it to us
+    // Wait for data pushed locally (AddLocalWiimoteToBuffer) or relayed from
+    // the server via OnWiimoteData.
     while (m_wiimote_buffer[entry.wiimote].Size() == 0)
     {
       if (!m_is_running.IsSet())
-      {
         return false;
-      }
 
       m_wii_pad_event.Wait();
     }

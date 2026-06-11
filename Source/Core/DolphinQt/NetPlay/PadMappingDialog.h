@@ -30,6 +30,8 @@ public:
   int exec() override;
   void accept() override;
 
+  void SetIsWiiGame(bool is_wii_game);
+
   NetPlay::PadMappingArray GetGCPadArray();
   NetPlay::GBAConfigArray GetGBAArray();
   NetPlay::PadMappingArray GetWiimoteArray();
@@ -75,4 +77,5 @@ private:
   NetPlay::GBAConfigArray m_gba_config;
   NetPlay::PadMappingArray m_wii_mapping;
   std::vector<const NetPlay::Player*> m_players;
+  bool m_is_wii_game = false;
 };

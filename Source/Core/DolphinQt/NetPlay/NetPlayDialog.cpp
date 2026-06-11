@@ -34,6 +34,7 @@
 
 #include "Common/Config/Config.h"
 #include "Core/NetPlayCommon.h"
+#include "DiscIO/Enums.h"
 #include "Common/Logging/Log.h"
 #include "Common/TraversalClient.h"
 
@@ -362,6 +363,8 @@ void NetPlayDialog::ConnectWidgets()
     Settings::Instance().GetNetPlayServer()->KickPlayer(id);
   });
   connect(m_assign_ports_button, &QPushButton::clicked, [this] {
+    const auto game = FindGameFile(m_current_game_identifier);
+    m_pad_mapping->SetIsWiiGame(game && DiscIO::IsWii(game->GetPlatform()));
     m_pad_mapping->exec();
 
     Settings::Instance().GetNetPlayServer()->SetPadMapping(m_pad_mapping->GetGCPadArray());

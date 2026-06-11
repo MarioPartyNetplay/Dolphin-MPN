@@ -1540,6 +1540,26 @@ bool NetPlayServer::ChangeGame(const SyncIdentifier& sync_identifier,
   m_selected_game_identifier = sync_identifier;
   m_selected_game_name = netplay_name;
 
+  // Detect platform so AssignNewUserAPad routes to the correct port type.
+  const auto game = m_dialog->FindGameFile(m_selected_game_identifier);
+  const bool was_wii = m_is_wii_game;
+  m_is_wii_game = game && DiscIO::IsWii(game->GetPlatform());
+
+  if (m_is_wii_game != was_wii)
+  {
+    // Platform flipped — clear both maps and re-assign everyone to the correct
+    // port type so the lobby is ready to use without manual setup.
+    m_pad_map.fill(PadMapping{});
+    m_wiimote_map.fill(PadMapping{});
+    {
+      std::lock_guard lkp(m_crit.players);
+      for (const auto& [pid, client] : m_players)
+        AssignNewUserAPad(client);
+    }
+    UpdatePadMapping();
+    UpdateWiimoteMapping();
+  }
+
   // send changed game to clients
   sf::Packet spac;
   spac << MessageID::ChangeGame;
@@ -1727,6 +1747,9 @@ bool NetPlayServer::RequestStartGame()
 {
   INFO_LOG_FMT(NETPLAY, "Start Game requested.");
 
+  const auto game = m_dialog->FindGameFile(m_selected_game_identifier);
+  m_is_wii_game = game && DiscIO::IsWii(game->GetPlatform());
+
   {
     std::lock_guard lkp(m_crit.players);
     bool mapping_changed = false;
@@ -1739,7 +1762,10 @@ bool NetPlayServer::RequestStartGame()
       }
     }
     if (mapping_changed)
+    {
       UpdatePadMapping();
+      UpdateWiimoteMapping();
+    }
   }
 
   if (!SetupNetSettings())
@@ -2559,7 +2585,9 @@ bool NetPlayServer::PlayerHasControllerMapped(const PlayerId pid) const
 
 void NetPlayServer::AssignNewUserAPad(const Client& player)
 {
-  for (PadMapping& mapping : m_pad_map)
+  // For Wii games assign to a Wii remote port; for GC games assign to a GC pad port.
+  PadMappingArray& target_map = m_is_wii_game ? m_wiimote_map : m_pad_map;
+  for (PadMapping& mapping : target_map)
   {
     if (mapping.players.empty())
     {

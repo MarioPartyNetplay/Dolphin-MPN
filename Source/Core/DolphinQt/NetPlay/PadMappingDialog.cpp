@@ -122,6 +122,11 @@ void PadMappingDialog::ConnectWidgets()
 #endif
 }
 
+void PadMappingDialog::SetIsWiiGame(bool is_wii_game)
+{
+  m_is_wii_game = is_wii_game;
+}
+
 int PadMappingDialog::exec()
 {
   ReloadFromServer();
@@ -327,7 +332,9 @@ void PadMappingDialog::AutoAssign()
 
   const QSignalBlocker blocker(m_mapping_table);
 
-  std::array<bool, 4> gc_port_used{};
+  std::array<bool, 4> port_used{};
+  const int base_col = m_is_wii_game ? static_cast<int>(Column::Wii1) :
+                                       static_cast<int>(Column::GC1);
 
   for (int row = 0; row < m_mapping_table->rowCount(); ++row)
   {
@@ -335,7 +342,8 @@ void PadMappingDialog::AutoAssign()
     if (!name_item)
       continue;
 
-    const NetPlay::PlayerId pid = static_cast<NetPlay::PlayerId>(name_item->data(Qt::UserRole).toInt());
+    const NetPlay::PlayerId pid =
+        static_cast<NetPlay::PlayerId>(name_item->data(Qt::UserRole).toInt());
     int port = -1;
     if (pid >= 1 && pid <= 4)
       port = static_cast<int>(pid) - 1;
@@ -343,7 +351,7 @@ void PadMappingDialog::AutoAssign()
     {
       for (int i = 0; i < 4; ++i)
       {
-        if (!gc_port_used[i])
+        if (!port_used[i])
         {
           port = i;
           break;
@@ -354,9 +362,9 @@ void PadMappingDialog::AutoAssign()
     if (port < 0 || port >= 4)
       continue;
 
-    if (auto* item = m_mapping_table->item(row, static_cast<int>(Column::GC1) + port))
+    if (auto* item = m_mapping_table->item(row, base_col + port))
       item->setCheckState(Qt::Checked);
-    gc_port_used[port] = true;
+    port_used[port] = true;
   }
 
   SyncMappingsFromWidgets();
