@@ -1847,9 +1847,16 @@ bool NetPlayClient::StartGame(const std::string& path)
   }
 
   for (unsigned int i = 0; i < 4; ++i)
+    Config::SetCurrent(Config::GetInfoForWiimoteSource(i), WiimoteSource::None);
+
+  for (unsigned int port = 0; port < m_wiimote_map.size(); ++port)
   {
-    Config::SetCurrent(Config::GetInfoForWiimoteSource(i),
-                       !m_wiimote_map[i].players.empty() ? WiimoteSource::Emulated : WiimoteSource::None);
+    if (m_wiimote_map[port].players.empty())
+      continue;
+
+    const unsigned int hid_index = NetPlay_GetLocalWiimoteForSlot(port);
+    if (hid_index < 4)
+      Config::SetCurrent(Config::GetInfoForWiimoteSource(hid_index), WiimoteSource::Emulated);
   }
 
   // boot game
@@ -2403,8 +2410,7 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
 
   if (shared_port)
   {
-    // See PollLocalPad: shared ports are driven by the server-combined stream. Keep a pipeline of
-    // our own frames in flight so the aggregated results keep the buffer near target depth.
+    // Shared ports must consume the server-combined stream only.
     while (m_shared_wiimote_in_flight[ingame_pad] <= static_cast<int>(m_target_buffer_size))
     {
       AddWiimoteStateToPacket(ingame_pad, state, packet);

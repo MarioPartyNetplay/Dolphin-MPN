@@ -514,6 +514,10 @@ void NetPlayServer::ClearPlayerInputState(const PlayerId pid)
     port_queues.erase(pid);
   for (auto& port_queues : m_wiimote_input_queues)
     port_queues.erase(pid);
+  for (auto& held : m_wiimote_held_input)
+    held.erase(pid);
+  for (auto& valid : m_wiimote_held_valid)
+    valid.erase(pid);
 }
 
 bool NetPlayServer::ShouldStopGameOnDisconnect(const PlayerId pid) const
@@ -1752,7 +1756,7 @@ bool NetPlayServer::RequestStartGame()
 
   {
     std::lock_guard lkp(m_crit.players);
-    bool mapping_changed = false;
+    bool mapping_changed = EnsurePortMappingsForPlatform();
     for (const auto& client : std::views::values(m_players))
     {
       if (!PlayerHasControllerMapped(client.pid))
@@ -2014,6 +2018,7 @@ bool NetPlayServer::StartGame()
     pad_queues.clear();
   for (auto& wii_queues : m_wiimote_input_queues)
     wii_queues.clear();
+  InitWiimoteHeldInputs();
 
   return true;
 }
@@ -2597,6 +2602,83 @@ void NetPlayServer::AssignNewUserAPad(const Client& player)
   }
 }
 
+bool NetPlayServer::EnsurePortMappingsForPlatform()
+{
+  bool changed = false;
+
+  if (m_is_wii_game)
+  {
+    for (unsigned int port = 0; port < m_pad_map.size(); ++port)
+    {
+      auto& gc_players = m_pad_map[port].players;
+      if (gc_players.empty())
+        continue;
+
+      auto& wii_players = m_wiimote_map[port].players;
+      for (const PlayerId pid : gc_players)
+      {
+        if (std::ranges::find(wii_players, pid) == wii_players.end())
+        {
+          wii_players.push_back(pid);
+          changed = true;
+        }
+      }
+      gc_players.clear();
+      changed = true;
+    }
+  }
+  else
+  {
+    for (unsigned int port = 0; port < m_wiimote_map.size(); ++port)
+    {
+      auto& wii_players = m_wiimote_map[port].players;
+      if (wii_players.empty())
+        continue;
+
+      auto& gc_players = m_pad_map[port].players;
+      for (const PlayerId pid : wii_players)
+      {
+        if (std::ranges::find(gc_players, pid) == gc_players.end())
+        {
+          gc_players.push_back(pid);
+          changed = true;
+        }
+      }
+      wii_players.clear();
+      changed = true;
+    }
+  }
+
+  if (changed)
+  {
+    DedupePadMappingPlayers(m_pad_map);
+    DedupePadMappingPlayers(m_wiimote_map);
+  }
+
+  return changed;
+}
+
+void NetPlayServer::InitWiimoteHeldInputs()
+{
+  const WiimoteEmu::SerializedWiimoteState default_wii =
+      WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
+
+  for (unsigned int i = 0; i < 4; ++i)
+  {
+    m_wiimote_held_input[i].clear();
+    m_wiimote_held_valid[i].clear();
+
+    if (m_wiimote_map[i].players.size() <= 1)
+      continue;
+
+    for (const PlayerId pid : m_wiimote_map[i].players)
+    {
+      m_wiimote_held_input[i][pid] = default_wii;
+      m_wiimote_held_valid[i][pid] = true;
+    }
+  }
+}
+
 PlayerId NetPlayServer::GiveFirstAvailableIDTo(ENetPeer* player)
 {
   PlayerId pid = 1;
@@ -3019,20 +3101,33 @@ void NetPlayServer::TryEmitAggregatedWiimoteInputs(PadIndex pad_index)
 
   while (true)
   {
-    for (const PlayerId player_id : wii_players)
-    {
-      if (wii_queues[player_id].empty())
-        return;
-    }
-
+    bool any_new = false;
     std::vector<WiimoteEmu::SerializedWiimoteState> inputs;
     inputs.reserve(wii_players.size());
 
     for (const PlayerId player_id : wii_players)
     {
-      inputs.push_back(wii_queues[player_id].front());
-      wii_queues[player_id].pop_front();
+      auto& queue = wii_queues[player_id];
+      WiimoteEmu::SerializedWiimoteState& held = m_wiimote_held_input[pad_index][player_id];
+      bool& valid = m_wiimote_held_valid[pad_index][player_id];
+
+      if (!queue.empty())
+      {
+        held = queue.front();
+        queue.pop_front();
+        valid = true;
+        any_new = true;
+      }
+      else if (!valid)
+      {
+        return;
+      }
+
+      inputs.push_back(held);
     }
+
+    if (!any_new)
+      return;
 
     const WiimoteEmu::SerializedWiimoteState aggregated = CombineWiimoteInputs(inputs);
 

@@ -167,6 +167,8 @@ private:
 
   // pulled from OnConnect()
   void AssignNewUserAPad(const Client& player);
+  bool EnsurePortMappingsForPlatform();
+  void InitWiimoteHeldInputs();
   // pulled from OnConnect()
   // returns the PID given
   PlayerId GiveFirstAvailableIDTo(ENetPeer* player);
@@ -206,6 +208,10 @@ private:
   std::array<std::map<PlayerId, std::deque<GCPadStatus>>, 4> m_pad_input_queues{};
   std::array<std::map<PlayerId, std::deque<WiimoteEmu::SerializedWiimoteState>>, 4>
       m_wiimote_input_queues{};
+  // Latest sample from each contributor on a shared Wii port; reused when a peer is one frame
+  // behind so aggregation does not stall the whole port.
+  std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_held_input{};
+  std::array<std::map<PlayerId, bool>, 4> m_wiimote_held_valid{};
 
   struct
   {

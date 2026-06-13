@@ -125,6 +125,14 @@ void PadMappingDialog::ConnectWidgets()
 void PadMappingDialog::SetIsWiiGame(bool is_wii_game)
 {
   m_is_wii_game = is_wii_game;
+
+  if (!m_mapping_table)
+    return;
+
+  for (int col = static_cast<int>(Column::GC1); col <= static_cast<int>(Column::GC4); ++col)
+    m_mapping_table->setColumnHidden(col, is_wii_game);
+  for (int col = static_cast<int>(Column::Wii1); col <= static_cast<int>(Column::Wii4); ++col)
+    m_mapping_table->setColumnHidden(col, !is_wii_game);
 }
 
 int PadMappingDialog::exec()
