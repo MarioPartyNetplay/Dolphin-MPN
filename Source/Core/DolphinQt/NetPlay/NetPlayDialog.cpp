@@ -370,6 +370,12 @@ void NetPlayDialog::ConnectWidgets()
     Settings::Instance().GetNetPlayServer()->SetPadMapping(m_pad_mapping->GetGCPadArray());
     Settings::Instance().GetNetPlayServer()->SetGBAConfig(m_pad_mapping->GetGBAArray(), true);
     Settings::Instance().GetNetPlayServer()->SetWiimoteMapping(m_pad_mapping->GetWiimoteArray());
+
+    if (const auto client = Settings::Instance().GetNetPlayClient())
+    {
+      client->ApplyPadMapping(Settings::Instance().GetNetPlayServer()->GetPadMapping());
+      client->ApplyWiimoteMapping(Settings::Instance().GetNetPlayServer()->GetWiimoteMapping());
+    }
   });
 
   // Chat

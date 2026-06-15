@@ -35,10 +35,13 @@ PadMappingDialog::PadMappingDialog(QWidget* parent) : QDialog(parent)
 
 void PadMappingDialog::CreateWidgets()
 {
-  m_help_label = new QLabel(
-      tr("Check which GameCube and Wii Remote ports each player uses. Multiple players can share "
-         "the same port (inputs are combined)."));
+  m_help_label = new QLabel;
   m_help_label->setWordWrap(true);
+
+  m_gc_ports_checkbox = new QCheckBox(tr("GameCube controllers (optional)"));
+  m_gc_ports_checkbox->setToolTip(
+      tr("Show GameCube port columns for Wii games that support the GameCube Controller."));
+  m_gc_ports_checkbox->setVisible(false);
 
   m_mapping_table = new QTableWidget;
   m_mapping_table->setColumnCount(static_cast<int>(Column::Count));
@@ -58,7 +61,7 @@ void PadMappingDialog::CreateWidgets()
 
   m_auto_assign_button = new QPushButton(tr("Auto-Assign"));
   m_auto_assign_button->setToolTip(
-      tr("Assign each player to the matching port number (player 1 → GC port 1, and so on)."));
+      tr("Assign each player to the matching port number (player 1 → port 1, and so on)."));
   m_clear_button = new QPushButton(tr("Clear All"));
   m_clear_button->setToolTip(tr("Remove all controller assignments."));
 
@@ -80,6 +83,7 @@ void PadMappingDialog::CreateWidgets()
 
   auto* main_layout = new QVBoxLayout;
   main_layout->addWidget(m_help_label);
+  main_layout->addWidget(m_gc_ports_checkbox);
   main_layout->addWidget(m_mapping_table, 1);
 #ifdef HAS_LIBMGBA
   main_layout->addWidget(gba_group);
@@ -97,12 +101,14 @@ void PadMappingDialog::ConnectWidgets()
   connect(m_button_box, &QDialogButtonBox::accepted, this, &QDialog::accept);
   connect(m_button_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
   connect(m_mapping_table, &QTableWidget::itemChanged, this,
-          [this](QTableWidgetItem* item) {
-            if (!item || item->column() == static_cast<int>(Column::Player))
-              return;
-            SyncMappingsFromWidgets();
-            UpdateSummary();
-          });
+          &PadMappingDialog::OnMappingItemChanged);
+  connect(m_gc_ports_checkbox, &QCheckBox::toggled, this, [this](bool checked) {
+    m_show_gc_ports = checked;
+    if (!checked)
+      ClearGcMappingsInTable();
+    UpdateGcColumnVisibility();
+    UpdateSummary();
+  });
   connect(m_auto_assign_button, &QPushButton::clicked, this, [this] {
     AutoAssign();
     UpdateSummary();
@@ -129,10 +135,35 @@ void PadMappingDialog::SetIsWiiGame(bool is_wii_game)
   if (!m_mapping_table)
     return;
 
-  for (int col = static_cast<int>(Column::GC1); col <= static_cast<int>(Column::GC4); ++col)
-    m_mapping_table->setColumnHidden(col, is_wii_game);
-  for (int col = static_cast<int>(Column::Wii1); col <= static_cast<int>(Column::Wii4); ++col)
-    m_mapping_table->setColumnHidden(col, !is_wii_game);
+  if (m_gc_ports_checkbox)
+    m_gc_ports_checkbox->setVisible(is_wii_game);
+
+  if (is_wii_game)
+  {
+    m_help_label->setText(
+        tr("Assign each player to a Wii Remote port. Enable \"%1\" below for games that also "
+           "support the GameCube Controller. Multiple players cannot share a Wii Remote port.")
+            .arg(tr("GameCube controllers (optional)")));
+    for (int col = static_cast<int>(Column::Wii1); col <= static_cast<int>(Column::Wii4); ++col)
+      m_mapping_table->setColumnHidden(col, false);
+    UpdateGcColumnVisibility();
+  }
+  else
+  {
+    m_show_gc_ports = true;
+    if (m_gc_ports_checkbox)
+    {
+      const QSignalBlocker blocker(m_gc_ports_checkbox);
+      m_gc_ports_checkbox->setChecked(false);
+    }
+    m_help_label->setText(
+        tr("Check which GameCube ports each player uses. Multiple players can share the same port "
+           "(inputs are combined)."));
+    for (int col = static_cast<int>(Column::GC1); col <= static_cast<int>(Column::GC4); ++col)
+      m_mapping_table->setColumnHidden(col, false);
+    for (int col = static_cast<int>(Column::Wii1); col <= static_cast<int>(Column::Wii4); ++col)
+      m_mapping_table->setColumnHidden(col, true);
+  }
 }
 
 int PadMappingDialog::exec()
@@ -144,6 +175,15 @@ int PadMappingDialog::exec()
 void PadMappingDialog::accept()
 {
   SyncMappingsFromWidgets();
+
+  if (m_is_wii_game && HasSharedWiiPort())
+  {
+    QMessageBox::warning(
+        this, tr("Invalid Wii Remote layout"),
+        tr("Multiple players cannot share a Wii Remote port. Assign each player to their own Wii "
+           "Remote port."));
+    return;
+  }
 
   std::vector<const NetPlay::Player*> unmapped;
   for (const NetPlay::Player* player : m_players)
@@ -187,6 +227,19 @@ void PadMappingDialog::ReloadFromServer()
   m_pad_mapping = server->GetPadMapping();
   m_gba_config = server->GetGBAConfig();
   m_wii_mapping = server->GetWiimoteMapping();
+
+  if (m_is_wii_game)
+  {
+    m_show_gc_ports = std::ranges::any_of(m_pad_mapping, [](const NetPlay::PadMapping& mapping) {
+      return !mapping.players.empty();
+    });
+    if (m_gc_ports_checkbox)
+    {
+      const QSignalBlocker blocker(m_gc_ports_checkbox);
+      m_gc_ports_checkbox->setChecked(m_show_gc_ports);
+    }
+    UpdateGcColumnVisibility();
+  }
 
   RefreshTable();
   RefreshGbaRow();
@@ -435,4 +488,62 @@ NetPlay::GBAConfigArray PadMappingDialog::GetGBAArray()
 NetPlay::PadMappingArray PadMappingDialog::GetWiimoteArray()
 {
   return m_wii_mapping;
+}
+
+void PadMappingDialog::UpdateGcColumnVisibility()
+{
+  if (!m_mapping_table)
+    return;
+
+  const bool show_gc = !m_is_wii_game || m_show_gc_ports;
+  for (int col = static_cast<int>(Column::GC1); col <= static_cast<int>(Column::GC4); ++col)
+    m_mapping_table->setColumnHidden(col, !show_gc);
+}
+
+void PadMappingDialog::ClearGcMappingsInTable()
+{
+  const QSignalBlocker blocker(m_mapping_table);
+
+  for (int row = 0; row < m_mapping_table->rowCount(); ++row)
+  {
+    for (int col = static_cast<int>(Column::GC1); col <= static_cast<int>(Column::GC4); ++col)
+    {
+      if (auto* item = m_mapping_table->item(row, col))
+        item->setCheckState(Qt::Unchecked);
+    }
+  }
+
+  SyncMappingsFromWidgets();
+}
+
+bool PadMappingDialog::HasSharedWiiPort() const
+{
+  return std::ranges::any_of(m_wii_mapping,
+                             [](const NetPlay::PadMapping& mapping) {
+                               return mapping.players.size() > 1;
+                             });
+}
+
+void PadMappingDialog::OnMappingItemChanged(QTableWidgetItem* item)
+{
+  if (!item || item->column() == static_cast<int>(Column::Player))
+    return;
+
+  SyncMappingsFromWidgets();
+
+  if (m_is_wii_game && IsWiiColumn(item->column()) && HasSharedWiiPort())
+  {
+    const int port = PortForColumn(item->column());
+    QMessageBox::warning(
+        this, tr("Invalid Wii Remote layout"),
+        tr("Multiple players cannot share Wii Remote port %1. Assign each player to a different "
+           "Wii Remote port.")
+            .arg(port + 1));
+
+    const QSignalBlocker blocker(m_mapping_table);
+    item->setCheckState(Qt::Unchecked);
+    SyncMappingsFromWidgets();
+  }
+
+  UpdateSummary();
 }

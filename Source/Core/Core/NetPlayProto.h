@@ -272,6 +272,7 @@ std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
                                    const GBAConfigArray& gba_config,
                                    const PadMappingArray& wiimote_map);
 bool IsNetPlayRunning();
+void SyncLocalSIDevices();
 void SetSIPollBatching(bool state);
 void SendPowerButtonEvent();
 std::string GetGBASavePath(int pad_num);

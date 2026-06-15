@@ -262,6 +262,13 @@ void SerialInterfaceManager::Init()
 {
   RegisterEvents();
 
+  if (!m_system.GetMovie().IsMovieActive() && NetPlay::IsNetPlayRunning())
+  {
+    // Apply pad mapping to SI desired types before AddDevice so Wii games with optional GC
+    // controllers do not briefly initialize the wrong device type.
+    NetPlay::SyncLocalSIDevices();
+  }
+
   for (int i = 0; i < MAX_SI_CHANNELS; i++)
   {
     m_channel[i].out.hex = 0;

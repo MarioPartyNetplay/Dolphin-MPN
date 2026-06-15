@@ -60,6 +60,10 @@ private:
   void UpdateSummary();
   void AutoAssign();
   void ClearAll();
+  void UpdateGcColumnVisibility();
+  void ClearGcMappingsInTable();
+  bool HasSharedWiiPort() const;
+  void OnMappingItemChanged(QTableWidgetItem* item);
 
   static int PortForColumn(int column);
   static bool IsGcColumn(int column);
@@ -67,6 +71,7 @@ private:
 
   QTableWidget* m_mapping_table = nullptr;
   QLabel* m_help_label = nullptr;
+  QCheckBox* m_gc_ports_checkbox = nullptr;
   QLabel* m_summary_label = nullptr;
   QPushButton* m_auto_assign_button = nullptr;
   QPushButton* m_clear_button = nullptr;
@@ -78,4 +83,5 @@ private:
   NetPlay::PadMappingArray m_wii_mapping;
   std::vector<const NetPlay::Player*> m_players;
   bool m_is_wii_game = false;
+  bool m_show_gc_ports = false;
 };

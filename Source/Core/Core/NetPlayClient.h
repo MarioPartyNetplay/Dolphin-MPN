@@ -205,6 +205,10 @@ public:
   const GBAConfigArray& GetGBAConfig() const;
   const PadMappingArray& GetWiimoteMapping() const;
 
+  void ApplyPadMapping(const PadMappingArray& mappings);
+  void ApplyWiimoteMapping(const PadMappingArray& mappings);
+  void SyncSIDevices();
+
   void ApplyPadBufferSize(unsigned int size) { m_target_buffer_size = size; }
   void AdjustPadBufferSize(unsigned int size);
 
@@ -225,7 +229,7 @@ protected:
 
   struct
   {
-    std::recursive_mutex game;
+    mutable std::recursive_mutex game;
     // lock order
     std::recursive_mutex players;
     std::recursive_mutex async_queue_write;
@@ -279,6 +283,7 @@ protected:
   PadMappingArray m_pad_map{};
   GBAConfigArray m_gba_config{};
   PadMappingArray m_wiimote_map{};
+  bool m_is_wii_game = false;
 
   bool m_is_recording = false;
 
@@ -306,6 +311,7 @@ private:
                                sf::Packet& packet);
 
   void UpdateDevices();
+  void ConfigureLocalWiimoteSources();
   void AddPadStateToPacket(int in_game_pad, const GCPadStatus& np, sf::Packet& packet);
   void AddWiimoteStateToPacket(int in_game_pad, const WiimoteEmu::SerializedWiimoteState& np,
                                sf::Packet& packet);

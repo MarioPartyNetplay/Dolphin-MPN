@@ -303,7 +303,12 @@ void CSIDevice_GCController::SendCommand(u32 command, u8 poll)
 
     if (pad_num < 4)
     {
-      const SIDevices device = m_system.GetSerialInterface().GetDeviceType(pad_num);
+      // In netplay the emulated SI device is always a standard GC controller; rumble must use
+      // the local player's configured device type (adapter vs emulated), not the SI channel type.
+      const SIDevices device =
+          NetPlay::IsNetPlayRunning() ?
+              Config::Get(Config::GetInfoForSIDevice(pad_num)) :
+              m_system.GetSerialInterface().GetDeviceType(m_device_number);
       if (type == 1)
         CSIDevice_GCController::Rumble(pad_num, 1.0, device);
       else
