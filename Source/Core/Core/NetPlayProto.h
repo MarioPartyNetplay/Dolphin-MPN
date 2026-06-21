@@ -273,9 +273,12 @@ std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
                                    const PadMappingArray& wiimote_map);
 bool IsNetPlayRunning();
 void SyncLocalSIDevices();
+void SyncLocalWiimoteSources();
+bool IsWiimotePortMapped(unsigned int port);
 void SetSIPollBatching(bool state);
 void SendPowerButtonEvent();
 std::string GetGBASavePath(int pad_num);
 PadDetails GetPadDetails(int pad_num);
 int NumLocalWiimotes();
+unsigned int NetPlay_GetLocalWiimoteForSlot(unsigned int slot);
 }  // namespace NetPlay

@@ -2027,15 +2027,34 @@ void NetPlayClient::ConfigureLocalWiimoteSources()
   for (unsigned int i = 0; i < 4; ++i)
     Config::SetCurrent(Config::GetInfoForWiimoteSource(i), WiimoteSource::None);
 
-  for (unsigned int port = 0; port < m_wiimote_map.size(); ++port)
+  if (!m_local_player)
   {
-    if (m_wiimote_map[port].players.empty())
+    WiimoteCommon::RefreshDeviceSources();
+    return;
+  }
+
+  PadMappingArray wiimote_map;
+  {
+    std::lock_guard lkg(m_crit.game);
+    wiimote_map = m_wiimote_map;
+  }
+
+  for (unsigned int port = 0; port < wiimote_map.size(); ++port)
+  {
+    if (!LocalPlayerOnPad(wiimote_map[port]))
       continue;
 
-    const unsigned int hid_index = NetPlay_GetLocalWiimoteForSlot(port);
-    if (hid_index < 4)
-      Config::SetCurrent(Config::GetInfoForWiimoteSource(hid_index), WiimoteSource::Emulated);
+    const int local_wiimote = InGameToLocal(port, wiimote_map, m_local_player->pid);
+    if (local_wiimote >= 4)
+      continue;
+
+    const WiimoteSource base_source =
+        Config::GetBase(Config::GetInfoForWiimoteSource(local_wiimote));
+    Config::SetCurrent(Config::GetInfoForWiimoteSource(local_wiimote),
+                       base_source != WiimoteSource::None ? base_source : WiimoteSource::Emulated);
   }
+
+  WiimoteCommon::RefreshDeviceSources();
 }
 
 // called from ---NETPLAY--- thread
@@ -2133,6 +2152,11 @@ void NetPlayClient::SyncSIDevices()
     m_gc_pad_event.Set();
     m_wii_pad_event.Set();
   }
+}
+
+void NetPlayClient::SyncWiimoteSources()
+{
+  ConfigureLocalWiimoteSources();
 }
 
 // called from ---NETPLAY--- thread
@@ -2406,10 +2430,16 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
   // any Wiimote that isn't locally controlled.
   if (m_net_settings.bba_mode)
   {
+    PadMappingArray wiimote_map;
+    {
+      std::lock_guard lkg(m_crit.game);
+      wiimote_map = m_wiimote_map;
+    }
+
     for (const WiimoteDataBatchEntry& entry : entries)
     {
-      if (m_wiimote_map[entry.wiimote].players.empty() ||
-          InGameWiimoteToLocalWiimote(entry.wiimote) >= 4)
+      if (wiimote_map[entry.wiimote].players.empty() ||
+          InGameToLocal(entry.wiimote, wiimote_map, m_local_player->pid) >= 4)
       {
         *entry.state = neutral_state;
       }
@@ -2417,17 +2447,23 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
     return true;
   }
 
+  PadMappingArray wiimote_map;
+  {
+    std::lock_guard lkg(m_crit.game);
+    wiimote_map = m_wiimote_map;
+  }
+
   for (const WiimoteDataBatchEntry& entry : entries)
   {
     // If no player is assigned to this Wiimote port nobody will ever send
     // data for it, so return neutral state immediately to avoid a softlock.
-    if (m_wiimote_map[entry.wiimote].players.empty())
+    if (wiimote_map[entry.wiimote].players.empty())
     {
       *entry.state = neutral_state;
       continue;
     }
 
-    const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
+    const int local_wiimote = InGameToLocal(entry.wiimote, wiimote_map, m_local_player->pid);
     DEBUG_LOG_FMT(NETPLAY,
                   "Entering WiimoteUpdate() with wiimote {}, local_wiimote {}, state [{:02x}]",
                   entry.wiimote, local_wiimote,
@@ -2452,8 +2488,8 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
 
     m_wiimote_buffer[entry.wiimote].Pop(*entry.state);
 
-    if (IsSharedControllerPort(m_wiimote_map[entry.wiimote]) &&
-        LocalPlayerOnPad(m_wiimote_map[entry.wiimote]) &&
+    if (IsSharedControllerPort(wiimote_map[entry.wiimote]) &&
+        LocalPlayerOnPad(wiimote_map[entry.wiimote]) &&
         m_shared_wiimote_in_flight[entry.wiimote] > 0)
     {
       --m_shared_wiimote_in_flight[entry.wiimote];
@@ -2548,12 +2584,18 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
                                             const WiimoteEmu::SerializedWiimoteState& state,
                                             sf::Packet& packet)
 {
-  const int ingame_pad = LocalWiimoteToInGameWiimote(local_wiimote);
+  PadMappingArray wiimote_map;
+  {
+    std::lock_guard lkg(m_crit.game);
+    wiimote_map = m_wiimote_map;
+  }
+
+  const int ingame_pad = LocalToInGame(local_wiimote, wiimote_map, m_local_player->pid);
   if (ingame_pad >= 4)
     return false;
 
   bool data_added = false;
-  const bool shared_port = IsSharedControllerPort(m_wiimote_map[ingame_pad]);
+  const bool shared_port = IsSharedControllerPort(wiimote_map[ingame_pad]);
 
   if (shared_port)
   {
@@ -3149,31 +3191,44 @@ unsigned int NetPlay::NetPlay_GetLocalWiimoteForSlot(unsigned int slot)
 
   const auto& mapping = netplay_client->GetWiimoteMapping();
   const auto& local_player_id = netplay_client->GetLocalPlayerId();
+  const auto& players = mapping[slot].players;
 
-  std::array<unsigned int, std::tuple_size_v<std::decay_t<decltype(mapping)>>> slot_map{};
-  size_t player_count = 0;
-  for (size_t i = 0; i < mapping.size(); ++i)
+  if (players.empty())
+    return slot;
+
+  if (std::find(players.begin(), players.end(), local_player_id) == players.end())
+    return slot;
+
+  int local_index = 0;
+  for (size_t i = 0; i < slot; ++i)
   {
-    const auto& players = mapping[i].players;
-    if (std::find(players.begin(), players.end(), local_player_id) != players.end())
-    {
-      slot_map[i] = static_cast<unsigned int>(player_count);
-      ++player_count;
-    }
-  }
-  for (size_t i = 0; i < mapping.size(); ++i)
-  {
-    const auto& players = mapping[i].players;
-    if (!players.empty() && std::find(players.begin(), players.end(), local_player_id) == players.end())
-    {
-      slot_map[i] = static_cast<unsigned int>(player_count);
-      ++player_count;
-    }
+    const auto& port_players = mapping[i].players;
+    if (std::find(port_players.begin(), port_players.end(), local_player_id) != port_players.end())
+      ++local_index;
   }
 
-  INFO_LOG_FMT(NETPLAY, "Wiimote slot map: [{}]", fmt::join(slot_map, ", "));
+  return static_cast<unsigned int>(local_index);
+}
 
-  return slot_map[slot];
+bool NetPlay::IsWiimotePortMapped(unsigned int port)
+{
+  if (port >= std::tuple_size_v<PadMappingArray>)
+    return false;
+
+  std::lock_guard lk(crit_netplay_client);
+
+  if (!netplay_client)
+    return false;
+
+  return !netplay_client->GetWiimoteMapping()[port].players.empty();
+}
+
+void NetPlay::SyncLocalWiimoteSources()
+{
+  std::lock_guard lk(crit_netplay_client);
+
+  if (netplay_client)
+    netplay_client->SyncWiimoteSources();
 }
 
 // called from ---CPU--- thread

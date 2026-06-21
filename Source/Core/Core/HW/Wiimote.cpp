@@ -16,6 +16,7 @@
 #include "Core/HW/WiimoteReal/WiimoteReal.h"
 #include "Core/IOS/IOS.h"
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
+#include "Core/NetPlayProto.h"
 #include "Core/IOS/USB/Bluetooth/WiimoteDevice.h"
 #include "Core/Movie.h"
 #include "Core/System.h"
@@ -69,7 +70,40 @@ void UpdateSource(unsigned int index)
   if (bluetooth == nullptr)
     return;
 
-  bluetooth->AccessWiimoteByIndex(index)->SetSource(GetHIDWiimoteSource(index));
+  if (NetPlay::IsNetPlayRunning())
+  {
+    // Config slot `index` may feed multiple in-game Wii Remote ports during netplay.
+    for (unsigned int bt_index = 0; bt_index < MAX_BBMOTES; ++bt_index)
+    {
+      if (NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index) == index)
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(index));
+    }
+  }
+  else
+  {
+    bluetooth->AccessWiimoteByIndex(index)->SetSource(GetHIDWiimoteSource(index));
+  }
+}
+
+void RefreshDeviceSources()
+{
+  const auto bluetooth = WiiUtils::GetBluetoothEmuDevice();
+  if (bluetooth == nullptr)
+    return;
+
+  if (NetPlay::IsNetPlayRunning())
+  {
+    for (unsigned int bt_index = 0; bt_index < MAX_BBMOTES; ++bt_index)
+    {
+      const unsigned int config_index = NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index);
+      bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(config_index));
+    }
+  }
+  else
+  {
+    for (unsigned int i = 0; i < MAX_BBMOTES; ++i)
+      bluetooth->AccessWiimoteByIndex(i)->SetSource(GetHIDWiimoteSource(i));
+  }
 }
 
 HIDWiimote* GetHIDWiimoteSource(unsigned int index)

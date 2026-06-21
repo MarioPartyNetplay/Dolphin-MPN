@@ -66,6 +66,12 @@ BluetoothEmuDevice::BluetoothEmuDevice(EmulationKernel& ios, const std::string& 
     m_wiimotes[i] = std::make_unique<WiimoteDevice>(this, tmp_bd, hid_source_number);
   }
 
+  // ConfigureLocalWiimoteSources runs before IOS boots, so RefreshDeviceSources is a no-op
+  // until now. Only refresh HID wiring here — do not call SyncLocalWiimoteSources(), which
+  // would re-enter crit_netplay_client via config callbacks and deadlock IOS init.
+  if (NetPlay::IsNetPlayRunning())
+    WiimoteCommon::RefreshDeviceSources();
+
   bt_dinf.num_registered = MAX_BBMOTES;
 
   // save now so that when games load sysconf file it includes the new Wii Remotes

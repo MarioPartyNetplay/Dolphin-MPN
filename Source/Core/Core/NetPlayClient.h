@@ -208,6 +208,7 @@ public:
   void ApplyPadMapping(const PadMappingArray& mappings);
   void ApplyWiimoteMapping(const PadMappingArray& mappings);
   void SyncSIDevices();
+  void SyncWiimoteSources();
 
   void ApplyPadBufferSize(unsigned int size) { m_target_buffer_size = size; }
   void AdjustPadBufferSize(unsigned int size);

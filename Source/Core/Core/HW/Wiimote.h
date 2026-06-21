@@ -59,6 +59,10 @@ class HIDWiimote;
 // Must be run from CPU thread.
 void UpdateSource(unsigned int index);
 
+// Reconnect every emulated BT Wii Remote to its HID source. During netplay the in-game
+// port index and local config slot are not always the same (see NetPlay_GetLocalWiimoteForSlot).
+void RefreshDeviceSources();
+
 HIDWiimote* GetHIDWiimoteSource(unsigned int index);
 
 }  // namespace WiimoteCommon
