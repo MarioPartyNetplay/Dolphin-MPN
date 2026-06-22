@@ -364,9 +364,14 @@ void BluetoothEmuDevice::Update()
       size_t batch_count = 0;
       for (size_t i = 0; i < 4; ++i)
       {
-        if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
+        if (!NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
           continue;
-        serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
+
+        if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
+          serialized[i] = WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
+        else
+          serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
+
         batch[batch_count].state = &serialized[i];
         batch[batch_count].wiimote = static_cast<int>(i);
         ++batch_count;

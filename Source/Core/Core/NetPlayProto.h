@@ -275,6 +275,7 @@ bool IsNetPlayRunning();
 void SyncLocalSIDevices();
 void SyncLocalWiimoteSources();
 bool IsWiimotePortMapped(unsigned int port);
+bool IsLocalWiimotePort(unsigned int port);
 void SetSIPollBatching(bool state);
 void SendPowerButtonEvent();
 std::string GetGBASavePath(int pad_num);

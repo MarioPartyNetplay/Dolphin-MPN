@@ -72,11 +72,21 @@ void UpdateSource(unsigned int index)
 
   if (NetPlay::IsNetPlayRunning())
   {
-    // Config slot `index` may feed multiple in-game Wii Remote ports during netplay.
     for (unsigned int bt_index = 0; bt_index < MAX_BBMOTES; ++bt_index)
     {
-      if (NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index) == index)
-        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(index));
+      if (!NetPlay::IsWiimotePortMapped(bt_index))
+        continue;
+
+      if (NetPlay::IsLocalWiimotePort(bt_index))
+      {
+        if (NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index) == index)
+          bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(index));
+      }
+      else if (index == bt_index)
+      {
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(
+            static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(bt_index)));
+      }
     }
   }
   else
@@ -95,8 +105,24 @@ void RefreshDeviceSources()
   {
     for (unsigned int bt_index = 0; bt_index < MAX_BBMOTES; ++bt_index)
     {
-      const unsigned int config_index = NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index);
-      bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(config_index));
+      if (!NetPlay::IsWiimotePortMapped(bt_index))
+      {
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(bt_index));
+        continue;
+      }
+
+      if (NetPlay::IsLocalWiimotePort(bt_index))
+      {
+        const unsigned int config_index = NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index);
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(config_index));
+      }
+      else
+      {
+        // Remote player's Wii Remote: use the port-index emulated controller so local physical
+        // input cannot leak in; netplay supplies the authoritative state on every peer.
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(
+            static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(bt_index)));
+      }
     }
   }
   else

@@ -2041,17 +2041,26 @@ void NetPlayClient::ConfigureLocalWiimoteSources()
 
   for (unsigned int port = 0; port < wiimote_map.size(); ++port)
   {
-    if (!LocalPlayerOnPad(wiimote_map[port]))
+    if (wiimote_map[port].players.empty())
       continue;
 
-    const int local_wiimote = InGameToLocal(port, wiimote_map, m_local_player->pid);
-    if (local_wiimote >= 4)
-      continue;
+    if (LocalPlayerOnPad(wiimote_map[port]))
+    {
+      const int local_wiimote = InGameToLocal(port, wiimote_map, m_local_player->pid);
+      if (local_wiimote >= 4)
+        continue;
 
-    const WiimoteSource base_source =
-        Config::GetBase(Config::GetInfoForWiimoteSource(local_wiimote));
-    Config::SetCurrent(Config::GetInfoForWiimoteSource(local_wiimote),
-                       base_source != WiimoteSource::None ? base_source : WiimoteSource::Emulated);
+      const WiimoteSource base_source =
+          Config::GetBase(Config::GetInfoForWiimoteSource(local_wiimote));
+      Config::SetCurrent(Config::GetInfoForWiimoteSource(local_wiimote),
+                         base_source != WiimoteSource::None ? base_source : WiimoteSource::Emulated);
+    }
+    else
+    {
+      // Remote player's port: keep the port-index emulated controller available as a neutral
+      // input vehicle. Netplay overwrites its state before the game reads it.
+      Config::SetCurrent(Config::GetInfoForWiimoteSource(port), WiimoteSource::Emulated);
+    }
   }
 
   WiimoteCommon::RefreshDeviceSources();
@@ -2445,6 +2454,23 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
       }
     }
     return true;
+  }
+
+  while (m_wait_on_input)
+  {
+    if (!m_is_running.IsSet())
+      return false;
+
+    if (m_wait_on_input_received)
+    {
+      sf::Packet spac;
+      spac << MessageID::GolfPrepare;
+      Send(spac);
+
+      m_wait_on_input_received = false;
+    }
+
+    m_wait_on_input_event.Wait();
   }
 
   PadMappingArray wiimote_map;
@@ -3221,6 +3247,21 @@ bool NetPlay::IsWiimotePortMapped(unsigned int port)
     return false;
 
   return !netplay_client->GetWiimoteMapping()[port].players.empty();
+}
+
+bool NetPlay::IsLocalWiimotePort(unsigned int port)
+{
+  if (port >= std::tuple_size_v<PadMappingArray>)
+    return false;
+
+  std::lock_guard lk(crit_netplay_client);
+
+  if (!netplay_client)
+    return false;
+
+  const auto& players = netplay_client->GetWiimoteMapping()[port].players;
+  const auto& local_player_id = netplay_client->GetLocalPlayerId();
+  return std::find(players.begin(), players.end(), local_player_id) != players.end();
 }
 
 void NetPlay::SyncLocalWiimoteSources()
