@@ -363,7 +363,7 @@ void AndroidNetPlayUI::OnMsgStartGame()
     g_start_game_processing = false;
   }
 }
-void AndroidNetPlayUI::OnMsgStopGame()
+void AndroidNetPlayUI::OnMsgStopGame(const std::string& player_name)
 {
 }
 void AndroidNetPlayUI::OnMsgPowerButton()

@@ -455,11 +455,23 @@ void NetPlayDialog::ConnectWidgets()
       if ((state == Core::State::Uninitialized || state == Core::State::Stopping) &&
           !m_got_stop_request)
       {
+        m_stop_player_name = m_nickname;
         if (const auto client = Settings::Instance().GetNetPlayClient())
           client->RequestStopGame();
       }
       if (state == Core::State::Uninitialized)
-        DisplayMessage(tr("Stopped game"), "red");
+      {
+        if (!m_stop_player_name.empty())
+        {
+          DisplayMessage(tr("%1 stopped the session").arg(QString::fromStdString(m_stop_player_name)),
+                         "red");
+        }
+        else
+        {
+          DisplayMessage(tr("Stopped game"), "red");
+        }
+        m_stop_player_name.clear();
+      }
     }
   });
 
@@ -816,6 +828,7 @@ void NetPlayDialog::BootGame(const std::string& filename,
                              std::unique_ptr<BootSessionData> boot_session_data)
 {
   m_got_stop_request = false;
+  m_stop_player_name.clear();
   m_start_game_callback(filename, std::move(boot_session_data));
 }
 
@@ -956,8 +969,9 @@ void NetPlayDialog::OnMsgStartGame()
   });
 }
 
-void NetPlayDialog::OnMsgStopGame()
+void NetPlayDialog::OnMsgStopGame(const std::string& player_name)
 {
+  m_stop_player_name = player_name;
   // Overlay teardown is deferred to GameStatusChanged() once emulation has fully stopped, so the
   // video thread cannot call Display() on a destroyed NetPlayChatUI/NetPlayGolfUI.
   QueueOnObject(this, [this] { UpdateDiscordPresence(); });

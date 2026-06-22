@@ -1086,10 +1086,25 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
 
 void NetPlayClient::OnStopGame(sf::Packet& packet)
 {
-  INFO_LOG_FMT(NETPLAY, "Game stopped");
+  PlayerId pid = 0;
+  if (packet.getDataSize() - packet.getReadPosition() >= sizeof(PlayerId))
+    packet >> pid;
+
+  std::string player_name;
+  {
+    std::lock_guard lkp(m_crit.players);
+    const auto it = m_players.find(pid);
+    if (it != m_players.end())
+      player_name = it->second.name;
+  }
+
+  INFO_LOG_FMT(NETPLAY, "Game stopped by {}",
+               player_name.empty() ? "unknown player" : player_name);
+
+  if (!player_name.empty())
+    m_dialog->OnMsgStopGame(player_name);
 
   StopGame();
-  m_dialog->OnMsgStopGame();
 }
 
 void NetPlayClient::OnPowerButton()
@@ -2747,8 +2762,15 @@ void NetPlayClient::Stop()
   // Tell the server to stop if we have a pad mapped in game.
   if (LocalPlayerHasControllerMapped())
     SendStopGamePacket();
-  else
+  else if (m_local_player)
+  {
+    m_dialog->OnMsgStopGame(m_local_player->name);
     StopGame();
+  }
+  else
+  {
+    StopGame();
+  }
 }
 
 void NetPlayClient::RequestStopGame()

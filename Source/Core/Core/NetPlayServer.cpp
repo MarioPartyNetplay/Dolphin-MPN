@@ -566,6 +566,7 @@ unsigned int NetPlayServer::OnDisconnect(const Client& player)
 
       sf::Packet spac;
       spac << MessageID::StopGame;
+      spac << pid;
       SendToClients(spac);
     }
     else
@@ -1165,6 +1166,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     // tell clients to stop game
     sf::Packet spac;
     spac << MessageID::StopGame;
+    spac << player.pid;
 
     std::lock_guard lkp(m_crit.players);
     SendToClients(spac);

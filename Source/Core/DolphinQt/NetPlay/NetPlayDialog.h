@@ -59,7 +59,7 @@ public:
                        const std::string& netplay_name) override;
   void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override;
   void OnMsgStartGame() override;
-  void OnMsgStopGame() override;
+  void OnMsgStopGame(const std::string& player_name) override;
   void OnMsgPowerButton() override;
   void OnPlayerConnect(const std::string& player) override;
   void OnPlayerDisconnect(const std::string& player) override;
@@ -175,6 +175,7 @@ private:
   bool m_use_traversal = false;
   bool m_is_copy_button_retry = false;
   bool m_got_stop_request = true;
+  std::string m_stop_player_name;
   int m_buffer_size = 0;
   int m_player_count = 0;
   int m_old_player_count = 0;

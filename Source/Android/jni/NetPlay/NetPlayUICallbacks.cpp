@@ -219,7 +219,9 @@ void NetPlayUICallbacks::OnMsgStartGame()
   env->DeleteLocalRef(netplay_session);
 }
 
-void NetPlayUICallbacks::OnMsgStopGame() {}
+void NetPlayUICallbacks::OnMsgStopGame(const std::string& player_name)
+{
+}
 
 void NetPlayUICallbacks::OnMsgPowerButton()
 {
