@@ -185,6 +185,33 @@ void PadMappingDialog::accept()
     return;
   }
 
+  if (m_is_wii_game)
+  {
+    QStringList dual_mapped;
+    for (const NetPlay::Player* player : m_players)
+    {
+      const NetPlay::PlayerId pid = player->pid;
+      const bool has_gc = std::ranges::any_of(m_pad_mapping, [pid](const NetPlay::PadMapping& mapping) {
+        return std::ranges::find(mapping.players, pid) != mapping.players.end();
+      });
+      const bool has_wii =
+          std::ranges::any_of(m_wii_mapping, [pid](const NetPlay::PadMapping& mapping) {
+            return std::ranges::find(mapping.players, pid) != mapping.players.end();
+          });
+      if (has_gc && has_wii)
+        dual_mapped.append(QString::fromStdString(player->name));
+    }
+
+    if (!dual_mapped.isEmpty())
+    {
+      QMessageBox::warning(
+          this, tr("Invalid controller layout"),
+          tr("Each player can use either a GameCube port or a Wii Remote port, not both:\n%1")
+              .arg(dual_mapped.join(QStringLiteral("\n"))));
+      return;
+    }
+  }
+
   std::vector<const NetPlay::Player*> unmapped;
   for (const NetPlay::Player* player : m_players)
   {
@@ -324,6 +351,28 @@ void PadMappingDialog::SyncMappingsFromWidgets()
   for (unsigned int i = 0; i < m_gba_boxes.size(); ++i)
     m_gba_config[i].enabled = m_gba_boxes[i]->isChecked();
 #endif
+
+  if (m_is_wii_game)
+  {
+    // GC and Wii Remote ports are mutually exclusive per player.
+    for (const NetPlay::Player* player : m_players)
+    {
+      const NetPlay::PlayerId pid = player->pid;
+      const bool has_gc = std::ranges::any_of(m_pad_mapping, [pid](const NetPlay::PadMapping& mapping) {
+        return std::ranges::find(mapping.players, pid) != mapping.players.end();
+      });
+      if (!has_gc)
+        continue;
+
+      for (auto& mapping : m_wii_mapping)
+      {
+        auto& players = mapping.players;
+        const auto it = std::ranges::find(players, pid);
+        if (it != players.end())
+          players.erase(it);
+      }
+    }
+  }
 }
 
 void PadMappingDialog::UpdateSummary()
@@ -394,8 +443,8 @@ void PadMappingDialog::AutoAssign()
   const QSignalBlocker blocker(m_mapping_table);
 
   std::array<bool, 4> port_used{};
-  const int base_col = m_is_wii_game ? static_cast<int>(Column::Wii1) :
-                                       static_cast<int>(Column::GC1);
+  const int base_col = (m_is_wii_game && !m_show_gc_ports) ? static_cast<int>(Column::Wii1) :
+                                                             static_cast<int>(Column::GC1);
 
   for (int row = 0; row < m_mapping_table->rowCount(); ++row)
   {
@@ -528,6 +577,28 @@ void PadMappingDialog::OnMappingItemChanged(QTableWidgetItem* item)
 {
   if (!item || item->column() == static_cast<int>(Column::Player))
     return;
+
+  if (m_is_wii_game && item->checkState() == Qt::Checked)
+  {
+    const int row = item->row();
+    const QSignalBlocker blocker(m_mapping_table);
+    if (IsGcColumn(item->column()))
+    {
+      for (int col = static_cast<int>(Column::Wii1); col <= static_cast<int>(Column::Wii4); ++col)
+      {
+        if (auto* wii_item = m_mapping_table->item(row, col))
+          wii_item->setCheckState(Qt::Unchecked);
+      }
+    }
+    else if (IsWiiColumn(item->column()))
+    {
+      for (int col = static_cast<int>(Column::GC1); col <= static_cast<int>(Column::GC4); ++col)
+      {
+        if (auto* gc_item = m_mapping_table->item(row, col))
+          gc_item->setCheckState(Qt::Unchecked);
+      }
+    }
+  }
 
   SyncMappingsFromWidgets();
 

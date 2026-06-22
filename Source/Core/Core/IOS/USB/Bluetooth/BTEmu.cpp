@@ -18,6 +18,7 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/HW/Wiimote.h"
 #include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
+#include "Core/HW/WiimoteCommon/WiimoteReport.h"
 #include "Core/IOS/Device.h"
 #include "Core/IOS/IOS.h"
 #include "Core/Movie.h"
@@ -368,9 +369,9 @@ void BluetoothEmuDevice::Update()
           continue;
 
         if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
-          serialized[i] = WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
-        else
-          serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
+          continue;
+
+        serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
 
         batch[batch_count].state = &serialized[i];
         batch[batch_count].wiimote = static_cast<int>(i);
@@ -388,6 +389,19 @@ void BluetoothEmuDevice::Update()
           if (!WiimoteEmu::DeserializeDesiredState(&wiimote_states[wiimote], serialized[wiimote]))
             PanicAlertFmtT("Received invalid Wii Remote data from Netplay.");
         }
+
+        // Apply synced input on every peer; local PrepareInput next_call disagrees on remote slots.
+        for (size_t j = 0; j < batch_count; ++j)
+        {
+          const size_t i = batch[j].wiimote;
+
+          if (wiimote_states[i].buttons.hex & WiimoteCommon::ButtonData::BUTTON_MASK)
+            next_call[i] = WiimoteDevice::NextUpdateInputCall::Activate;
+          else if (m_wiimotes[i]->IsConnected())
+            next_call[i] = WiimoteDevice::NextUpdateInputCall::Update;
+          else
+            next_call[i] = WiimoteDevice::NextUpdateInputCall::None;
+        }
       }
     }
 
@@ -397,12 +411,23 @@ void BluetoothEmuDevice::Update()
       if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
         continue;
 
+      if (NetPlay::IsNetPlayRunning() && !NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
+        continue;
+
       movie.PlayWiimote(i, &wiimote_states[i]);
       movie.CheckWiimoteStatus(i, wiimote_states[i]);
     }
 
     for (size_t i = 0; i < m_wiimotes.size(); ++i)
+    {
+      if (NetPlay::IsNetPlayRunning() &&
+          !NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
+      {
+        continue;
+      }
+
       m_wiimotes[i]->UpdateInput(next_call[i], wiimote_states[i]);
+    }
 
     m_last_ticks = now;
   }

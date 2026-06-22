@@ -107,7 +107,8 @@ void RefreshDeviceSources()
     {
       if (!NetPlay::IsWiimotePortMapped(bt_index))
       {
-        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(bt_index));
+        // Unmapped Wii Remote ports must not read local hardware during netplay.
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(nullptr);
         continue;
       }
 

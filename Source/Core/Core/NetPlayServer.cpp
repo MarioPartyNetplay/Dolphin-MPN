@@ -662,11 +662,35 @@ static void DedupePadMappingPlayers(PadMappingArray& pad_map)
   }
 }
 
+// Wii games can expose both GC and Wii Remote columns. Auto-assign fills Wii ports; hosts may
+// later add GC ports without clearing Wii. Dual assignments sync two input streams and desync.
+static void PruneOverlappingWiiControllerMappings(PadMappingArray& pad_map,
+                                                  PadMappingArray& wiimote_map)
+{
+  std::unordered_set<PlayerId> gc_players;
+  for (const PadMapping& mapping : pad_map)
+  {
+    for (const PlayerId pid : mapping.players)
+      gc_players.insert(pid);
+  }
+
+  for (PadMapping& mapping : wiimote_map)
+  {
+    std::erase_if(mapping.players, [&](const PlayerId pid) { return gc_players.contains(pid); });
+  }
+}
+
 // called from ---GUI--- thread
 void NetPlayServer::SetPadMapping(const PadMappingArray& mappings)
 {
   m_pad_map = mappings;
   DedupePadMappingPlayers(m_pad_map);
+  if (m_is_wii_game)
+  {
+    PruneOverlappingWiiControllerMappings(m_pad_map, m_wiimote_map);
+    DedupePadMappingPlayers(m_wiimote_map);
+    UpdateWiimoteMapping();
+  }
   UpdatePadMapping();
 }
 
@@ -1785,6 +1809,13 @@ bool NetPlayServer::RequestStartGame()
     }
   }
 
+  if (m_is_wii_game)
+  {
+    PruneOverlappingWiiControllerMappings(m_pad_map, m_wiimote_map);
+    DedupePadMappingPlayers(m_wiimote_map);
+    UpdateWiimoteMapping();
+  }
+
   if (m_is_wii_game &&
       std::ranges::any_of(m_wiimote_map, [](const PadMapping& mapping) {
         return mapping.players.size() > 1;
@@ -2633,8 +2664,30 @@ bool NetPlayServer::EnsurePortMappingsForPlatform()
 
   if (m_is_wii_game)
   {
-    // Wii games may use Wiimote ports, GameCube ports, or both. Keep both mappings as configured.
-    return false;
+    // A player assigned to a GC port must not also occupy a Wii Remote port. Auto-assign puts
+    // joiners on Wii columns by default; hosts using GC controllers often forget to clear those,
+    // which leaves local unsynced Wii input active and desyncs within the first second.
+    for (const auto& gc_mapping : m_pad_map)
+    {
+      for (const PlayerId pid : gc_mapping.players)
+      {
+        for (auto& wii_mapping : m_wiimote_map)
+        {
+          auto& wii_players = wii_mapping.players;
+          const auto it = std::ranges::find(wii_players, pid);
+          if (it != wii_players.end())
+          {
+            wii_players.erase(it);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed)
+      DedupePadMappingPlayers(m_wiimote_map);
+
+    return changed;
   }
 
   for (unsigned int port = 0; port < m_wiimote_map.size(); ++port)

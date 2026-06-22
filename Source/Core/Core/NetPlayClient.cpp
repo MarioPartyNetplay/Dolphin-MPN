@@ -739,6 +739,7 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
   }
 
   UpdateDevices();
+  ConfigureLocalWiimoteSources();
 
   if (m_is_running.IsSet())
   {
@@ -1902,76 +1903,79 @@ void NetPlayClient::SendStopGamePacket()
 // called from ---GUI--- thread
 bool NetPlayClient::StartGame(const std::string& path)
 {
-  std::lock_guard lkg(m_crit.game);
-  SendStartGamePacket();
+  std::unique_ptr<BootSessionData> boot_session_data;
 
-  if (m_is_running.IsSet())
   {
-    PanicAlertFmtT("Game is already running!");
-    return false;
-  }
+    std::lock_guard lkg(m_crit.game);
+    SendStartGamePacket();
 
-  m_timebase_frame = 0;
-  m_current_golfer = 1;
-  m_wait_on_input = false;
-
-  m_is_running.Set();
-  NetPlay_Enable(this);
-
-  ClearBuffers();
-
-  m_first_pad_status_received.fill(false);
-
-  if (m_dialog->IsRecording())
-  {
-    auto& movie = Core::System::GetInstance().GetMovie();
-    if (movie.IsReadOnly())
-      movie.SetReadOnly(false);
-
-    Movie::ControllerTypeArray controllers{};
-    Movie::WiimoteEnabledArray wiimotes{};
-    for (unsigned int i = 0; i < 4; ++i)
+    if (m_is_running.IsSet())
     {
-      if (!m_pad_map[i].players.empty() && m_gba_config[i].enabled)
-        controllers[i] = Movie::ControllerType::GBA;
-      else if (!m_pad_map[i].players.empty())
-        controllers[i] = Movie::ControllerType::GC;
-      else
-        controllers[i] = Movie::ControllerType::None;
-      wiimotes[i] = !m_wiimote_map[i].players.empty();
+      PanicAlertFmtT("Game is already running!");
+      return false;
     }
-    movie.BeginRecordingInput(controllers, wiimotes);
+
+    m_timebase_frame = 0;
+    m_current_golfer = 1;
+    m_wait_on_input = false;
+
+    m_is_running.Set();
+    NetPlay_Enable(this);
+
+    ClearBuffers();
+
+    m_first_pad_status_received.fill(false);
+
+    if (m_dialog->IsRecording())
+    {
+      auto& movie = Core::System::GetInstance().GetMovie();
+      if (movie.IsReadOnly())
+        movie.SetReadOnly(false);
+
+      Movie::ControllerTypeArray controllers{};
+      Movie::WiimoteEnabledArray wiimotes{};
+      for (unsigned int i = 0; i < 4; ++i)
+      {
+        if (!m_pad_map[i].players.empty() && m_gba_config[i].enabled)
+          controllers[i] = Movie::ControllerType::GBA;
+        else if (!m_pad_map[i].players.empty())
+          controllers[i] = Movie::ControllerType::GC;
+        else
+          controllers[i] = Movie::ControllerType::None;
+        wiimotes[i] = !m_wiimote_map[i].players.empty();
+      }
+      movie.BeginRecordingInput(controllers, wiimotes);
+    }
+
+    m_is_wii_game = false;
+    if (const auto game = m_dialog->FindGameFile(m_selected_game))
+      m_is_wii_game = DiscIO::IsWii(game->GetPlatform());
+
+    ConfigureLocalWiimoteSources();
+    UpdateDevices();
+
+    boot_session_data = std::make_unique<BootSessionData>();
+
+    INFO_LOG_FMT(NETPLAY,
+                 "Setting Wii sync data: has FS {}, sync_titles = {:016x}, redirect folder = {}",
+                 !!m_wii_sync_fs, fmt::join(m_wii_sync_titles, ", "), m_wii_sync_redirect_folder);
+
+    boot_session_data->SetWiiSyncData(std::move(m_wii_sync_fs), std::move(m_wii_sync_titles),
+                                      std::move(m_wii_sync_redirect_folder), [] {
+                                        const std::string wii_path =
+                                            File::GetUserPath(D_USER_IDX) + "Wii" GC_MEMCARD_NETPLAY
+                                            DIR_SEP;
+                                        if (File::Exists(wii_path))
+                                          File::DeleteDirRecursively(wii_path);
+                                        const std::string redirect_path =
+                                            File::GetUserPath(D_USER_IDX) + "Redirect"
+                                            GC_MEMCARD_NETPLAY DIR_SEP;
+                                        if (File::Exists(redirect_path))
+                                          File::DeleteDirRecursively(redirect_path);
+                                      });
+    boot_session_data->SetNetplaySettings(
+        std::make_unique<NetPlay::NetSettings>(m_net_settings));
   }
-
-  m_is_wii_game = false;
-  if (const auto game = m_dialog->FindGameFile(m_selected_game))
-    m_is_wii_game = DiscIO::IsWii(game->GetPlatform());
-
-  ConfigureLocalWiimoteSources();
-  UpdateDevices();
-
-  // boot game
-  auto boot_session_data = std::make_unique<BootSessionData>();
-
-  INFO_LOG_FMT(NETPLAY,
-               "Setting Wii sync data: has FS {}, sync_titles = {:016x}, redirect folder = {}",
-               !!m_wii_sync_fs, fmt::join(m_wii_sync_titles, ", "), m_wii_sync_redirect_folder);
-
-  boot_session_data->SetWiiSyncData(std::move(m_wii_sync_fs), std::move(m_wii_sync_titles),
-                                    std::move(m_wii_sync_redirect_folder), [] {
-                                      // on emulation end clean up the Wii save sync directory --
-                                      // see OnSyncSaveDataWii()
-                                      const std::string wii_path = File::GetUserPath(D_USER_IDX) +
-                                                                   "Wii" GC_MEMCARD_NETPLAY DIR_SEP;
-                                      if (File::Exists(wii_path))
-                                        File::DeleteDirRecursively(wii_path);
-                                      const std::string redirect_path =
-                                          File::GetUserPath(D_USER_IDX) +
-                                          "Redirect" GC_MEMCARD_NETPLAY DIR_SEP;
-                                      if (File::Exists(redirect_path))
-                                        File::DeleteDirRecursively(redirect_path);
-                                    });
-  boot_session_data->SetNetplaySettings(std::make_unique<NetPlay::NetSettings>(m_net_settings));
 
   m_dialog->BootGame(path, std::move(boot_session_data));
 
@@ -2465,7 +2469,7 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
     for (const WiimoteDataBatchEntry& entry : entries)
     {
       if (wiimote_map[entry.wiimote].players.empty() ||
-          InGameToLocal(entry.wiimote, wiimote_map, m_local_player->pid) >= 4)
+          InGameWiimoteToLocalWiimote(entry.wiimote) >= 4)
       {
         *entry.state = neutral_state;
       }
@@ -2498,6 +2502,21 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
 
   for (const WiimoteDataBatchEntry& entry : entries)
   {
+    if (wiimote_map[entry.wiimote].players.empty())
+      continue;
+
+    const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
+    if (local_wiimote >= 4)
+      continue;
+
+    sf::Packet packet;
+    packet << MessageID::WiimoteData;
+    if (AddLocalWiimoteToBuffer(local_wiimote, *entry.state, packet))
+      SendAsync(std::move(packet));
+  }
+
+  for (const WiimoteDataBatchEntry& entry : entries)
+  {
     // If no player is assigned to this Wiimote port nobody will ever send
     // data for it, so return neutral state immediately to avoid a softlock.
     if (wiimote_map[entry.wiimote].players.empty())
@@ -2506,18 +2525,11 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
       continue;
     }
 
-    const int local_wiimote = InGameToLocal(entry.wiimote, wiimote_map, m_local_player->pid);
+    const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
     DEBUG_LOG_FMT(NETPLAY,
                   "Entering WiimoteUpdate() with wiimote {}, local_wiimote {}, state [{:02x}]",
                   entry.wiimote, local_wiimote,
                   fmt::join(std::span(entry.state->data.data(), entry.state->length), ", "));
-    if (local_wiimote < 4)
-    {
-      sf::Packet packet;
-      packet << MessageID::WiimoteData;
-      if (AddLocalWiimoteToBuffer(local_wiimote, *entry.state, packet))
-        SendAsync(std::move(packet));
-    }
 
     // Wait for data pushed locally (AddLocalWiimoteToBuffer) or relayed from
     // the server via OnWiimoteData.
@@ -3211,20 +3223,28 @@ void NetPlay_Disable()
 // Actual Core function which is called on every frame
 bool SerialInterface::CSIDevice_GCController::NetPlay_GetInput(int pad_num, GCPadStatus* status)
 {
-  std::lock_guard lk(NetPlay::crit_netplay_client);
+  NetPlay::NetPlayClient* client = nullptr;
+  {
+    std::lock_guard lk(NetPlay::crit_netplay_client);
+    client = NetPlay::netplay_client;
+  }
 
-  if (NetPlay::netplay_client)
-    return NetPlay::netplay_client->GetNetPads(pad_num, NetPlay::s_si_poll_batching, status);
+  if (client)
+    return client->GetNetPads(pad_num, NetPlay::s_si_poll_batching, status);
 
   return false;
 }
 
 bool NetPlay::NetPlay_GetWiimoteData(const std::span<NetPlayClient::WiimoteDataBatchEntry>& entries)
 {
-  std::lock_guard lk(crit_netplay_client);
+  NetPlayClient* client = nullptr;
+  {
+    std::lock_guard lk(crit_netplay_client);
+    client = netplay_client;
+  }
 
-  if (netplay_client)
-    return netplay_client->WiimoteUpdate(entries);
+  if (client)
+    return client->WiimoteUpdate(entries);
 
   return false;
 }
