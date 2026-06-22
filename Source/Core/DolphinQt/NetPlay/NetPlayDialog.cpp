@@ -441,29 +441,17 @@ void NetPlayDialog::ConnectWidgets()
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
     if (state == Core::State::Uninitialized)
     {
-      SetNetPlayChatUI({});
-      SetNetPlayGolfUI({});
-
-      // ForceStop and other paths may stop the core without running NetPlayClient::StopGame().
-      if (const auto client = Settings::Instance().GetNetPlayClient())
-        client->InvokeStop();
-    }
-
-    if (isVisible())
-    {
-      GameStatusChanged(state != Core::State::Uninitialized);
-      if ((state == Core::State::Uninitialized || state == Core::State::Stopping) &&
-          !m_got_stop_request)
+      if (isVisible())
       {
-        m_stop_player_name = m_nickname;
-        if (const auto client = Settings::Instance().GetNetPlayClient())
-          client->RequestStopGame();
-      }
-      if (state == Core::State::Uninitialized)
-      {
+        GameStatusChanged(false);
+
+        if (m_stop_player_name.empty())
+          m_stop_player_name = m_nickname;
+
         if (!m_stop_player_name.empty())
         {
-          DisplayMessage(tr("%1 stopped the session").arg(QString::fromStdString(m_stop_player_name)),
+          DisplayMessage(tr("%1 stopped the session")
+                             .arg(QString::fromStdString(m_stop_player_name)),
                          "red");
         }
         else
@@ -471,6 +459,26 @@ void NetPlayDialog::ConnectWidgets()
           DisplayMessage(tr("Stopped game"), "red");
         }
         m_stop_player_name.clear();
+      }
+
+      SetNetPlayChatUI({});
+      SetNetPlayGolfUI({});
+
+      // ForceStop and other paths may stop the core without running NetPlayClient::StopGame().
+      if (const auto client = Settings::Instance().GetNetPlayClient())
+        client->InvokeStop();
+    }
+    else if (isVisible())
+    {
+      GameStatusChanged(state != Core::State::Uninitialized);
+      if (state == Core::State::Stopping && m_stop_player_name.empty())
+      {
+        m_stop_player_name = m_nickname;
+        if (!m_got_stop_request)
+        {
+          if (const auto client = Settings::Instance().GetNetPlayClient())
+            client->RequestStopGame();
+        }
       }
     }
   });
@@ -840,7 +848,11 @@ void NetPlayDialog::StopGame()
   m_got_stop_request = true;
   // NetPlayClient::StopGame() is invoked from the netplay thread; Core::Stop must run on the GUI
   // thread.
-  QueueOnObject(this, [this] { emit Stop(); });
+  QueueOnObject(this, [this] {
+    if (m_stop_player_name.empty())
+      m_stop_player_name = m_nickname;
+    emit Stop();
+  });
 }
 
 bool NetPlayDialog::IsHosting() const
@@ -971,10 +983,11 @@ void NetPlayDialog::OnMsgStartGame()
 
 void NetPlayDialog::OnMsgStopGame(const std::string& player_name)
 {
-  m_stop_player_name = player_name;
-  // Overlay teardown is deferred to GameStatusChanged() once emulation has fully stopped, so the
-  // video thread cannot call Display() on a destroyed NetPlayChatUI/NetPlayGolfUI.
-  QueueOnObject(this, [this] { UpdateDiscordPresence(); });
+  QueueOnObject(this, [this, player_name] {
+    if (!player_name.empty())
+      m_stop_player_name = player_name;
+    UpdateDiscordPresence();
+  });
 }
 
 void NetPlayDialog::OnMsgPowerButton()

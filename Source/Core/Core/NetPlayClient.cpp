@@ -1087,23 +1087,25 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
 void NetPlayClient::OnStopGame(sf::Packet& packet)
 {
   PlayerId pid = 0;
+  std::string player_name;
+
   if (packet.getDataSize() - packet.getReadPosition() >= sizeof(PlayerId))
     packet >> pid;
 
-  std::string player_name;
+  if (packet.getDataSize() > packet.getReadPosition())
+    packet >> player_name;
+
+  if (player_name.empty() && pid != 0)
   {
     std::lock_guard lkp(m_crit.players);
-    const auto it = m_players.find(pid);
-    if (it != m_players.end())
+    if (const auto it = m_players.find(pid); it != m_players.end())
       player_name = it->second.name;
   }
 
   INFO_LOG_FMT(NETPLAY, "Game stopped by {}",
                player_name.empty() ? "unknown player" : player_name);
 
-  if (!player_name.empty())
-    m_dialog->OnMsgStopGame(player_name);
-
+  m_dialog->OnMsgStopGame(player_name);
   StopGame();
 }
 
