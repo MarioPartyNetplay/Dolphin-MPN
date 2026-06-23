@@ -157,6 +157,7 @@ enum class MessageID : u8
 
   WiimoteData = 0x70,
   WiimoteMapping = 0x71,
+  WiimoteHostData = 0x72,
 
   GolfRequest = 0x90,
   GolfSwitch = 0x91,
@@ -276,6 +277,7 @@ void SyncLocalSIDevices();
 void SyncLocalWiimoteSources();
 bool IsWiimotePortMapped(unsigned int port);
 bool IsLocalWiimotePort(unsigned int port);
+bool IsSharedWiimotePort(unsigned int port);
 void SetSIPollBatching(bool state);
 void SendPowerButtonEvent();
 std::string GetGBASavePath(int pad_num);

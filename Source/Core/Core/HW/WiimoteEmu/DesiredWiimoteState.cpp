@@ -16,11 +16,14 @@
 
 namespace WiimoteEmu
 {
-SerializedWiimoteState SerializeDesiredState(const DesiredWiimoteState& state)
+SerializedWiimoteState SerializeDesiredState(const DesiredWiimoteState& state,
+                                             const bool include_all_sensors)
 {
   const u8 has_buttons = (state.buttons.hex & WiimoteCommon::ButtonData::BUTTON_MASK) != 0 ? 1 : 0;
-  const u8 has_accel = state.acceleration != DesiredWiimoteState::DEFAULT_ACCELERATION ? 1 : 0;
-  const u8 has_camera = state.camera_points != DesiredWiimoteState::DEFAULT_CAMERA ? 1 : 0;
+  const u8 has_accel =
+      include_all_sensors || state.acceleration != DesiredWiimoteState::DEFAULT_ACCELERATION ? 1 : 0;
+  const u8 has_camera =
+      include_all_sensors || state.camera_points != DesiredWiimoteState::DEFAULT_CAMERA ? 1 : 0;
   const u8 has_motion_plus = state.motion_plus.has_value() ? 1 : 0;
 
   // Right now we support < 16 extensions so the info which extension is in use fits into 4 bits.
@@ -114,6 +117,60 @@ SerializedWiimoteState SerializeDesiredState(const DesiredWiimoteState& state)
   }
 
   return s;
+}
+
+SerializedWiimoteState SerializeDesiredStateForNetplay(const DesiredWiimoteState& state)
+{
+  return SerializeDesiredState(state, true);
+}
+
+static int AccelDeviationSq(const WiimoteCommon::AccelData& accel)
+{
+  const auto& neutral = DesiredWiimoteState::DEFAULT_ACCELERATION;
+  const int dx = static_cast<int>(accel.value.x) - static_cast<int>(neutral.value.x);
+  const int dy = static_cast<int>(accel.value.y) - static_cast<int>(neutral.value.y);
+  const int dz = static_cast<int>(accel.value.z) - static_cast<int>(neutral.value.z);
+  return dx * dx + dy * dy + dz * dz;
+}
+
+static int CameraActivityScore(const std::array<CameraPoint, 4>& camera)
+{
+  int score = 0;
+  for (const CameraPoint& point : camera)
+  {
+    if (point.position.x != 0xffff && point.position.y != 0xffff)
+      score += 1000 + point.size;
+  }
+  return score;
+}
+
+static int GyroMagnitudeSq(const MotionPlus::DataFormat::Data& motion_plus)
+{
+  const auto& g = motion_plus.gyro.value;
+  return static_cast<int>(g.x) * g.x + static_cast<int>(g.y) * g.y + static_cast<int>(g.z) * g.z;
+}
+
+bool DesiredWiimoteStateHasActivity(const DesiredWiimoteState& state)
+{
+  if (state.buttons.hex & WiimoteCommon::ButtonData::BUTTON_MASK)
+    return true;
+
+  if (CameraActivityScore(state.camera_points) > 0)
+    return true;
+
+  // Ignore gravity so idle remotes stay symmetric across peers.
+  constexpr int accel_deadzone_sq = 32 * 32;
+  if (AccelDeviationSq(state.acceleration) > accel_deadzone_sq)
+    return true;
+
+  if (state.motion_plus)
+  {
+    constexpr int gyro_deadzone_sq = 8 * 8;
+    if (GyroMagnitudeSq(*state.motion_plus) > gyro_deadzone_sq)
+      return true;
+  }
+
+  return false;
 }
 
 bool DeserializeDesiredState(DesiredWiimoteState* state, const SerializedWiimoteState& serialized)

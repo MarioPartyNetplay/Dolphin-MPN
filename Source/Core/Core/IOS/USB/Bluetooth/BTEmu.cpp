@@ -62,8 +62,7 @@ BluetoothEmuDevice::BluetoothEmuDevice(EmulationKernel& ios, const std::string& 
     DEBUG_LOG_FMT(IOS_WIIMOTE, "Wii Remote {} BT ID {:x},{:x},{:x},{:x},{:x},{:x}", i, tmp_bd[0],
                   tmp_bd[1], tmp_bd[2], tmp_bd[3], tmp_bd[4], tmp_bd[5]);
 
-    const unsigned int hid_source_number =
-        NetPlay::IsNetPlayRunning() ? NetPlay::NetPlay_GetLocalWiimoteForSlot(i) : i;
+    const unsigned int hid_source_number = i;
     m_wiimotes[i] = std::make_unique<WiimoteDevice>(this, tmp_bd, hid_source_number);
   }
 
@@ -352,7 +351,7 @@ void BluetoothEmuDevice::Update()
     g_controller_interface.SetCurrentInputChannel(ciface::InputChannel::Bluetooth);
     g_controller_interface.UpdateInput();
 
-    std::array<WiimoteEmu::DesiredWiimoteState, MAX_BBMOTES> wiimote_states;
+    std::array<WiimoteEmu::DesiredWiimoteState, MAX_BBMOTES> wiimote_states{};
     std::array<WiimoteDevice::NextUpdateInputCall, MAX_BBMOTES> next_call;
 
     for (size_t i = 0; i < m_wiimotes.size(); ++i)
@@ -366,9 +365,6 @@ void BluetoothEmuDevice::Update()
       for (size_t i = 0; i < 4; ++i)
       {
         if (!NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
-          continue;
-
-        if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
           continue;
 
         serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
@@ -394,13 +390,7 @@ void BluetoothEmuDevice::Update()
         for (size_t j = 0; j < batch_count; ++j)
         {
           const size_t i = batch[j].wiimote;
-
-          if (wiimote_states[i].buttons.hex & WiimoteCommon::ButtonData::BUTTON_MASK)
-            next_call[i] = WiimoteDevice::NextUpdateInputCall::Activate;
-          else if (m_wiimotes[i]->IsConnected())
-            next_call[i] = WiimoteDevice::NextUpdateInputCall::Update;
-          else
-            next_call[i] = WiimoteDevice::NextUpdateInputCall::None;
+          next_call[i] = m_wiimotes[i]->GetNetplayUpdateCall(wiimote_states[i]);
         }
       }
     }

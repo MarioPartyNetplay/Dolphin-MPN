@@ -142,7 +142,8 @@ void PadMappingDialog::SetIsWiiGame(bool is_wii_game)
   {
     m_help_label->setText(
         tr("Assign each player to a Wii Remote port. Enable \"%1\" below for games that also "
-           "support the GameCube Controller. Multiple players cannot share a Wii Remote port.")
+           "support the GameCube Controller. Multiple players can share the same Wii Remote port "
+           "(inputs are combined).")
             .arg(tr("GameCube controllers (optional)")));
     for (int col = static_cast<int>(Column::Wii1); col <= static_cast<int>(Column::Wii4); ++col)
       m_mapping_table->setColumnHidden(col, false);
@@ -175,15 +176,6 @@ int PadMappingDialog::exec()
 void PadMappingDialog::accept()
 {
   SyncMappingsFromWidgets();
-
-  if (m_is_wii_game && HasSharedWiiPort())
-  {
-    QMessageBox::warning(
-        this, tr("Invalid Wii Remote layout"),
-        tr("Multiple players cannot share a Wii Remote port. Assign each player to their own Wii "
-           "Remote port."));
-    return;
-  }
 
   if (m_is_wii_game)
   {
@@ -565,14 +557,6 @@ void PadMappingDialog::ClearGcMappingsInTable()
   SyncMappingsFromWidgets();
 }
 
-bool PadMappingDialog::HasSharedWiiPort() const
-{
-  return std::ranges::any_of(m_wii_mapping,
-                             [](const NetPlay::PadMapping& mapping) {
-                               return mapping.players.size() > 1;
-                             });
-}
-
 void PadMappingDialog::OnMappingItemChanged(QTableWidgetItem* item)
 {
   if (!item || item->column() == static_cast<int>(Column::Player))
@@ -601,20 +585,6 @@ void PadMappingDialog::OnMappingItemChanged(QTableWidgetItem* item)
   }
 
   SyncMappingsFromWidgets();
-
-  if (m_is_wii_game && IsWiiColumn(item->column()) && HasSharedWiiPort())
-  {
-    const int port = PortForColumn(item->column());
-    QMessageBox::warning(
-        this, tr("Invalid Wii Remote layout"),
-        tr("Multiple players cannot share Wii Remote port %1. Assign each player to a different "
-           "Wii Remote port.")
-            .arg(port + 1));
-
-    const QSignalBlocker blocker(m_mapping_table);
-    item->setCheckState(Qt::Unchecked);
-    SyncMappingsFromWidgets();
-  }
 
   UpdateSummary();
 }

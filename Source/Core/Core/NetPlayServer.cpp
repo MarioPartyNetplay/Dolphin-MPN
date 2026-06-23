@@ -514,10 +514,6 @@ void NetPlayServer::ClearPlayerInputState(const PlayerId pid)
     port_queues.erase(pid);
   for (auto& port_queues : m_wiimote_input_queues)
     port_queues.erase(pid);
-  for (auto& held : m_wiimote_held_input)
-    held.erase(pid);
-  for (auto& valid : m_wiimote_held_valid)
-    valid.erase(pid);
 }
 
 bool NetPlayServer::ShouldStopGameOnDisconnect(const PlayerId pid) const
@@ -719,8 +715,6 @@ void NetPlayServer::SetWiimoteMapping(const PadMappingArray& mappings)
 {
   m_wiimote_map = mappings;
   DedupePadMappingPlayers(m_wiimote_map);
-  if (m_is_running)
-    InitWiimoteHeldInputs();
   UpdateWiimoteMapping();
 }
 
@@ -1089,7 +1083,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     if (!single_player_inputs.empty())
     {
       sf::Packet spac;
-      spac << MessageID::WiimoteData;
+      spac << (m_host_input_authority ? MessageID::WiimoteHostData : MessageID::WiimoteData);
 
       for (const auto& [map, pad] : single_player_inputs)
       {
@@ -1099,8 +1093,52 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
           spac << pad.data[i];
       }
 
-      SendToClients(spac, player.pid);
+      if (m_host_input_authority)
+      {
+        // Prevent crash before game stop if the golfer disconnects
+        if (m_current_golfer != 0 && m_players.find(m_current_golfer) != m_players.end())
+          Send(m_players.at(m_current_golfer).socket, spac);
+      }
+      else
+      {
+        SendToClients(spac, player.pid);
+      }
     }
+  }
+  break;
+
+  case MessageID::WiimoteHostData:
+  {
+    // Skip input synchronization if BBA mode is enabled
+    if (false)  // BBA mode removed
+      break;
+
+    // Kick player if they're not the golfer.
+    if (m_current_golfer != 0 && player.pid != m_current_golfer)
+      return 1;
+
+    sf::Packet spac;
+    spac << MessageID::WiimoteData;
+
+    while (!packet.endOfPacket())
+    {
+      PadIndex map;
+      packet >> map;
+
+      WiimoteEmu::SerializedWiimoteState pad;
+      packet >> pad.length;
+      if (pad.length > pad.data.size())
+        return 1;
+      for (size_t i = 0; i < pad.length; ++i)
+        packet >> pad.data[i];
+
+      spac << map;
+      spac << pad.length;
+      for (size_t i = 0; i < pad.length; ++i)
+        spac << pad.data[i];
+    }
+
+    SendToClients(spac, player.pid);
   }
   break;
 
@@ -1816,17 +1854,6 @@ bool NetPlayServer::RequestStartGame()
     UpdateWiimoteMapping();
   }
 
-  if (m_is_wii_game &&
-      std::ranges::any_of(m_wiimote_map, [](const PadMapping& mapping) {
-        return mapping.players.size() > 1;
-      }))
-  {
-    PanicAlertFmtT(
-        "Multiple players cannot share a Wii Remote port. Assign each player to their own Wii "
-        "Remote port in the controller assignment dialog.");
-    return false;
-  }
-
   if (!SetupNetSettings())
     return false;
 
@@ -1975,13 +2002,10 @@ bool NetPlayServer::StartGame()
   // Wait a moment for all configuration to be processed
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  // Shared Wii ports need held-input state before clients boot and send WiimoteData.
-  // TryEmitAggregatedWiimoteInputs stalls when a contributor's held sample is not valid.
   for (auto& pad_queues : m_pad_input_queues)
     pad_queues.clear();
   for (auto& wii_queues : m_wiimote_input_queues)
     wii_queues.clear();
-  InitWiimoteHeldInputs();
 
   // tell clients to start game
   sf::Packet spac;
@@ -2718,27 +2742,6 @@ bool NetPlayServer::EnsurePortMappingsForPlatform()
   return changed;
 }
 
-void NetPlayServer::InitWiimoteHeldInputs()
-{
-  const WiimoteEmu::SerializedWiimoteState default_wii =
-      WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
-
-  for (unsigned int i = 0; i < 4; ++i)
-  {
-    m_wiimote_held_input[i].clear();
-    m_wiimote_held_valid[i].clear();
-
-    if (m_wiimote_map[i].players.size() <= 1)
-      continue;
-
-    for (const PlayerId pid : m_wiimote_map[i].players)
-    {
-      m_wiimote_held_input[i][pid] = default_wii;
-      m_wiimote_held_valid[i][pid] = true;
-    }
-  }
-}
-
 PlayerId NetPlayServer::GiveFirstAvailableIDTo(ENetPeer* player)
 {
   PlayerId pid = 1;
@@ -3157,55 +3160,43 @@ void NetPlayServer::TryEmitAggregatedWiimoteInputs(PadIndex pad_index)
   if (wii_players.size() <= 1)
     return;
 
-  const WiimoteEmu::SerializedWiimoteState default_wii =
-      WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
-
   auto& wii_queues = m_wiimote_input_queues[pad_index];
 
   while (true)
   {
-    bool any_new = false;
+    for (const PlayerId player_id : wii_players)
+    {
+      if (wii_queues[player_id].empty())
+        return;
+    }
+
     std::vector<WiimoteEmu::SerializedWiimoteState> inputs;
     inputs.reserve(wii_players.size());
 
     for (const PlayerId player_id : wii_players)
     {
-      if (!m_players.contains(player_id))
-        continue;
-
-      auto& queue = wii_queues[player_id];
-      WiimoteEmu::SerializedWiimoteState& held = m_wiimote_held_input[pad_index][player_id];
-      bool& valid = m_wiimote_held_valid[pad_index][player_id];
-
-      if (!queue.empty())
-      {
-        held = queue.front();
-        queue.pop_front();
-        valid = true;
-        any_new = true;
-      }
-      else if (!valid)
-      {
-        held = default_wii;
-        valid = true;
-      }
-
-      inputs.push_back(held);
+      inputs.push_back(wii_queues[player_id].front());
+      wii_queues[player_id].pop_front();
     }
-
-    if (!any_new || inputs.empty())
-      return;
 
     const WiimoteEmu::SerializedWiimoteState aggregated = CombineWiimoteInputs(inputs);
 
     sf::Packet spac;
-    spac << MessageID::WiimoteData;
+    spac << (m_host_input_authority ? MessageID::WiimoteHostData : MessageID::WiimoteData);
     spac << pad_index;
     spac << aggregated.length;
     for (size_t i = 0; i < aggregated.length; ++i)
       spac << aggregated.data[i];
 
-    SendToClients(spac);
+    if (m_host_input_authority)
+    {
+      if (m_current_golfer != 0 && m_players.contains(m_current_golfer))
+        Send(m_players.at(m_current_golfer).socket, spac);
+    }
+    else
+    {
+      SendToClients(spac);
+    }
   }
 }
 
@@ -3216,6 +3207,23 @@ static int AccelDeviationSq(const WiimoteCommon::AccelData& accel)
   const int dy = static_cast<int>(accel.value.y) - static_cast<int>(neutral.value.y);
   const int dz = static_cast<int>(accel.value.z) - static_cast<int>(neutral.value.z);
   return dx * dx + dy * dy + dz * dz;
+}
+
+static int CameraActivityScore(const std::array<WiimoteEmu::CameraPoint, 4>& camera)
+{
+  int score = 0;
+  for (const WiimoteEmu::CameraPoint& point : camera)
+  {
+    if (point.position.x != 0xffff && point.position.y != 0xffff)
+      score += 1000 + point.size;
+  }
+  return score;
+}
+
+static int GyroMagnitudeSq(const WiimoteEmu::MotionPlus::DataFormat::Data& motion_plus)
+{
+  const auto& g = motion_plus.gyro.value;
+  return static_cast<int>(g.x) * g.x + static_cast<int>(g.y) * g.y + static_cast<int>(g.z) * g.z;
 }
 
 static void PickPrimaryU8Stick(u8& out_x, u8& out_y, u8 in_x, u8 in_y, u8 center_x, u8 center_y)
@@ -3244,16 +3252,6 @@ static void AssignDesiredExtensionState(WiimoteEmu::DesiredExtensionState& dst,
           dst.data.emplace<T>(in);
       },
       src.data);
-}
-
-static void AssignDesiredWiimoteState(WiimoteEmu::DesiredWiimoteState& dst,
-                                      const WiimoteEmu::DesiredWiimoteState& src)
-{
-  dst.buttons = src.buttons;
-  dst.acceleration = src.acceleration;
-  dst.camera_points = src.camera_points;
-  dst.motion_plus = src.motion_plus;
-  AssignDesiredExtensionState(dst.extension, src.extension);
 }
 
 static void MergeWiimoteExtension(WiimoteEmu::DesiredExtensionState& result,
@@ -3321,57 +3319,65 @@ static void MergeDesiredWiimoteState(WiimoteEmu::DesiredWiimoteState& result,
                                      const WiimoteEmu::DesiredWiimoteState& input)
 {
   result.buttons.hex |= input.buttons.hex & WiimoteCommon::ButtonData::BUTTON_MASK;
-
-  if (AccelDeviationSq(input.acceleration) > AccelDeviationSq(result.acceleration))
-    result.acceleration = input.acceleration;
-
-  if (input.camera_points != WiimoteEmu::DesiredWiimoteState::DEFAULT_CAMERA &&
-      result.camera_points == WiimoteEmu::DesiredWiimoteState::DEFAULT_CAMERA)
-  {
-    result.camera_points = input.camera_points;
-  }
-
-  if (input.motion_plus)
-  {
-    const auto gyro_mag_sq = [](const WiimoteEmu::MotionPlus::DataFormat::Data& mp) {
-      const auto& g = mp.gyro.value;
-      return static_cast<int>(g.x) * g.x + static_cast<int>(g.y) * g.y +
-             static_cast<int>(g.z) * g.z;
-    };
-
-    if (!result.motion_plus || gyro_mag_sq(*input.motion_plus) > gyro_mag_sq(*result.motion_plus))
-      result.motion_plus = input.motion_plus;
-  }
-
   MergeWiimoteExtension(result.extension, input.extension);
 }
 
 WiimoteEmu::SerializedWiimoteState NetPlayServer::CombineWiimoteInputs(
     const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs)
 {
-  WiimoteEmu::DesiredWiimoteState result{};
-  bool has_result = false;
+  if (inputs.empty())
+    return WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
+
+  std::vector<WiimoteEmu::DesiredWiimoteState> states;
+  states.reserve(inputs.size());
 
   for (const WiimoteEmu::SerializedWiimoteState& serialized : inputs)
   {
     WiimoteEmu::DesiredWiimoteState state{};
-    if (!WiimoteEmu::DeserializeDesiredState(&state, serialized))
-      continue;
+    if (WiimoteEmu::DeserializeDesiredState(&state, serialized))
+      states.push_back(std::move(state));
+  }
 
-    if (!has_result)
+  if (states.empty())
+    return inputs.front();
+
+  WiimoteEmu::DesiredWiimoteState result{};
+
+  // Buttons are combined; Wii sensor channels use the strongest contributor (like GC sticks).
+  for (const WiimoteEmu::DesiredWiimoteState& state : states)
+    MergeDesiredWiimoteState(result, state);
+
+  for (const WiimoteEmu::DesiredWiimoteState& state : states)
+  {
+    if (AccelDeviationSq(state.acceleration) > AccelDeviationSq(result.acceleration))
+      result.acceleration = state.acceleration;
+  }
+
+  int best_camera_score = -1;
+  for (const WiimoteEmu::DesiredWiimoteState& state : states)
+  {
+    const int score = CameraActivityScore(state.camera_points);
+    if (score > best_camera_score)
     {
-      AssignDesiredWiimoteState(result, state);
-      has_result = true;
-    }
-    else
-    {
-      MergeDesiredWiimoteState(result, state);
+      best_camera_score = score;
+      result.camera_points = state.camera_points;
     }
   }
 
-  if (!has_result)
-    return inputs.front();
+  int best_gyro_sq = -1;
+  for (const WiimoteEmu::DesiredWiimoteState& state : states)
+  {
+    if (!state.motion_plus)
+      continue;
 
-  return WiimoteEmu::SerializeDesiredState(result);
+    const int gyro_sq = GyroMagnitudeSq(*state.motion_plus);
+    if (gyro_sq > best_gyro_sq)
+    {
+      best_gyro_sq = gyro_sq;
+      result.motion_plus = state.motion_plus;
+    }
+  }
+
+  return WiimoteEmu::SerializeDesiredStateForNetplay(result);
 }
 }  // namespace NetPlay

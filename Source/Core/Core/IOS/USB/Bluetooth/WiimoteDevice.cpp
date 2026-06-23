@@ -24,6 +24,7 @@
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
 #include "Core/IOS/USB/Bluetooth/WiimoteHIDAttr.h"
 #include "Core/IOS/USB/Bluetooth/l2cap.h"
+#include "Core/NetPlayProto.h"
 #include "Core/System.h"
 
 namespace IOS::HLE
@@ -74,7 +75,8 @@ WiimoteDevice::WiimoteDevice(BluetoothEmuDevice* host, bdaddr_t bd, unsigned int
     hid_source->SetWiimoteDeviceIndex(GetNumber());
 
     // UGLY: This prevents an OSD message in SetSource -> Activate.
-    SetBasebandState(BasebandState::RequestConnection);
+    if (!(NetPlay::IsNetPlayRunning() && NetPlay::IsWiimotePortMapped(GetNumber())))
+      SetBasebandState(BasebandState::RequestConnection);
   }
 
   SetSource(hid_source);
@@ -114,6 +116,7 @@ void WiimoteDevice::DoState(PointerWrap& p)
   p.Do(m_name);
   p.Do(m_channels);
   p.Do(m_connection_request_counter);
+  p.Do(m_netplay_prev_button_mask);
 }
 
 u32 WiimoteDevice::GetNumber() const
@@ -221,8 +224,13 @@ void WiimoteDevice::Activate(bool connect)
   {
     SetBasebandState(BasebandState::RequestConnection);
 
-    Core::DisplayMessage(fmt::format("Wii Remote {} connected", GetNumber() + 1),
-                         CONNECTION_MESSAGE_TIME);
+    // Netplay drives connection from synced input; suppress per-frame OSD spam while the game
+    // completes the Bluetooth link.
+    if (!(NetPlay::IsNetPlayRunning() && NetPlay::IsWiimotePortMapped(GetNumber())))
+    {
+      Core::DisplayMessage(fmt::format("Wii Remote {} connected", GetNumber() + 1),
+                           CONNECTION_MESSAGE_TIME);
+    }
   }
   else if (!connect && IsConnected())
   {
@@ -280,6 +288,9 @@ void WiimoteDevice::EventDisconnect(u8 reason)
 
 void WiimoteDevice::SetSource(WiimoteCommon::HIDWiimote* hid_source)
 {
+  if (m_hid_source == hid_source)
+    return;
+
   if (m_hid_source && IsConnected())
   {
     Activate(false);
@@ -291,12 +302,19 @@ void WiimoteDevice::SetSource(WiimoteCommon::HIDWiimote* hid_source)
   {
     m_hid_source->SetInterruptCallback(
         std::bind_front(&WiimoteDevice::InterruptDataInputCallback, this));
-    Activate(true);
+
+    // Netplay applies only server-synced input on the emulated sink. Do not start a local
+    // connection here; synced button presses drive Activate() on every peer together.
+    if (NetPlay::IsNetPlayRunning() && NetPlay::IsWiimotePortMapped(GetNumber()))
+      SetBasebandState(BasebandState::Inactive);
+    else
+      Activate(true);
   }
 }
 
 void WiimoteDevice::Reset()
 {
+  m_netplay_prev_button_mask = 0;
   SetBasebandState(BasebandState::Inactive);
   m_hid_state = HIDState::Inactive;
   m_channels = {};
@@ -350,6 +368,11 @@ WiimoteDevice::PrepareInput(WiimoteEmu::DesiredWiimoteState* wiimote_state)
   if (!IsSourceValid())
     return NextUpdateInputCall::None;
 
+  // Netplay overwrites input from the server-combined stream. Reading local hardware here would
+  // leak unsynced state and can spuriously drive connection attempts before synced data arrives.
+  if (NetPlay::IsNetPlayRunning() && NetPlay::IsWiimotePortMapped(GetNumber()))
+    return NextUpdateInputCall::None;
+
   if (m_baseband_state == BasebandState::Inactive)
   {
     // Allow button press to trigger activation after a second of no connection activity.
@@ -372,6 +395,32 @@ WiimoteDevice::PrepareInput(WiimoteEmu::DesiredWiimoteState* wiimote_state)
                                    WiimoteCommon::HIDWiimote::SensorBarState::Disabled);
     return NextUpdateInputCall::Update;
   }
+  return NextUpdateInputCall::None;
+}
+
+WiimoteDevice::NextUpdateInputCall
+WiimoteDevice::GetNetplayUpdateCall(const WiimoteEmu::DesiredWiimoteState& synced_state)
+{
+  const u8 button_mask = synced_state.buttons.hex & WiimoteCommon::ButtonData::BUTTON_MASK;
+
+  if (IsConnected())
+  {
+    m_netplay_prev_button_mask = button_mask;
+    return NextUpdateInputCall::Update;
+  }
+
+  if (m_baseband_state != BasebandState::Inactive)
+    return NextUpdateInputCall::None;
+
+  if (m_connection_request_counter != 0)
+    return NextUpdateInputCall::None;
+
+  const bool rising_edge = button_mask != 0 && m_netplay_prev_button_mask == 0;
+  m_netplay_prev_button_mask = button_mask;
+
+  if (rising_edge)
+    return NextUpdateInputCall::Activate;
+
   return NextUpdateInputCall::None;
 }
 

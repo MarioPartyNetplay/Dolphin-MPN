@@ -72,22 +72,14 @@ void UpdateSource(unsigned int index)
 
   if (NetPlay::IsNetPlayRunning())
   {
-    for (unsigned int bt_index = 0; bt_index < MAX_BBMOTES; ++bt_index)
+    if (index < MAX_BBMOTES && NetPlay::IsWiimotePortMapped(index))
     {
-      if (!NetPlay::IsWiimotePortMapped(bt_index))
-        continue;
-
-      if (NetPlay::IsLocalWiimotePort(bt_index))
-      {
-        if (NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index) == index)
-          bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(index));
-      }
-      else if (index == bt_index)
-      {
-        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(
-            static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(bt_index)));
-      }
+      // Every mapped port applies only server-synced input through the port-index emulated
+      // controller. Local hardware is read separately in PollLocalWiimote (same as GC pads).
+      bluetooth->AccessWiimoteByIndex(index)->SetSource(
+          static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(index)));
     }
+    return;
   }
   else
   {
@@ -112,18 +104,10 @@ void RefreshDeviceSources()
         continue;
       }
 
-      if (NetPlay::IsLocalWiimotePort(bt_index))
-      {
-        const unsigned int config_index = NetPlay::NetPlay_GetLocalWiimoteForSlot(bt_index);
-        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(GetHIDWiimoteSource(config_index));
-      }
-      else
-      {
-        // Remote player's Wii Remote: use the port-index emulated controller so local physical
-        // input cannot leak in; netplay supplies the authoritative state on every peer.
-        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(
-            static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(bt_index)));
-      }
+      // Every mapped port uses the port-index emulated controller for applying synced input.
+      // Local hardware is read separately in PollLocalWiimote (same model as GC pads).
+      bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(
+          static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(bt_index)));
     }
   }
   else

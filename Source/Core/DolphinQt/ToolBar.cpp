@@ -118,7 +118,7 @@ void ToolBar::MakeActions()
 
   addSeparator();
 
-  m_pause_play_action = addAction(tr("Local Play"), this, &ToolBar::PlayPressed);
+  m_pause_play_action = addAction(tr("Play"), this, &ToolBar::PlayPressed);
   m_start_netplay_action = addAction(tr("Online Play"), this, &ToolBar::StartNetPlayPressed);
   m_stop_action = addAction(tr("Stop"), this, &ToolBar::StopPressed);
 
@@ -165,7 +165,7 @@ void ToolBar::UpdatePausePlayButtonState(const bool playing_state)
   else
   {
     disconnect(m_pause_play_action, nullptr, nullptr, nullptr);
-    m_pause_play_action->setText(tr("Local Play"));
+    m_pause_play_action->setText(tr("Play"));
     m_pause_play_action->setIcon(Resources::GetThemeIcon("play"));
     connect(m_pause_play_action, &QAction::triggered, this, &ToolBar::PlayPressed);
   }

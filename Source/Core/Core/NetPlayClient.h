@@ -251,6 +251,8 @@ protected:
 
   std::array<GCPadStatus, 4> m_last_pad_status{};
   std::array<bool, 4> m_first_pad_status_received{};
+  std::array<WiimoteEmu::SerializedWiimoteState, 4> m_last_wiimote_status{};
+  std::array<bool, 4> m_first_wiimote_status_received{};
 
   std::chrono::time_point<std::chrono::steady_clock> m_buffer_under_target_last;
 
@@ -306,10 +308,9 @@ private:
   void SyncCodeResponse(bool success);
 
   bool PollLocalPad(int local_pad, sf::Packet& packet);
+  bool PollLocalWiimote(int local_wiimote, sf::Packet& packet);
   void SendPadHostPoll(PadIndex pad_num);
-
-  bool AddLocalWiimoteToBuffer(int local_wiimote, const WiimoteEmu::SerializedWiimoteState& state,
-                               sf::Packet& packet);
+  void SendWiimoteHostPoll(PadIndex wiimote_num);
 
   void UpdateDevices();
   void ConfigureLocalWiimoteSources();
@@ -337,6 +338,7 @@ private:
   void OnPadData(sf::Packet& packet);
   void OnPadHostData(sf::Packet& packet);
   void OnWiimoteData(sf::Packet& packet);
+  void OnWiimoteHostData(sf::Packet& packet);
   void OnPadBuffer(sf::Packet& packet);
   void OnHostInputAuthority(sf::Packet& packet);
   void OnGolfSwitch(sf::Packet& packet);
@@ -384,6 +386,7 @@ private:
   Common::Event m_gc_pad_event;
   Common::Event m_wii_pad_event;
   Common::Event m_first_pad_status_received_event;
+  Common::Event m_first_wiimote_status_received_event;
   Common::Event m_wait_on_input_event;
   u8 m_sync_save_data_count = 0;
   u8 m_sync_save_data_success_count = 0;

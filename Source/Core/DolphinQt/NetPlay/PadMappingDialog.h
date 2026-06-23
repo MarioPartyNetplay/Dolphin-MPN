@@ -62,7 +62,6 @@ private:
   void ClearAll();
   void UpdateGcColumnVisibility();
   void ClearGcMappingsInTable();
-  bool HasSharedWiiPort() const;
   void OnMappingItemChanged(QTableWidgetItem* item);
 
   static int PortForColumn(int column);
