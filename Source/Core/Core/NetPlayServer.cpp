@@ -570,11 +570,8 @@ unsigned int NetPlayServer::OnDisconnect(const Client& player)
       m_is_running = false;
 
       std::string player_name;
-      {
-        std::lock_guard lkp(m_crit.players);
-        if (const auto it = m_players.find(pid); it != m_players.end())
-          player_name = it->second.name;
-      }
+      if (const auto it = m_players.find(pid); it != m_players.end())
+        player_name = it->second.name;
 
       sf::Packet spac;
       spac << MessageID::StopGame;
