@@ -28,8 +28,8 @@ void InjectBBAPacketFromNetPlay(const u8* data, u32 size);
 // Queue a frame from the netplay transport for jitter-buffered delivery to the BBA backend.
 void QueueBBAPacketFromNetPlay(const u8* data, u32 size);
 
-// Drain at most one queued frame when buffer depth exceeds the target (call once per emulated
-// frame, e.g. from GetNetPads VI batching). Never blocks the CPU thread.
+// Drain at most one queued frame per emulated frame once the queue exceeds the jitter target.
+// Never blocks the CPU thread. The queue is capped to prevent latency spikes from exhausting memory.
 void DrainBBAPacketBuffer();
 
 // Registered by the BBA backend to receive frames coming from netplay.
