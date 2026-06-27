@@ -16,6 +16,7 @@
 #include "Core/HW/WiimoteReal/WiimoteReal.h"
 #include "Core/IOS/IOS.h"
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
+#include "Core/NetPlayProto.h"
 #include "Core/IOS/USB/Bluetooth/WiimoteDevice.h"
 #include "Core/Movie.h"
 #include "Core/System.h"
@@ -69,7 +70,51 @@ void UpdateSource(unsigned int index)
   if (bluetooth == nullptr)
     return;
 
-  bluetooth->AccessWiimoteByIndex(index)->SetSource(GetHIDWiimoteSource(index));
+  if (NetPlay::IsNetPlayRunning())
+  {
+    if (index < MAX_BBMOTES && NetPlay::IsWiimotePortMapped(index))
+    {
+      // Every mapped port applies only server-synced input through the port-index emulated
+      // controller. Local hardware is read separately in PollLocalWiimote (same as GC pads).
+      bluetooth->AccessWiimoteByIndex(index)->SetSource(
+          static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(index)));
+    }
+    return;
+  }
+  else
+  {
+    bluetooth->AccessWiimoteByIndex(index)->SetSource(GetHIDWiimoteSource(index));
+  }
+}
+
+void RefreshDeviceSources()
+{
+  const auto bluetooth = WiiUtils::GetBluetoothEmuDevice();
+  if (bluetooth == nullptr)
+    return;
+
+  if (NetPlay::IsNetPlayRunning())
+  {
+    for (unsigned int bt_index = 0; bt_index < MAX_BBMOTES; ++bt_index)
+    {
+      if (!NetPlay::IsWiimotePortMapped(bt_index))
+      {
+        // Unmapped Wii Remote ports must not read local hardware during netplay.
+        bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(nullptr);
+        continue;
+      }
+
+      // Every mapped port uses the port-index emulated controller for applying synced input.
+      // Local hardware is read separately in PollLocalWiimote (same model as GC pads).
+      bluetooth->AccessWiimoteByIndex(bt_index)->SetSource(
+          static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(bt_index)));
+    }
+  }
+  else
+  {
+    for (unsigned int i = 0; i < MAX_BBMOTES; ++i)
+      bluetooth->AccessWiimoteByIndex(i)->SetSource(GetHIDWiimoteSource(i));
+  }
 }
 
 HIDWiimote* GetHIDWiimoteSource(unsigned int index)

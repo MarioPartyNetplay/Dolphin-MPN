@@ -170,6 +170,7 @@ private:
   // pulled from OnConnect()
   void AssignNewUserAPad(const Client& player);
   void ApplyBBADefaultPadMapping();
+  bool EnsurePortMappingsForPlatform();
   // pulled from OnConnect()
   // returns the PID given
   PlayerId GiveFirstAvailableIDTo(ENetPeer* player);
@@ -193,6 +194,7 @@ private:
   bool m_start_pending = false;
   bool m_host_input_authority = false;
   bool m_bba_mode = false;
+  bool m_is_wii_game = false;
   PlayerId m_current_golfer = 1;
   PlayerId m_pending_golfer = 0;
 
@@ -201,20 +203,14 @@ private:
   std::unordered_map<u32, std::vector<std::pair<PlayerId, u64>>> m_timebase_by_frame;
   bool m_desync_detected = false;
 
-  void InitSharedPortHeldInputs();
+  void ClearPlayerInputState(PlayerId pid);
+  bool ShouldStopGameOnDisconnect(PlayerId pid) const;
 
   void SendBBAPacket(const u8* data, u32 size);
   void OnBBAPacketData(sf::Packet& packet, Client& player);
-
-  // Per-player input queues for shared ports.
-  // holding the previous value when a peer is temporarily behind (same cadence as single-player).
   std::array<std::map<PlayerId, std::deque<GCPadStatus>>, 4> m_pad_input_queues{};
   std::array<std::map<PlayerId, std::deque<WiimoteEmu::SerializedWiimoteState>>, 4>
       m_wiimote_input_queues{};
-  std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_held_input{};
-  std::array<std::map<PlayerId, bool>, 4> m_pad_held_valid{};
-  std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_held_input{};
-  std::array<std::map<PlayerId, bool>, 4> m_wiimote_held_valid{};
 
   struct
   {

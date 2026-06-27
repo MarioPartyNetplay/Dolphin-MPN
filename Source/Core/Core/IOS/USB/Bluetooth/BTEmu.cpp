@@ -18,6 +18,7 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/HW/Wiimote.h"
 #include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
+#include "Core/HW/WiimoteCommon/WiimoteReport.h"
 #include "Core/IOS/Device.h"
 #include "Core/IOS/IOS.h"
 #include "Core/Movie.h"
@@ -61,10 +62,15 @@ BluetoothEmuDevice::BluetoothEmuDevice(EmulationKernel& ios, const std::string& 
     DEBUG_LOG_FMT(IOS_WIIMOTE, "Wii Remote {} BT ID {:x},{:x},{:x},{:x},{:x},{:x}", i, tmp_bd[0],
                   tmp_bd[1], tmp_bd[2], tmp_bd[3], tmp_bd[4], tmp_bd[5]);
 
-    const unsigned int hid_source_number =
-        NetPlay::IsNetPlayRunning() ? NetPlay::NetPlay_GetLocalWiimoteForSlot(i) : i;
+    const unsigned int hid_source_number = i;
     m_wiimotes[i] = std::make_unique<WiimoteDevice>(this, tmp_bd, hid_source_number);
   }
+
+  // ConfigureLocalWiimoteSources runs before IOS boots, so RefreshDeviceSources is a no-op
+  // until now. Only refresh HID wiring here — do not call SyncLocalWiimoteSources(), which
+  // would re-enter crit_netplay_client via config callbacks and deadlock IOS init.
+  if (NetPlay::IsNetPlayRunning())
+    WiimoteCommon::RefreshDeviceSources();
 
   bt_dinf.num_registered = MAX_BBMOTES;
 
@@ -345,7 +351,7 @@ void BluetoothEmuDevice::Update()
     g_controller_interface.SetCurrentInputChannel(ciface::InputChannel::Bluetooth);
     g_controller_interface.UpdateInput();
 
-    std::array<WiimoteEmu::DesiredWiimoteState, MAX_BBMOTES> wiimote_states;
+    std::array<WiimoteEmu::DesiredWiimoteState, MAX_BBMOTES> wiimote_states{};
     std::array<WiimoteDevice::NextUpdateInputCall, MAX_BBMOTES> next_call;
 
     for (size_t i = 0; i < m_wiimotes.size(); ++i)
@@ -358,9 +364,11 @@ void BluetoothEmuDevice::Update()
       size_t batch_count = 0;
       for (size_t i = 0; i < 4; ++i)
       {
-        if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
+        if (!NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
           continue;
+
         serialized[i] = WiimoteEmu::SerializeDesiredState(wiimote_states[i]);
+
         batch[batch_count].state = &serialized[i];
         batch[batch_count].wiimote = static_cast<int>(i);
         ++batch_count;
@@ -377,6 +385,13 @@ void BluetoothEmuDevice::Update()
           if (!WiimoteEmu::DeserializeDesiredState(&wiimote_states[wiimote], serialized[wiimote]))
             PanicAlertFmtT("Received invalid Wii Remote data from Netplay.");
         }
+
+        // Apply synced input on every peer; local PrepareInput next_call disagrees on remote slots.
+        for (size_t j = 0; j < batch_count; ++j)
+        {
+          const size_t i = batch[j].wiimote;
+          next_call[i] = m_wiimotes[i]->GetNetplayUpdateCall(wiimote_states[i]);
+        }
       }
     }
 
@@ -386,12 +401,23 @@ void BluetoothEmuDevice::Update()
       if (next_call[i] == WiimoteDevice::NextUpdateInputCall::None)
         continue;
 
+      if (NetPlay::IsNetPlayRunning() && !NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
+        continue;
+
       movie.PlayWiimote(i, &wiimote_states[i]);
       movie.CheckWiimoteStatus(i, wiimote_states[i]);
     }
 
     for (size_t i = 0; i < m_wiimotes.size(); ++i)
+    {
+      if (NetPlay::IsNetPlayRunning() &&
+          !NetPlay::IsWiimotePortMapped(static_cast<unsigned int>(i)))
+      {
+        continue;
+      }
+
       m_wiimotes[i]->UpdateInput(next_call[i], wiimote_states[i]);
+    }
 
     m_last_ticks = now;
   }

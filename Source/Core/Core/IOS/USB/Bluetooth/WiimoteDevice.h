@@ -50,6 +50,8 @@ public:
     Update
   };
   NextUpdateInputCall PrepareInput(WiimoteEmu::DesiredWiimoteState* wiimote_state);
+  NextUpdateInputCall
+  GetNetplayUpdateCall(const WiimoteEmu::DesiredWiimoteState& synced_state);
   void UpdateInput(NextUpdateInputCall next_call,
                    const WiimoteEmu::DesiredWiimoteState& wiimote_state);
 
@@ -140,6 +142,7 @@ private:
   std::string m_name;
   ChannelMap m_channels;
   u8 m_connection_request_counter = 0;
+  u8 m_netplay_prev_button_mask = false;
 
   void SetBasebandState(BasebandState);
 

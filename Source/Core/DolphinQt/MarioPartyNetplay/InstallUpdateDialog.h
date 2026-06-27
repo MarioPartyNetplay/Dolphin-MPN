@@ -40,8 +40,11 @@ private:
     void launchProcess(QString file, QStringList arguments);
     void timerEvent(QTimerEvent* event);
     void download();
-    void startZipExtraction(const QString& full_file_path, const QString& extract_directory);
+    void startZipExtraction(const QString& full_file_path, const QString& extract_directory,
+                            const QString& install_directory);
     void finishInstallAfterExtract(const QString& extract_directory);
-    bool unzipFile(const std::string& zipFilePath, const std::string& destDir, 
-                   std::function<void(int current, int total)> progressCallback = nullptr);
+    bool unzipFile(const std::string& zipFilePath, const std::string& destDir,
+                   const std::string& installDir,
+                   std::function<void(int current, int total, int skipped)> progressCallback =
+                       nullptr);
 };

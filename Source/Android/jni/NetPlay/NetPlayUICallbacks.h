@@ -29,7 +29,7 @@ public:
                        const std::string& netplay_name) override;
   void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override;
   void OnMsgStartGame() override;
-  void OnMsgStopGame() override;
+  void OnMsgStopGame(const std::string& player_name) override;
   void OnMsgPowerButton() override;
   void OnPlayerConnect(const std::string& player) override;
   void OnPlayerDisconnect(const std::string& player) override;

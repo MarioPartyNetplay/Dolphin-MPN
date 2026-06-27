@@ -34,6 +34,7 @@
 
 #include "Common/Config/Config.h"
 #include "Core/NetPlayCommon.h"
+#include "DiscIO/Enums.h"
 #include "Common/Logging/Log.h"
 #include "Common/TraversalClient.h"
 
@@ -370,11 +371,19 @@ void NetPlayDialog::ConnectWidgets()
     Settings::Instance().GetNetPlayServer()->KickPlayer(id);
   });
   connect(m_assign_ports_button, &QPushButton::clicked, [this] {
+    const auto game = FindGameFile(m_current_game_identifier);
+    m_pad_mapping->SetIsWiiGame(game && DiscIO::IsWii(game->GetPlatform()));
     m_pad_mapping->exec();
 
     Settings::Instance().GetNetPlayServer()->SetPadMapping(m_pad_mapping->GetGCPadArray());
     Settings::Instance().GetNetPlayServer()->SetGBAConfig(m_pad_mapping->GetGBAArray(), true);
     Settings::Instance().GetNetPlayServer()->SetWiimoteMapping(m_pad_mapping->GetWiimoteArray());
+
+    if (const auto client = Settings::Instance().GetNetPlayClient())
+    {
+      client->ApplyPadMapping(Settings::Instance().GetNetPlayServer()->GetPadMapping());
+      client->ApplyWiimoteMapping(Settings::Instance().GetNetPlayServer()->GetWiimoteMapping());
+    }
   });
 
   // Chat
@@ -429,6 +438,26 @@ void NetPlayDialog::ConnectWidgets()
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
     if (state == Core::State::Uninitialized)
     {
+      if (isVisible())
+      {
+        GameStatusChanged(false);
+
+        if (m_stop_player_name.empty())
+          m_stop_player_name = m_nickname;
+
+        if (!m_stop_player_name.empty())
+        {
+          DisplayMessage(tr("%1 stopped the session")
+                             .arg(QString::fromStdString(m_stop_player_name)),
+                         "red");
+        }
+        else
+        {
+          DisplayMessage(tr("Stopped game"), "red");
+        }
+        m_stop_player_name.clear();
+      }
+
       SetNetPlayChatUI({});
       SetNetPlayGolfUI({});
 
@@ -436,18 +465,18 @@ void NetPlayDialog::ConnectWidgets()
       if (const auto client = Settings::Instance().GetNetPlayClient())
         client->InvokeStop();
     }
-
-    if (isVisible())
+    else if (isVisible())
     {
       GameStatusChanged(state != Core::State::Uninitialized);
-      if ((state == Core::State::Uninitialized || state == Core::State::Stopping) &&
-          !m_got_stop_request)
+      if (state == Core::State::Stopping && m_stop_player_name.empty())
       {
-        if (const auto client = Settings::Instance().GetNetPlayClient())
-          client->RequestStopGame();
+        m_stop_player_name = m_nickname;
+        if (!m_got_stop_request)
+        {
+          if (const auto client = Settings::Instance().GetNetPlayClient())
+            client->RequestStopGame();
+        }
       }
-      if (state == Core::State::Uninitialized)
-        DisplayMessage(tr("Stopped game"), "red");
     }
   });
 
@@ -818,6 +847,7 @@ void NetPlayDialog::BootGame(const std::string& filename,
                              std::unique_ptr<BootSessionData> boot_session_data)
 {
   m_got_stop_request = false;
+  m_stop_player_name.clear();
   m_start_game_callback(filename, std::move(boot_session_data));
 }
 
@@ -829,7 +859,11 @@ void NetPlayDialog::StopGame()
   m_got_stop_request = true;
   // NetPlayClient::StopGame() is invoked from the netplay thread; Core::Stop must run on the GUI
   // thread.
-  QueueOnObject(this, [this] { emit Stop(); });
+  QueueOnObject(this, [this] {
+    if (m_stop_player_name.empty())
+      m_stop_player_name = m_nickname;
+    emit Stop();
+  });
 }
 
 bool NetPlayDialog::IsHosting() const
@@ -1064,11 +1098,13 @@ void NetPlayDialog::OnMsgStartGame()
   });
 }
 
-void NetPlayDialog::OnMsgStopGame()
+void NetPlayDialog::OnMsgStopGame(const std::string& player_name)
 {
-  // Overlay teardown is deferred to GameStatusChanged() once emulation has fully stopped, so the
-  // video thread cannot call Display() on a destroyed NetPlayChatUI/NetPlayGolfUI.
-  QueueOnObject(this, [this] { UpdateDiscordPresence(); });
+  QueueOnObject(this, [this, player_name] {
+    if (!player_name.empty())
+      m_stop_player_name = player_name;
+    UpdateDiscordPresence();
+  });
 }
 
 void NetPlayDialog::OnMsgPowerButton()

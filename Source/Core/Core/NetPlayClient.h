@@ -84,7 +84,7 @@ public:
                                const std::string& netplay_name) = 0;
   virtual void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) = 0;
   virtual void OnMsgStartGame() = 0;
-  virtual void OnMsgStopGame() = 0;
+  virtual void OnMsgStopGame(const std::string& player_name) = 0;
   virtual void OnMsgPowerButton() = 0;
   virtual void OnPlayerConnect(const std::string& player) = 0;
   virtual void OnPlayerDisconnect(const std::string& player) = 0;
@@ -205,6 +205,11 @@ public:
   const GBAConfigArray& GetGBAConfig() const;
   const PadMappingArray& GetWiimoteMapping() const;
 
+  void ApplyPadMapping(const PadMappingArray& mappings);
+  void ApplyWiimoteMapping(const PadMappingArray& mappings);
+  void SyncSIDevices();
+  void SyncWiimoteSources();
+
   void ApplyPadBufferSize(unsigned int size) { m_target_buffer_size = size; }
   void AdjustPadBufferSize(unsigned int size);
 
@@ -221,12 +226,11 @@ protected:
   };
 
   void ClearBuffers();
-  void PrimeSharedPortBuffers();
   bool LocalPlayerOnPad(const PadMapping& mapping) const;
 
   struct
   {
-    std::recursive_mutex game;
+    mutable std::recursive_mutex game;
     // lock order
     std::recursive_mutex players;
     std::recursive_mutex async_queue_write;
@@ -237,15 +241,18 @@ protected:
   std::array<Common::SPSCQueue<GCPadStatus>, 4> m_pad_buffer;
   std::array<Common::SPSCQueue<WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_buffer;
 
-  // Latest server-combined input for shared ports; contributors buffer duplicates locally (same
-  // model as non-shared ports using local input) so pipeline depth is not tied to RTT.
-  std::array<GCPadStatus, 4> m_last_aggregated_pad{};
-  std::array<bool, 4> m_has_last_aggregated_pad{};
-  std::array<WiimoteEmu::SerializedWiimoteState, 4> m_last_aggregated_wiimote{};
-  std::array<bool, 4> m_has_last_aggregated_wiimote{};
+  // Shared ports can't be buffered locally (the value the game sees is the server-combined input),
+  // so instead we pipeline: a contributor keeps up to m_target_buffer_size+1 of its own input
+  // frames "in flight" (sent upstream but not yet consumed as a combined frame). This lets the
+  // server aggregate ahead and pre-fill every peer's buffer to the target depth, restoring a
+  // jitter buffer without any peer ever inventing combined input locally. CPU-thread only.
+  std::array<int, 4> m_shared_pad_in_flight{};
+  std::array<int, 4> m_shared_wiimote_in_flight{};
 
   std::array<GCPadStatus, 4> m_last_pad_status{};
   std::array<bool, 4> m_first_pad_status_received{};
+  std::array<WiimoteEmu::SerializedWiimoteState, 4> m_last_wiimote_status{};
+  std::array<bool, 4> m_first_wiimote_status_received{};
 
   std::chrono::time_point<std::chrono::steady_clock> m_buffer_under_target_last;
 
@@ -279,6 +286,7 @@ protected:
   PadMappingArray m_pad_map{};
   GBAConfigArray m_gba_config{};
   PadMappingArray m_wiimote_map{};
+  bool m_is_wii_game = false;
 
   bool m_is_recording = false;
 
@@ -300,12 +308,12 @@ private:
   void SyncCodeResponse(bool success);
 
   bool PollLocalPad(int local_pad, sf::Packet& packet);
+  bool PollLocalWiimote(int local_wiimote, sf::Packet& packet);
   void SendPadHostPoll(PadIndex pad_num);
-
-  bool AddLocalWiimoteToBuffer(int local_wiimote, const WiimoteEmu::SerializedWiimoteState& state,
-                               sf::Packet& packet);
+  void SendWiimoteHostPoll(PadIndex wiimote_num);
 
   void UpdateDevices();
+  void ConfigureLocalWiimoteSources();
   void AddPadStateToPacket(int in_game_pad, const GCPadStatus& np, sf::Packet& packet);
   void AddWiimoteStateToPacket(int in_game_pad, const WiimoteEmu::SerializedWiimoteState& np,
                                sf::Packet& packet);
@@ -330,6 +338,7 @@ private:
   void OnPadData(sf::Packet& packet);
   void OnPadHostData(sf::Packet& packet);
   void OnWiimoteData(sf::Packet& packet);
+  void OnWiimoteHostData(sf::Packet& packet);
   void OnPadBuffer(sf::Packet& packet);
   void OnHostInputAuthority(sf::Packet& packet);
   void OnGolfSwitch(sf::Packet& packet);
@@ -381,6 +390,7 @@ private:
   Common::Event m_gc_pad_event;
   Common::Event m_wii_pad_event;
   Common::Event m_first_pad_status_received_event;
+  Common::Event m_first_wiimote_status_received_event;
   Common::Event m_wait_on_input_event;
   u8 m_sync_save_data_count = 0;
   u8 m_sync_save_data_success_count = 0;

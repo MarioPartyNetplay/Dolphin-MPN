@@ -157,6 +157,7 @@ enum class MessageID : u8
 
   WiimoteData = 0x70,
   WiimoteMapping = 0x71,
+  WiimoteHostData = 0x72,
 
   GolfRequest = 0x90,
   GolfSwitch = 0x91,
@@ -275,9 +276,15 @@ std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
                                    const GBAConfigArray& gba_config,
                                    const PadMappingArray& wiimote_map);
 bool IsNetPlayRunning();
+void SyncLocalSIDevices();
+void SyncLocalWiimoteSources();
+bool IsWiimotePortMapped(unsigned int port);
+bool IsLocalWiimotePort(unsigned int port);
+bool IsSharedWiimotePort(unsigned int port);
 void SetSIPollBatching(bool state);
 void SendPowerButtonEvent();
 std::string GetGBASavePath(int pad_num);
 PadDetails GetPadDetails(int pad_num);
 int NumLocalWiimotes();
+unsigned int NetPlay_GetLocalWiimoteForSlot(unsigned int slot);
 }  // namespace NetPlay
