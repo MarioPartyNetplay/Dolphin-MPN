@@ -87,14 +87,6 @@ static bool IsSharedControllerPort(const PadMapping& mapping)
   return mapping.players.size() > 1;
 }
 
-static GCPadStatus DefaultConnectedPadStatus()
-{
-  GCPadStatus pad{};
-  pad.isConnected = true;
-  pad.stickX = pad.stickY = pad.substickX = pad.substickY = 128;
-  return pad;
-}
-
 // Netplay polls hardware (including the Wii U adapter) in PollLocalPad. The emulated SI device must
 // be a standard GC controller so RunBuffer/GetData do not touch adapter port indices directly.
 static SerialInterface::SIDevices NetPlayEmulatedSIDevice(SerialInterface::SIDevices config_device)
@@ -2331,18 +2323,6 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
-  // Check if BBA mode is enabled - if so, disable input synchronization
-  // In BBA mode, we only sync BBA packets, not controller inputs
-  if (m_net_settings.bba_mode)
-  {
-    const int local_pad = InGamePadToLocalPad(pad_nb);
-    if (local_pad < 4)
-      *pad_status = Pad::GetStatus(local_pad);
-    else
-      *pad_status = DefaultConnectedPadStatus();
-    return true;
-  }
-
   // Unmapped GC pad ports must return immediately or SI polling deadlocks waiting for data
   // nobody will send. On Wii games this applies to unused GC columns while Wiimotes use
   // wiimote_map separately.
@@ -2353,6 +2333,17 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
   }
 
   if (pad_map[pad_nb].players.empty())
+  {
+    *pad_status = {};
+    pad_status->isConnected = false;
+    return true;
+  }
+
+  // BBA mode uses local input only (no network sync), but still applies the input buffer to
+  // smooth frame pacing and avoid FPS stutter from unconstrained polling.
+  if (m_net_settings.bba_mode && m_local_player &&
+      std::find(pad_map[pad_nb].players.begin(), pad_map[pad_nb].players.end(),
+                m_local_player->pid) == pad_map[pad_nb].players.end())
   {
     *pad_status = {};
     pad_status->isConnected = false;
@@ -2519,8 +2510,7 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
   const WiimoteEmu::SerializedWiimoteState neutral_state =
       WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
 
-  // BBA mode: controller inputs are not synced, just return neutral state for
-  // any Wiimote that isn't locally controlled.
+  // BBA mode uses local input only, but still applies the input buffer for stable frame pacing.
   if (m_net_settings.bba_mode)
   {
     PadMappingArray wiimote_map;
@@ -2529,13 +2519,36 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
       wiimote_map = m_wiimote_map;
     }
 
+    if (m_local_player)
+    {
+      sf::Packet packet;
+      packet << MessageID::WiimoteData;
+      const int num_local_wiimotes = NumLocalPadsForMap(wiimote_map, m_local_player->pid);
+      for (int local_wiimote = 0; local_wiimote < num_local_wiimotes; ++local_wiimote)
+        PollLocalWiimote(local_wiimote, packet);
+    }
+
     for (const WiimoteDataBatchEntry& entry : entries)
     {
       if (wiimote_map[entry.wiimote].players.empty() ||
-          InGameWiimoteToLocalWiimote(entry.wiimote) >= 4)
+          (m_local_player &&
+           std::find(wiimote_map[entry.wiimote].players.begin(),
+                     wiimote_map[entry.wiimote].players.end(),
+                     m_local_player->pid) == wiimote_map[entry.wiimote].players.end()))
       {
         *entry.state = neutral_state;
+        continue;
       }
+
+      while (m_wiimote_buffer[entry.wiimote].Size() == 0)
+      {
+        if (!m_is_running.IsSet())
+          return false;
+
+        m_wii_pad_event.Wait();
+      }
+
+      m_wiimote_buffer[entry.wiimote].Pop(*entry.state);
     }
     return true;
   }
@@ -2678,6 +2691,17 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
     pad_status = Pad::GetStatus(local_pad);
   }
 
+  // BBA mode: buffer local input only (no network upload) to keep frame pacing stable.
+  if (m_net_settings.bba_mode)
+  {
+    while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      m_pad_buffer[ingame_pad].Push(pad_status);
+      data_added = true;
+    }
+    return data_added;
+  }
+
   // Multiple players on one port share a single emulated controller. Only the server-combined
   // input may be applied; buffering local input here desyncs each peer.
   const bool shared_port = IsSharedControllerPort(pad_map[ingame_pad]);
@@ -2756,6 +2780,17 @@ bool NetPlayClient::PollLocalWiimote(const int local_wiimote, sf::Packet& packet
   const bool shared_port = IsSharedControllerPort(wiimote_map[ingame_pad]);
 
   bool data_added = false;
+
+  // BBA mode: buffer local input only (no network upload) to keep frame pacing stable.
+  if (m_net_settings.bba_mode)
+  {
+    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      m_wiimote_buffer[ingame_pad].Push(upload_state);
+      data_added = true;
+    }
+    return data_added;
+  }
 
   if (m_host_input_authority)
   {
