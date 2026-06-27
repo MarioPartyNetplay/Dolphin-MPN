@@ -945,7 +945,7 @@ void NetPlayClient::OnPadBuffer(sf::Packet& packet)
 
   // Only update the fill target. Do not trim or inject pad data mid-game; that diverges FIFO
   // depth across peers and causes desyncs. Depth converges naturally via PollLocalPad.
-  m_target_buffer_size = size;
+  ApplyPadBufferSize(size);
   m_dialog->OnPadBufferChanged(size);
 }
 
@@ -2257,6 +2257,7 @@ void NetPlayClient::ClearBuffers()
 
   m_shared_pad_in_flight.fill(0);
   m_shared_wiimote_in_flight.fill(0);
+  ExpansionInterface::ClearBBAPacketBuffer();
 }
 
 bool NetPlayClient::LocalPlayerOnPad(const PadMapping& mapping) const
@@ -2341,6 +2342,11 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
 
   // BBA mode uses local input only (no network sync), but still applies the input buffer to
   // smooth frame pacing and avoid FPS stutter from unconstrained polling.
+  if (m_net_settings.bba_mode && batching && IsFirstInGamePadForMap(pad_nb, pad_map))
+  {
+    ExpansionInterface::DrainBBAPacketBuffer();
+  }
+
   if (m_net_settings.bba_mode && m_local_player &&
       std::find(pad_map[pad_nb].players.begin(), pad_map[pad_nb].players.end(),
                 m_local_player->pid) == pad_map[pad_nb].players.end())
@@ -2463,6 +2469,24 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
 
   // Now, we either use the data pushed earlier, or wait for the
   // other clients to send it to us
+  if (m_net_settings.bba_mode && m_pad_buffer[pad_nb].Size() == 0)
+  {
+    const int local_pad = m_local_player ? InGameToLocal(pad_nb, pad_map, m_local_player->pid) : 4;
+    if (local_pad < 4)
+    {
+      sf::Packet packet;
+      packet << MessageID::PadData;
+      PollLocalPad(local_pad, packet);
+    }
+
+    if (m_pad_buffer[pad_nb].Size() == 0)
+    {
+      *pad_status = {};
+      pad_status->isConnected = false;
+      return true;
+    }
+  }
+
   while (m_pad_buffer[pad_nb].Size() == 0)
   {
     if (!m_is_running.IsSet())
@@ -3272,6 +3296,12 @@ void NetPlayClient::AdjustPadBufferSize(const unsigned int size)
   m_dialog->OnPadBufferChanged(size);
 }
 
+void NetPlayClient::ApplyPadBufferSize(const unsigned int size)
+{
+  m_target_buffer_size = size;
+  ExpansionInterface::SetBBAPacketBufferSize(size);
+}
+
 void NetPlayClient::ApplyBBAMode(const bool enable)
 {
   m_net_settings.bba_mode = enable;
@@ -3282,6 +3312,8 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
   {
     // Each player needs a distinct identity on the shared virtual LAN. The host is index 0.
     ExpansionInterface::SetBBANetPlayIndex(is_host ? 0 : 1);
+    ExpansionInterface::SetBBAPacketBufferSize(static_cast<u32>(m_target_buffer_size));
+    ExpansionInterface::ClearBBAPacketBuffer();
 
     // The host's frames are sent through the NetPlayServer's sender (registered when the server
     // starts), which fans them out to clients without looping back. Only non-host clients register
@@ -3298,6 +3330,7 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
   {
     if (!is_host)
       ExpansionInterface::RegisterBBAPacketSender(nullptr);
+    ExpansionInterface::ClearBBAPacketBuffer();
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::None);
   }
@@ -3315,7 +3348,7 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
   for (u32 i = 0; i < packet_size; ++i)
     packet >> bba_data[i];
 
-  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  ExpansionInterface::QueueBBAPacketFromNetPlay(bba_data.data(), packet_size);
 }
 
 void NetPlayClient::OnBBAMode(sf::Packet& packet)

@@ -210,7 +210,7 @@ public:
   void SyncSIDevices();
   void SyncWiimoteSources();
 
-  void ApplyPadBufferSize(unsigned int size) { m_target_buffer_size = size; }
+  void ApplyPadBufferSize(unsigned int size);
   void AdjustPadBufferSize(unsigned int size);
 
   void SetWiiSyncData(std::unique_ptr<IOS::HLE::FS::FileSystem> fs, std::vector<u64> titles,

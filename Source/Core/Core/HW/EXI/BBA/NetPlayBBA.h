@@ -22,8 +22,15 @@ void SendBBAFrameToNetPlay(const u8* data, u32 size);
 // Registered by NetPlayClient/NetPlayServer to forward frames over ENet.
 void RegisterBBAPacketSender(std::function<void(const u8*, u32)> sender);
 
-// Called by NetPlayClient/NetPlayServer when a frame arrives from a peer.
+// Immediately inject a frame into the active BBA backend(s).
 void InjectBBAPacketFromNetPlay(const u8* data, u32 size);
+
+// Queue a frame from the netplay transport for jitter-buffered delivery to the BBA backend.
+void QueueBBAPacketFromNetPlay(const u8* data, u32 size);
+
+// Drain at most one queued frame when buffer depth exceeds the target (call once per emulated
+// frame, e.g. from GetNetPads VI batching). Never blocks the CPU thread.
+void DrainBBAPacketBuffer();
 
 // Registered by the BBA backend to receive frames coming from netplay.
 u64 RegisterBBAPacketInjector(std::function<void(const u8*, u32)> injector);
@@ -33,4 +40,8 @@ void UnregisterBBAPacketInjector(u64 id);
 // backend to assign a distinct IP/MAC per player.
 void SetBBANetPlayIndex(int index);
 int GetBBANetPlayIndex();
+
+// Uses the same value as the netplay input buffer setting.
+void SetBBAPacketBufferSize(u32 size);
+void ClearBBAPacketBuffer();
 }  // namespace ExpansionInterface

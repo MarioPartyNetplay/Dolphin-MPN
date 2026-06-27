@@ -3469,7 +3469,7 @@ void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& p
     bba_packet << byte;
 
   SendAsyncToClients(std::move(bba_packet), player.pid);
-  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  ExpansionInterface::QueueBBAPacketFromNetPlay(bba_data.data(), packet_size);
 }
 
 void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
