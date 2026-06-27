@@ -830,6 +830,9 @@ void NetPlayServer::SetBBAMode(const bool enable)
     UpdatePadMapping();
   }
 
+  if (!m_host_input_authority)
+    AdjustPadBufferSize(m_target_buffer_size);
+
   sf::Packet spac;
   spac << MessageID::BBAMode;
   spac << m_bba_mode;

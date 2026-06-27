@@ -620,12 +620,6 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
 
   SetOptionsEnabled(true);
 
-  if (is_hosting && m_bba_mode_action->isChecked())
-  {
-    m_buffer_size_box->setHidden(true);
-    m_buffer_label->setHidden(true);
-  }
-
   if (is_hosting)
     ReportNetworkMode(GetSelectedNetworkModeKind(), true);
   else if (const auto client = Settings::Instance().GetNetPlayClient())
@@ -974,11 +968,6 @@ void NetPlayDialog::ApplySelectedNetworkMode()
     server->SetBBAMode(true);
     if (m_host_input_authority)
       server->SetHostInputAuthority(false);
-
-    QueueOnObject(this, [this] {
-      m_buffer_size_box->setHidden(true);
-      m_buffer_label->setHidden(true);
-    });
   }
   else
   {
@@ -1146,16 +1135,8 @@ void NetPlayDialog::OnHostInputAuthorityChanged(bool enabled)
   SyncNetworkModeFromClient();
 
   QueueOnObject(this, [this, enabled] {
-    const bool bba_mode = m_bba_mode_action->isChecked();
     const bool is_hosting = IsHosting();
     const bool enable_buffer = is_hosting != enabled;
-
-    if (bba_mode)
-    {
-      m_buffer_size_box->setHidden(true);
-      m_buffer_label->setHidden(true);
-      return;
-    }
 
     if (is_hosting)
     {
