@@ -429,8 +429,10 @@ private:
   class BuiltInBBAInterface : public NetworkInterface
   {
   public:
-    BuiltInBBAInterface(CEXIETHERNET* eth_ref, std::string dns_ip, std::string local_ip)
-        : NetworkInterface(eth_ref), m_dns_ip(std::move(dns_ip)), m_local_ip(std::move(local_ip))
+    BuiltInBBAInterface(CEXIETHERNET* eth_ref, std::string dns_ip, std::string local_ip,
+                        bool netplay_mode = false)
+        : NetworkInterface(eth_ref), m_dns_ip(std::move(dns_ip)), m_local_ip(std::move(local_ip)),
+          m_netplay_mode(netplay_mode)
     {
     }
     bool Activate() override;
@@ -457,6 +459,12 @@ private:
     Common::MACAddress m_router_mac{};
     std::map<u32, Common::MACAddress> m_arp_table;
     sf::TcpListener m_upnp_httpd;
+    // NetPlay tunneling: when enabled, LAN/peer/broadcast frames are bridged over the
+    // netplay BBA packet channel instead of being routed through real OS sockets, while
+    // local infrastructure (DHCP/ARP/DNS) and internet traffic keep using the HLE stack.
+    bool m_netplay_mode = false;
+    int m_netplay_index = 0;
+    u64 m_netplay_injector_id = 0;
 #if defined(WIN32) || defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) ||          \
     defined(__OpenBSD__) || defined(__NetBSD__) || defined(__HAIKU__)
     NetworkRef m_network_ref;
@@ -477,6 +485,11 @@ private:
     void HandleUDPFrame(const Common::UDPPacket& packet);
     void HandleUPnPClient();
     const Common::MACAddress& ResolveAddress(u32 inet_ip);
+
+    // NetPlay tunneling helpers (only used when m_netplay_mode is set).
+    void InjectNetPlayFrame(const u8* data, u32 size);
+    bool ShouldBridgeFrame(const u8* frame, u32 size) const;
+    bool IsLanSubnet(u32 ip_net) const;
   };
 
   class IPCBBAInterface : public NetworkInterface
@@ -514,29 +527,6 @@ private:
     void RecvStop() override {}
 
 #endif
-  };
-
-  class NetPlayBBAInterface : public NetworkInterface
-  {
-  public:
-    explicit NetPlayBBAInterface(CEXIETHERNET* const eth_ref) : NetworkInterface(eth_ref) {}
-
-    bool Activate() override;
-    void Deactivate() override;
-    bool IsActivated() override;
-    bool SendFrame(const u8* frame, u32 size) override;
-    bool RecvInit() override;
-    void RecvStart() override;
-    void RecvStop() override;
-
-    void InjectPacket(const u8* data, u32 size);
-
-  private:
-    std::function<void(const u8*, u32)> m_injector_callback;
-    u64 m_injector_id = 0;
-    bool m_active = false;
-    bool m_shutdown = false;
-    bool m_receiving = false;
   };
 
   std::unique_ptr<NetworkInterface> m_network_interface;

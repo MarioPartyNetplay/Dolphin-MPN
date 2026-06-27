@@ -1241,7 +1241,8 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
 
   if (NetPlay::IsNetPlayRunning())
   {
-    if (auto* server = Settings::Instance().GetNetPlayServer(); server && server->IsBBAModeEnabled())
+    if (const auto server = Settings::Instance().GetNetPlayServer();
+        server && server->IsBBAModeEnabled())
     {
       Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                          ExpansionInterface::EXIDeviceType::EthernetNetPlay);

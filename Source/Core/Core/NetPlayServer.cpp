@@ -181,6 +181,9 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
       Common::UPnP::TryPortmapping(port);
 #endif
 
+    // The host is always index 0 on the shared virtual LAN. Its sender broadcasts frames to all
+    // connected clients (without looping back into the host's own game).
+    ExpansionInterface::SetBBANetPlayIndex(0);
     ExpansionInterface::RegisterBBAPacketSender(
         [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
   }
@@ -743,11 +746,20 @@ void NetPlayServer::SetBBAMode(const bool enable)
 {
   std::lock_guard lkg(m_crit.game);
 
+  if (m_bba_mode == enable)
+    return;
+
   m_bba_mode = enable;
   m_settings.bba_mode = enable;
 
   INFO_LOG_FMT(NETPLAY, "BBA mode {}: input synchronization will be {}",
                enable ? "enabled" : "disabled", enable ? "disabled (BBA-only)" : "enabled");
+
+  if (enable)
+  {
+    ApplyBBADefaultPadMapping();
+    UpdatePadMapping();
+  }
 
   sf::Packet spac;
   spac << MessageID::BBAMode;
@@ -2551,6 +2563,18 @@ bool NetPlayServer::PlayerHasControllerMapped(const PlayerId pid) const
 
 void NetPlayServer::AssignNewUserAPad(const Client& player)
 {
+  if (m_bba_mode)
+  {
+    // BBA LAN games expect each console to read controller slot 1 locally.
+    for (PadMapping& mapping : m_pad_map)
+      std::erase(mapping.players, player.pid);
+
+    auto& gc1_players = m_pad_map[0].players;
+    if (std::find(gc1_players.begin(), gc1_players.end(), player.pid) == gc1_players.end())
+      gc1_players.push_back(player.pid);
+    return;
+  }
+
   for (PadMapping& mapping : m_pad_map)
   {
     if (mapping.players.empty())
@@ -2559,6 +2583,20 @@ void NetPlayServer::AssignNewUserAPad(const Client& player)
       break;
     }
   }
+}
+
+void NetPlayServer::ApplyBBADefaultPadMapping()
+{
+  std::vector<PlayerId> player_ids;
+  player_ids.reserve(m_players.size());
+  for (const auto& player : std::views::values(m_players))
+    player_ids.push_back(player.pid);
+
+  m_pad_map.fill(PadMapping{});
+  for (const PlayerId pid : player_ids)
+    m_pad_map[0].players.push_back(pid);
+
+  DedupePadMappingPlayers(m_pad_map);
 }
 
 PlayerId NetPlayServer::GiveFirstAvailableIDTo(ENetPeer* player)
@@ -3120,6 +3158,8 @@ void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
   for (u32 i = 0; i < size; ++i)
     packet << data[i];
 
-  SendAsyncToClients(std::move(packet));
+  // Skip the host (pid 1) so locally transmitted frames are not injected back into the host's
+  // game. Echoing SSDP/UPnP discovery traffic makes MKDD think a non-GameCube device is on the LAN.
+  SendAsyncToClients(std::move(packet), 1);
 }
 }  // namespace NetPlay

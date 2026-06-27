@@ -2830,17 +2830,28 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
 {
   m_net_settings.bba_mode = enable;
 
+  const bool is_host = m_local_player && m_local_player->IsHost();
+
   if (enable)
   {
-    ExpansionInterface::RegisterBBAPacketSender([this](const u8* data, u32 size) {
-      SendBBAPacket(data, size);
-    });
+    // Each player needs a distinct identity on the shared virtual LAN. The host is index 0.
+    ExpansionInterface::SetBBANetPlayIndex(is_host ? 0 : 1);
+
+    // The host's frames are sent through the NetPlayServer's sender (registered when the server
+    // starts), which fans them out to clients without looping back. Only non-host clients register
+    // the client-side sender here; registering it on the host would echo the host's own frames.
+    if (!is_host)
+    {
+      ExpansionInterface::RegisterBBAPacketSender(
+          [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
+    }
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::EthernetNetPlay);
   }
   else
   {
-    ExpansionInterface::RegisterBBAPacketSender(nullptr);
+    if (!is_host)
+      ExpansionInterface::RegisterBBAPacketSender(nullptr);
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::None);
   }
@@ -2866,7 +2877,11 @@ void NetPlayClient::OnBBAMode(sf::Packet& packet)
   bool bba_mode = false;
   packet >> bba_mode;
 
+  const bool mode_changed = m_net_settings.bba_mode != bba_mode;
   ApplyBBAMode(bba_mode);
+
+  if (!mode_changed)
+    return;
 
   if (bba_mode)
     m_dialog->AppendChat(_trans("BBA mode enabled"));

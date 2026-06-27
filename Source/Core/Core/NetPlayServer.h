@@ -169,6 +169,7 @@ private:
 
   // pulled from OnConnect()
   void AssignNewUserAPad(const Client& player);
+  void ApplyBBADefaultPadMapping();
   // pulled from OnConnect()
   // returns the PID given
   PlayerId GiveFirstAvailableIDTo(ENetPeer* player);
