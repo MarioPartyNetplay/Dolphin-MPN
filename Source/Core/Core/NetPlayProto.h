@@ -193,8 +193,11 @@ enum class MessageID : u8
   SyncSaveData = 0xF1,
   SyncCodes = 0xF2,
   
-  //MPN
+  // MPN
   SendCodes = 0xF3,
+
+  BBAPacketData = 0xF4,
+  BBAMode = 0xF6,
 };
 
 enum class ConnectionError : u8

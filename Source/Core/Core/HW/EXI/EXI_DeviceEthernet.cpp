@@ -14,6 +14,7 @@
 #include "Common/Network.h"
 #include "Common/StringUtil.h"
 #include "Core/Config/MainSettings.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #include "Core/CoreTiming.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/Memmap.h"
@@ -207,6 +208,15 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
     INFO_LOG_FMT(SP1, "Created XLink Kai BBA network interface connection to {}:34523",
                  Config::Get(Config::MAIN_BBA_XLINK_IP));
     break;
+
+  case BBADeviceType::NetPlay:
+    // NetPlay reuses the BuiltIn HLE adapter so the game still gets DHCP/ARP/DNS locally and
+    // can reach the internet, but LAN/peer traffic is tunneled over netplay instead of sockets.
+    m_network_interface = std::make_unique<BuiltInBBAInterface>(
+        this, Config::Get(Config::MAIN_BBA_BUILTIN_DNS), Config::Get(Config::MAIN_BBA_BUILTIN_IP),
+        /*netplay_mode=*/true);
+    INFO_LOG_FMT(SP1, "Created NetPlay BBA network interface (BuiltIn HLE).");
+    break;
   }
 
   tx_fifo = std::make_unique<u8[]>(BBA_TXFIFO_SIZE);
@@ -215,7 +225,14 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
 
   MXHardReset();
 
-  const auto& mac = mac_addr.value();
+  auto mac = mac_addr.value();
+  if (type == BBADeviceType::NetPlay)
+  {
+    // Each netplay player must present a distinct MAC so bridged ethernet frames are routable.
+    // Derive it deterministically from the local player index (host = 0, client = 1, ...).
+    const int index = GetBBANetPlayIndex();
+    mac[5] = static_cast<u8>((mac[5] & 0xF0) | (index & 0x0F));
+  }
   memcpy(&mBbaMem[BBA_NAFR_PAR0], mac.data(), mac.size());
 
   // HACK: .. fully established 100BASE-T link

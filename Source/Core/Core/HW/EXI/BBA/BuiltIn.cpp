@@ -3,6 +3,7 @@
 
 #include "Core/HW/EXI/BBA/BuiltIn.h"
 
+#include <algorithm>
 #include <bit>
 #include <optional>
 #include "SFML/Network/IpAddress.hpp"
@@ -20,6 +21,7 @@
 #include "Common/MsgHandler.h"
 #include "Common/Network.h"
 #include "Common/ScopeGuard.h"
+#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
 #include "Core/CoreTiming.h"
 #include "Core/System.h"
@@ -30,6 +32,12 @@ u64 GetTickCountStd()
 {
   using namespace std::chrono;
   return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+static bool IsMulticastMac(const u8* mac)
+{
+  // Multicast/broadcast bit set (broadcast is handled separately).
+  return (mac[0] & 0x01) != 0;
 }
 
 std::vector<u8> BuildFINFrame(StackRef* ref)
@@ -81,23 +89,52 @@ bool CEXIETHERNET::BuiltInBBAInterface::Activate()
   for (auto& buf : m_queue_data)
     buf.reserve(2048);
 
-  // Workaround to get the host IP (might not be accurate)
-  // TODO: Fix the JNI crash and use GetSystemDefaultInterface()
-  //  - https://pastebin.com/BFpmnxby (see https://dolp.in/pr10920)
-  const u32 ip = sf::IpAddress::resolve(m_local_ip)
-                     .value_or(sf::IpAddress::getLocalAddress().value_or(sf::IpAddress::Any))
-                     .toInteger();
+  u32 ip;
+  if (m_netplay_mode)
+  {
+    // Put every netplay player on a fixed shared virtual LAN with a distinct address so the games
+    // can discover and talk to each other. Host gets .10, next player .11, etc.
+    m_netplay_index = GetBBANetPlayIndex();
+    ip = 0xC0A83700u | static_cast<u32>(10 + m_netplay_index);  // 192.168.55.(10 + index)
+  }
+  else
+  {
+    // Workaround to get the host IP (might not be accurate)
+    // TODO: Fix the JNI crash and use GetSystemDefaultInterface()
+    //  - https://pastebin.com/BFpmnxby (see https://dolp.in/pr10920)
+    ip = sf::IpAddress::resolve(m_local_ip)
+             .value_or(sf::IpAddress::getLocalAddress().value_or(sf::IpAddress::Any))
+             .toInteger();
+  }
   m_current_ip = htonl(ip);
   m_current_mac = Common::BitCastPtr<Common::MACAddress>(&m_eth_ref->mBbaMem[BBA_NAFR_PAR0]);
   m_arp_table[m_current_ip] = m_current_mac;
-  m_router_ip = (m_current_ip & 0xFFFFFF) | 0x01000000;
+  if (m_netplay_mode)
+  {
+    // Place the virtual gateway outside the game LAN subnet so MKDD's scan only finds peer
+    // consoles, not the HLE router at 192.168.55.1.
+    m_router_ip = htonl(sf::IpAddress(10, 0, 0, 1).toInteger());
+  }
+  else
+  {
+    m_router_ip = (m_current_ip & 0xFFFFFF) | 0x01000000;
+  }
   m_router_mac = Common::GenerateMacAddress(Common::MACConsumer::BBA);
   m_arp_table[m_router_ip] = m_router_mac;
 
   m_network_ref.Clear();
 
-  (void)m_upnp_httpd.listen(Common::SSDP_PORT, sf::IpAddress(ip));
-  m_upnp_httpd.setBlocking(false);
+  if (m_netplay_mode)
+  {
+    // Receive ethernet frames bridged from the other netplay player(s).
+    m_netplay_injector_id = RegisterBBAPacketInjector(
+        [this](const u8* data, u32 size) { InjectNetPlayFrame(data, size); });
+  }
+  else
+  {
+    (void)m_upnp_httpd.listen(Common::SSDP_PORT, sf::IpAddress(ip));
+    m_upnp_httpd.setBlocking(false);
+  }
 
   return RecvInit();
 }
@@ -107,6 +144,13 @@ void CEXIETHERNET::BuiltInBBAInterface::Deactivate()
   // Is the BBA Active? If not skip shutdown
   if (!IsActivated())
     return;
+
+  if (m_netplay_injector_id != 0)
+  {
+    UnregisterBBAPacketInjector(m_netplay_injector_id);
+    m_netplay_injector_id = 0;
+  }
+
   // Signal read thread to exit.
   m_read_enabled.Clear();
   m_read_thread_shutdown.Set();
@@ -199,6 +243,17 @@ void CEXIETHERNET::BuiltInBBAInterface::HandleARP(const Common::ARPPacket& packe
     // Ignore ARP probe to itself (RFC 5227) sometimes used to prevent IP collision
     return;
   }
+
+  if (m_netplay_mode)
+  {
+    // Only answer for our own address and the virtual gateway. Peer consoles respond for their own
+    // IPs over the netplay bridge; proxying ARP for other LAN addresses creates fake devices that
+    // trigger MKDD's "non-GameCube on the LAN" warning.
+    const u32 target_ip = arpdata.target_ip;
+    if (target_ip != m_router_ip && target_ip != m_current_ip)
+      return;
+  }
+
   Common::ARPPacket response(m_current_mac, m_router_mac);
   response.arp_header = Common::ARPHeader(arpdata.target_ip, ResolveAddress(arpdata.target_ip),
                                           m_current_ip, m_current_mac);
@@ -346,6 +401,16 @@ CEXIETHERNET::BuiltInBBAInterface::TryGetDataFromSocket(StackRef* ref)
 void CEXIETHERNET::BuiltInBBAInterface::HandleTCPFrame(const Common::TCPPacket& packet)
 {
   const auto& [hwdata, ip_header, tcp_header, ip_options, tcp_options, data] = packet;
+
+  if (m_netplay_mode)
+  {
+    const u32 dest_ip = std::bit_cast<u32>(ip_header.destination_addr);
+    // LAN peer traffic is bridged before HandleTCPFrame. Drop virtual-router traffic so MKDD does
+    // not treat the HLE gateway as a non-GameCube device on the LAN.
+    if (IsLanSubnet(dest_ip) || dest_ip == m_router_ip)
+      return;
+  }
+
   StackRef* ref = m_network_ref.GetTCPSlot(tcp_header.source_port, tcp_header.destination_port,
                                            std::bit_cast<u32>(ip_header.destination_addr));
   const u16 flags = ntohs(tcp_header.properties) & 0xfff;
@@ -491,6 +556,12 @@ void CEXIETHERNET::BuiltInBBAInterface::InitUDPPort(u16 port)
 
 void CEXIETHERNET::BuiltInBBAInterface::HandleUDPFrame(const Common::UDPPacket& packet)
 {
+  const u16 dst_port = ntohs(packet.udp_header.destination_port);
+
+  // In netplay mode LAN traffic is tunneled to the peer; only DNS uses real OS sockets.
+  if (m_netplay_mode && dst_port != 53)
+    return;
+
   const auto& [hwdata, ip_header, udp_header, ip_options, data] = packet;
   sf::IpAddress target = sf::IpAddress::Any;
   const u32 destination_addr = ip_header.destination_addr == Common::IP_ADDR_ANY ?
@@ -607,6 +678,119 @@ const Common::MACAddress& CEXIETHERNET::BuiltInBBAInterface::ResolveAddress(u32 
   }
 }
 
+bool CEXIETHERNET::BuiltInBBAInterface::IsLanSubnet(u32 ip_net) const
+{
+  // ip_net is in network byte order packed into a u32, like m_current_ip. Match the /24 network.
+  return (ip_net & 0x00FFFFFFu) == (m_current_ip & 0x00FFFFFFu);
+}
+
+bool CEXIETHERNET::BuiltInBBAInterface::ShouldBridgeFrame(const u8* frame, u32 size) const
+{
+  if (size < Common::EthernetHeader::SIZE)
+    return false;
+
+  const Common::PacketView view(frame, size);
+  const std::optional<u16> ethertype = view.GetEtherType();
+  if (!ethertype.has_value())
+    return false;
+
+  // Broadcast frames (LAN discovery, ARP requests) always go to the peer(s).
+  const bool broadcast_mac = std::all_of(frame, frame + 6, [](u8 b) { return b == 0xff; });
+  if (IsMulticastMac(frame) && !broadcast_mac)
+    return true;
+
+  switch (*ethertype)
+  {
+  case Common::ARP_ETHERTYPE:
+  {
+    const auto arp = view.GetARPPacket();
+    if (!arp.has_value())
+      return false;
+    const u32 target_ip = arp->arp_header.target_ip;
+    if (target_ip == m_router_ip)
+      return false;  // resolve the gateway locally
+    // ARP for a peer on the shared virtual LAN: let the peer's game answer.
+    return IsLanSubnet(target_ip);
+  }
+
+  case Common::IPV4_ETHERTYPE:
+  {
+    if (size < Common::EthernetHeader::SIZE + Common::IPv4Header::SIZE)
+      return false;
+    const Common::IPv4Header ip_header =
+        Common::BitCastPtr<Common::IPv4Header>(frame + Common::EthernetHeader::SIZE);
+    const u32 dst_ip = std::bit_cast<u32>(ip_header.destination_addr);
+
+    const std::optional<u8> ip_proto = view.GetIPProto();
+    if (ip_proto.has_value() && *ip_proto == IPPROTO_IGMP)
+      return true;
+
+    if (ip_proto.has_value() && *ip_proto == IPPROTO_UDP)
+    {
+      const auto udp = view.GetUDPPacket();
+      if (udp.has_value())
+      {
+        const u16 dport = ntohs(udp->udp_header.destination_port);
+        const u16 sport = ntohs(udp->udp_header.source_port);
+        if (dport == 67 || dport == 68)
+          return false;  // DHCP: handled by the local HLE server
+        if (dport == 53)
+          return false;  // DNS: resolved via the HLE/internet path
+        // LAN discovery and game traffic use real sockets only in standalone BuiltIn mode.
+        if (dport == Common::SSDP_PORT || sport == Common::SSDP_PORT || dport == 26502 ||
+            dport == 26512 || sport == 26502 || sport == 26512)
+          return true;
+      }
+    }
+
+    if (std::bit_cast<u32>(ip_header.destination_addr) == std::bit_cast<u32>(Common::IP_ADDR_SSDP))
+      return true;
+
+    // Limited/subnet broadcast or broadcast MAC: bridge to peers.
+    if (broadcast_mac || dst_ip == 0xFFFFFFFFu || ((dst_ip >> 24) & 0xFFu) == 0xFFu)
+      return true;
+    if (dst_ip == m_router_ip)
+      return false;  // gateway/internet/DNS handled by HLE
+    return IsLanSubnet(dst_ip);
+  }
+
+  default:
+    // Unknown ethertype: bridge broadcasts, otherwise let the HLE switch reject it.
+    return broadcast_mac;
+  }
+}
+
+void CEXIETHERNET::BuiltInBBAInterface::InjectNetPlayFrame(const u8* data, u32 size)
+{
+  if (!m_active || !data || size == 0)
+    return;
+
+  const u32 copy_size = std::min<u32>(size, BBA_RECV_SIZE);
+
+  std::lock_guard<std::mutex> lock(m_mtx);
+
+  // Learn the peer's MAC/IP mapping from bridged frames so local ARP stays consistent.
+  if (size >= Common::EthernetHeader::SIZE + Common::IPv4Header::SIZE)
+  {
+    const Common::PacketView view(data, size);
+    if (const auto ethertype = view.GetEtherType(); ethertype == Common::IPV4_ETHERTYPE)
+    {
+      const Common::IPv4Header ip_header =
+          Common::BitCastPtr<Common::IPv4Header>(data + Common::EthernetHeader::SIZE);
+      const u32 src_ip = std::bit_cast<u32>(ip_header.source_addr);
+      if (IsLanSubnet(src_ip) && src_ip != m_current_ip && src_ip != m_router_ip)
+        m_arp_table[src_ip] = Common::BitCastPtr<Common::MACAddress>(data + 6);
+    }
+  }
+
+  if (WillQueueOverrun())
+  {
+    WARN_LOG_FMT(SP1, "BBA netplay queue overrun, dropping injected frame");
+    return;
+  }
+  WriteToQueue(std::vector<u8>(data, data + copy_size));
+}
+
 bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
 {
   std::lock_guard<std::mutex> lock(m_mtx);
@@ -617,6 +801,16 @@ bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
   {
     ERROR_LOG_FMT(SP1, "Unable to send frame with invalid ethernet header");
     return false;
+  }
+
+  // In netplay mode, LAN/peer/broadcast traffic is tunneled to the other player instead of being
+  // routed through real sockets. Infrastructure (DHCP/ARP-to-router/DNS) and internet traffic still
+  // fall through to the HLE stack below.
+  if (m_netplay_mode && ShouldBridgeFrame(frame, size))
+  {
+    SendBBAFrameToNetPlay(frame, size);
+    m_eth_ref->SendComplete();
+    return true;
   }
 
   switch (*ethertype)
@@ -747,8 +941,8 @@ void CEXIETHERNET::BuiltInBBAInterface::ReadThreadHandler(CEXIETHERNET::BuiltInB
     // Check network stack references
     self->PollData(&datasize);
 
-    // Check for new UPnP client
-    self->HandleUPnPClient();
+    if (!self->m_netplay_mode)
+      self->HandleUPnPClient();
 
     if (datasize > 0)
     {
@@ -780,8 +974,13 @@ void CEXIETHERNET::BuiltInBBAInterface::RecvStart()
 {
   if (m_read_enabled.IsSet())
     return;
-  InitUDPPort(26502);  // Kirby Air Ride
-  InitUDPPort(26512);  // Mario Kart: Double Dash!! and 1080° Avalanche
+  if (!m_netplay_mode)
+  {
+    // These LAN ports are only bound to real sockets for internet LAN tunneling. In netplay mode
+    // the corresponding traffic is bridged to the peer instead, so binding them is unnecessary.
+    InitUDPPort(26502);  // Kirby Air Ride
+    InitUDPPort(26512);  // Mario Kart: Double Dash!! and 1080° Avalanche
+  }
   m_read_enabled.Set();
 }
 

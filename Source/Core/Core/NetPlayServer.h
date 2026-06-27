@@ -69,6 +69,8 @@ public:
 
   void AdjustPadBufferSize(unsigned int size);
   void SetHostInputAuthority(bool enable);
+  void SetBBAMode(bool enable);
+  bool IsBBAModeEnabled() const { return m_bba_mode; }
 
   void KickPlayer(PlayerId player);
 
@@ -167,6 +169,7 @@ private:
 
   // pulled from OnConnect()
   void AssignNewUserAPad(const Client& player);
+  void ApplyBBADefaultPadMapping();
   bool EnsurePortMappingsForPlatform();
   // pulled from OnConnect()
   // returns the PID given
@@ -190,6 +193,7 @@ private:
   bool m_codes_synced = true;
   bool m_start_pending = false;
   bool m_host_input_authority = false;
+  bool m_bba_mode = false;
   bool m_is_wii_game = false;
   PlayerId m_current_golfer = 1;
   PlayerId m_pending_golfer = 0;
@@ -202,8 +206,8 @@ private:
   void ClearPlayerInputState(PlayerId pid);
   bool ShouldStopGameOnDisconnect(PlayerId pid) const;
 
-  // Per-player input queues for shared ports. Aggregation emits one combined sample only when
-  // every contributor on the port has submitted the next frame (lockstep).
+  void SendBBAPacket(const u8* data, u32 size);
+  void OnBBAPacketData(sf::Packet& packet, Client& player);
   std::array<std::map<PlayerId, std::deque<GCPadStatus>>, 4> m_pad_input_queues{};
   std::array<std::map<PlayerId, std::deque<WiimoteEmu::SerializedWiimoteState>>, 4>
       m_wiimote_input_queues{};

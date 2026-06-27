@@ -369,6 +369,10 @@ private:
   void OnGameDigestError(sf::Packet& packet);
   void OnGameDigestAbort();
   void OnSendCodesMsg(sf::Packet& packet);
+  void OnBBAPacketData(sf::Packet& packet);
+  void OnBBAMode(sf::Packet& packet);
+  void SendBBAPacket(const u8* data, u32 size);
+  void ApplyBBAMode(bool enable);
 
 
   bool m_is_connected = false;

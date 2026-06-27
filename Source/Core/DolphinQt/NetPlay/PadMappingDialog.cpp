@@ -432,6 +432,9 @@ void PadMappingDialog::AutoAssign()
 {
   ClearAll();
 
+  const auto server = Settings::Instance().GetNetPlayServer();
+  const bool bba_mode = server && server->IsBBAModeEnabled();
+
   const QSignalBlocker blocker(m_mapping_table);
 
   std::array<bool, 4> port_used{};
@@ -447,8 +450,14 @@ void PadMappingDialog::AutoAssign()
     const NetPlay::PlayerId pid =
         static_cast<NetPlay::PlayerId>(name_item->data(Qt::UserRole).toInt());
     int port = -1;
-    if (pid >= 1 && pid <= 4)
+    if (bba_mode)
+    {
+      port = 0;
+    }
+    else if (pid >= 1 && pid <= 4)
+    {
       port = static_cast<int>(pid) - 1;
+    }
     else
     {
       for (int i = 0; i < 4; ++i)

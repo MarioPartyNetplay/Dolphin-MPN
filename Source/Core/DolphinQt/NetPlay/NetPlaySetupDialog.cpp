@@ -216,9 +216,6 @@ void NetPlaySetupDialog::CreateMainLayout()
   // m_host_chunked_upload_limit_box->setEnabled(false);
 
 
-  // m_host_broadband_adapter = new QCheckBox(tr("Enable Broadband Adapter (BBA)"));
-  // m_host_broadband_adapter->setToolTip(tr("Enable BBA mode for this NetPlay session. BBA packets will be synchronized instead of controller inputs."));
-
 #ifdef USE_UPNP
   m_host_upnp = new QCheckBox(tr("Forward port (UPnP)"));
 #endif
@@ -243,7 +240,6 @@ void NetPlaySetupDialog::CreateMainLayout()
   // Create a horizontal layout for the bottom row
   auto* bottom_layout = new QHBoxLayout;
   bottom_layout->addWidget(m_host_server_browser);
-  // bottom_layout->addWidget(m_host_broadband_adapter);
   bottom_layout->addStretch(); // Add stretch to push the host button to the right
   bottom_layout->addWidget(m_host_button);
   
@@ -306,8 +302,6 @@ void NetPlaySetupDialog::ConnectWidgets()
   // connect(m_host_server_name, &QLineEdit::textChanged, this, &NetPlaySetupDialog::SaveSettings);
 
   connect(m_host_server_browser, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
-
-  // connect(m_host_broadband_adapter, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
 
   // connect(m_host_chunked_upload_limit_check, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
   // connect(m_host_chunked_upload_limit_check, &QCheckBox::toggled, [this](bool checked) {
@@ -390,7 +384,6 @@ void NetPlaySetupDialog::SaveSettings()
 
   settings.setValue(QStringLiteral("netplaybrowser/hide_incompatible"), true);
   settings.setValue(QStringLiteral("netplaybrowser/hide_ingame"), m_check_hide_ingame->isChecked());
-  //settings.setValue(QStringLiteral("netplay/host_broadband_adapter"), m_host_broadband_adapter->isChecked());
 }
 
 void NetPlaySetupDialog::OnConnectionTypeChanged(int index)
@@ -423,11 +416,6 @@ void NetPlaySetupDialog::show()
   //   std::string nickname = Config::Get(Config::NETPLAY_NICKNAME);
   //   m_host_server_name->setText(QString::fromStdString(nickname));
   // }
-  
-  // Load saved BBA checkbox state
-  const auto& settings = Settings::Instance().GetQSettings();
-  const bool bba_enabled = settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool();
-  //m_host_broadband_adapter->setChecked(bba_enabled);
   
   m_connection_type->setCurrentIndex(1);
   m_tab_widget->setCurrentIndex(2);
