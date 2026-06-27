@@ -93,6 +93,8 @@ QString InetAddressToString(const Common::TraversalInetAddress& addr)
 
   return QStringLiteral("%1:%2").arg(ip, QString::number(ntohs(addr.port)));
 }
+
+constexpr const char* NETWORK_MODE_MESSAGE_COLOR = "#ffd700";
 }  // namespace
 
 NetPlayDialog::NetPlayDialog(const GameListModel& game_list_model,
@@ -226,12 +228,18 @@ void NetPlayDialog::CreateMainLayout()
          "switched at any time.\nSuitable for turn-based games with timing-sensitive controls, "
          "such as golf."));
   m_golf_mode_action->setCheckable(true);
+  m_bba_mode_action = m_network_menu->addAction(tr("Broadband Adapter (BBA)"));
+  m_bba_mode_action->setToolTip(
+      tr("Synchronize BBA network traffic instead of controller inputs. Each player runs their "
+         "own screen locally (e.g. Mario Kart: Double Dash!!)."));
+  m_bba_mode_action->setCheckable(true);
 
   m_network_mode_group = new QActionGroup(this);
   m_network_mode_group->setExclusive(true);
   m_network_mode_group->addAction(m_fixed_delay_action);
   m_network_mode_group->addAction(m_host_input_authority_action);
   m_network_mode_group->addAction(m_golf_mode_action);
+  m_network_mode_group->addAction(m_bba_mode_action);
   m_fixed_delay_action->setChecked(true);
 
   m_game_digest_menu = m_menu_bar->addMenu(tr("Checksum"));
@@ -397,19 +405,8 @@ void NetPlayDialog::ConnectWidgets()
     }
   });
 
-  const auto hia_function = [this](bool enable) {
-    if (m_host_input_authority != enable)
-    {
-      const auto server = Settings::Instance().GetNetPlayServer();
-      if (server)
-        server->SetHostInputAuthority(enable);
-    }
-  };
-
-  connect(m_host_input_authority_action, &QAction::toggled, this,
-          [hia_function] { hia_function(true); });
-  connect(m_golf_mode_action, &QAction::toggled, this, [hia_function] { hia_function(true); });
-  connect(m_fixed_delay_action, &QAction::toggled, this, [hia_function] { hia_function(false); });
+  connect(m_network_mode_group, &QActionGroup::triggered, this,
+          [this](QAction*) { ApplySelectedNetworkMode(); });
 
   connect(m_start_button, &QPushButton::clicked, this, &NetPlayDialog::OnStart);
   connect(m_quit_button, &QPushButton::clicked, this, &NetPlayDialog::reject);
@@ -466,6 +463,7 @@ void NetPlayDialog::ConnectWidgets()
   connect(m_strict_settings_sync_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
   connect(m_host_input_authority_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
   connect(m_golf_mode_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
+  connect(m_bba_mode_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
   connect(m_golf_mode_overlay_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
   connect(m_fixed_delay_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
   connect(m_hide_remote_gbas_action, &QAction::toggled, this, &NetPlayDialog::SaveSettings);
@@ -553,6 +551,8 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
   m_buffer_size = 0;
   m_old_player_count = 0;
 
+  m_network_mode_kind.reset();
+
   m_room_box->clear();
   m_chat_edit->clear();
   m_chat_type_edit->clear();
@@ -590,6 +590,17 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
   m_kick_button->setEnabled(false);
 
   SetOptionsEnabled(true);
+
+  if (is_hosting && m_bba_mode_action->isChecked())
+  {
+    m_buffer_size_box->setHidden(true);
+    m_buffer_label->setHidden(true);
+  }
+
+  if (is_hosting)
+    ReportNetworkMode(GetSelectedNetworkModeKind(), true);
+  else if (const auto client = Settings::Instance().GetNetPlayClient())
+    ReportNetworkMode(InferNetworkModeFromClient(), true);
 
   QDialog::show();
   UpdateGUI();
@@ -851,20 +862,13 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 
 void NetPlayDialog::AppendChat(const std::string& msg)
 {
-  // Special-case BBA mode messages
-  if (msg == "BBA mode enabled")
+  if (msg == "BBA mode enabled" || msg == "BBA mode disabled: Input synchronization enabled")
   {
-    DisplayMessage(QString::fromStdString(msg), "#ffa500");  // Orange
-  }
-  else if (msg == "BBA mode disabled: Input synchronization enabled")
-  {
-    // Hide the disabled message
+    SyncNetworkModeFromClient();
     return;
   }
-  else
-  {
-    DisplayMessage(QString::fromStdString(msg), "");
-  }
+
+  DisplayMessage(QString::fromStdString(msg), "");
   QApplication::alert(this);
 }
 
@@ -915,10 +919,123 @@ void NetPlayDialog::SetOptionsEnabled(bool enabled)
     m_strict_settings_sync_action->setEnabled(enabled);
     m_host_input_authority_action->setEnabled(enabled);
     m_golf_mode_action->setEnabled(enabled);
+    m_bba_mode_action->setEnabled(enabled);
     m_fixed_delay_action->setEnabled(enabled);
   }
 
   m_record_input_action->setEnabled(enabled);
+}
+
+void NetPlayDialog::ApplySelectedNetworkMode()
+{
+  const auto server = Settings::Instance().GetNetPlayServer();
+  if (!server)
+    return;
+
+  const NetworkModeKind new_mode = GetSelectedNetworkModeKind();
+  const NetworkModeKind old_mode = m_network_mode_kind.value_or(new_mode);
+
+  if (m_bba_mode_action->isChecked())
+  {
+    server->SetBBAMode(true);
+    if (m_host_input_authority)
+      server->SetHostInputAuthority(false);
+
+    QueueOnObject(this, [this] {
+      m_buffer_size_box->setHidden(true);
+      m_buffer_label->setHidden(true);
+    });
+  }
+  else
+  {
+    server->SetBBAMode(false);
+
+    const bool host_input_authority =
+        m_host_input_authority_action->isChecked() || m_golf_mode_action->isChecked();
+    if (m_host_input_authority != host_input_authority)
+      server->SetHostInputAuthority(host_input_authority);
+  }
+
+  if (!m_network_mode_kind.has_value())
+    ReportNetworkMode(new_mode, true);
+  else if (new_mode != old_mode)
+    ReportNetworkMode(new_mode, false);
+}
+
+NetPlayDialog::NetworkModeKind NetPlayDialog::GetSelectedNetworkModeKind() const
+{
+  if (m_bba_mode_action->isChecked())
+    return NetworkModeKind::BBA;
+  if (m_golf_mode_action->isChecked())
+    return NetworkModeKind::Golf;
+  if (m_host_input_authority_action->isChecked())
+    return NetworkModeKind::HostInputAuthority;
+  return NetworkModeKind::FixedDelay;
+}
+
+NetPlayDialog::NetworkModeKind NetPlayDialog::InferNetworkModeFromClient() const
+{
+  if (const auto client = Settings::Instance().GetNetPlayClient())
+  {
+    const auto& settings = client->GetNetSettings();
+    if (settings.bba_mode)
+      return NetworkModeKind::BBA;
+    if (settings.golf_mode)
+      return NetworkModeKind::Golf;
+    if (m_host_input_authority)
+      return NetworkModeKind::HostInputAuthority;
+    return NetworkModeKind::FixedDelay;
+  }
+
+  return GetSelectedNetworkModeKind();
+}
+
+QString NetPlayDialog::GetNetworkModeName(const NetworkModeKind mode) const
+{
+  switch (mode)
+  {
+  case NetworkModeKind::FixedDelay:
+    return tr("Fair Input Delay");
+  case NetworkModeKind::HostInputAuthority:
+    return tr("Host Input Authority");
+  case NetworkModeKind::Golf:
+    return tr("Golf Mode");
+  case NetworkModeKind::BBA:
+    return tr("Broadband Adapter (BBA)");
+  }
+
+  return tr("Fair Input Delay");
+}
+
+void NetPlayDialog::ReportNetworkMode(const NetworkModeKind new_mode, const bool initial)
+{
+  if (initial)
+  {
+    DisplayMessage(tr("Network mode: %1").arg(GetNetworkModeName(new_mode)),
+                   NETWORK_MODE_MESSAGE_COLOR);
+    m_network_mode_kind = new_mode;
+    return;
+  }
+
+  if (m_network_mode_kind == new_mode)
+    return;
+
+  DisplayMessage(tr("%1 → %2")
+                     .arg(GetNetworkModeName(*m_network_mode_kind), GetNetworkModeName(new_mode)),
+                 NETWORK_MODE_MESSAGE_COLOR);
+  m_network_mode_kind = new_mode;
+}
+
+void NetPlayDialog::SyncNetworkModeFromClient()
+{
+  if (IsHosting())
+    return;
+
+  const NetworkModeKind new_mode = InferNetworkModeFromClient();
+  if (!m_network_mode_kind.has_value())
+    ReportNetworkMode(new_mode, true);
+  else if (new_mode != *m_network_mode_kind)
+    ReportNetworkMode(new_mode, false);
 }
 
 void NetPlayDialog::OnMsgStartGame()
@@ -990,12 +1107,19 @@ void NetPlayDialog::OnPadBufferChanged(u32 buffer)
 void NetPlayDialog::OnHostInputAuthorityChanged(bool enabled)
 {
   m_host_input_authority = enabled;
-  DisplayMessage(enabled ? tr("Host input authority enabled") : tr("Host input authority disabled"),
-                 "");
+  SyncNetworkModeFromClient();
 
   QueueOnObject(this, [this, enabled] {
+    const bool bba_mode = m_bba_mode_action->isChecked();
     const bool is_hosting = IsHosting();
     const bool enable_buffer = is_hosting != enabled;
+
+    if (bba_mode)
+    {
+      m_buffer_size_box->setHidden(true);
+      m_buffer_label->setHidden(true);
+      return;
+    }
 
     if (is_hosting)
     {
@@ -1212,7 +1336,16 @@ void NetPlayDialog::LoadSettings()
   m_golf_mode_overlay_action->setChecked(golf_mode_overlay);
   m_hide_remote_gbas_action->setChecked(hide_remote_gbas);
 
-  const std::string network_mode = Config::Get(Config::NETPLAY_NETWORK_MODE);
+  std::string network_mode = Config::Get(Config::NETPLAY_NETWORK_MODE);
+
+  auto& qsettings = Settings::Instance().GetQSettings();
+  if (qsettings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool() &&
+      network_mode == "fixeddelay")
+  {
+    network_mode = "bba";
+    Config::SetBase(Config::NETPLAY_NETWORK_MODE, network_mode);
+    qsettings.remove(QStringLiteral("netplay/host_broadband_adapter"));
+  }
 
   if (network_mode == "fixeddelay")
   {
@@ -1225,6 +1358,10 @@ void NetPlayDialog::LoadSettings()
   else if (network_mode == "golf")
   {
     m_golf_mode_action->setChecked(true);
+  }
+  else if (network_mode == "bba")
+  {
+    m_bba_mode_action->setChecked(true);
   }
   else
   {
@@ -1267,6 +1404,10 @@ void NetPlayDialog::SaveSettings()
   else if (m_golf_mode_action->isChecked())
   {
     network_mode = "golf";
+  }
+  else if (m_bba_mode_action->isChecked())
+  {
+    network_mode = "bba";
   }
 
   Config::SetBase(Config::NETPLAY_NETWORK_MODE, network_mode);

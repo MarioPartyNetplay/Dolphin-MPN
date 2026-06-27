@@ -1865,8 +1865,7 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   Settings::Instance().GetNetPlayServer()->ChangeGame(game.GetSyncIdentifier(),
                                                       m_game_list->GetNetPlayName(game));
 
-  const auto& settings = Settings::Instance().GetQSettings();
-  if (settings.value(QStringLiteral("netplay/host_broadband_adapter"), false).toBool())
+  if (Config::Get(Config::NETPLAY_NETWORK_MODE) == "bba")
     Settings::Instance().GetNetPlayServer()->SetBBAMode(true);
 
   // Join our local server

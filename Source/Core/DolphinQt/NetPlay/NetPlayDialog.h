@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <QDialog>
@@ -116,6 +117,19 @@ private:
   void UpdateGUI();
   void GameStatusChanged(bool running);
   void SetOptionsEnabled(bool enabled);
+  void ApplySelectedNetworkMode();
+  enum class NetworkModeKind
+  {
+    FixedDelay,
+    HostInputAuthority,
+    Golf,
+    BBA,
+  };
+  NetworkModeKind GetSelectedNetworkModeKind() const;
+  NetworkModeKind InferNetworkModeFromClient() const;
+  QString GetNetworkModeName(NetworkModeKind mode) const;
+  void ReportNetworkMode(NetworkModeKind new_mode, bool initial);
+  void SyncNetworkModeFromClient();
 
   void SendMessage(const std::string& message);
 
@@ -156,6 +170,7 @@ private:
   QAction* m_strict_settings_sync_action;
   QAction* m_host_input_authority_action;
   QAction* m_golf_mode_action;
+  QAction* m_bba_mode_action;
   QAction* m_golf_mode_overlay_action;
   QAction* m_fixed_delay_action;
   QAction* m_hide_remote_gbas_action;
@@ -179,6 +194,7 @@ private:
   int m_player_count = 0;
   int m_old_player_count = 0;
   bool m_host_input_authority = false;
+  std::optional<NetworkModeKind> m_network_mode_kind;
 
   StartGameCallback m_start_game_callback;
 };
