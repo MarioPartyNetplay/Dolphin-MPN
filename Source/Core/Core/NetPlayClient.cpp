@@ -87,6 +87,14 @@ static bool IsSharedControllerPort(const PadMapping& mapping)
   return mapping.players.size() > 1;
 }
 
+static GCPadStatus DefaultConnectedPadStatus()
+{
+  GCPadStatus pad{};
+  pad.isConnected = true;
+  pad.stickX = pad.stickY = pad.substickX = pad.substickY = 128;
+  return pad;
+}
+
 // Netplay polls hardware (including the Wii U adapter) in PollLocalPad. The emulated SI device must
 // be a standard GC controller so RunBuffer/GetData do not touch adapter port indices directly.
 static SerialInterface::SIDevices NetPlayEmulatedSIDevice(SerialInterface::SIDevices config_device)

@@ -2723,7 +2723,6 @@ void NetPlayServer::AssignNewUserAPad(const Client& player)
     return;
   }
 
-  for (PadMapping& mapping : m_pad_map)
   // For Wii games assign to a Wii remote port; for GC games assign to a GC pad port.
   PadMappingArray& target_map = m_is_wii_game ? m_wiimote_map : m_pad_map;
   for (PadMapping& mapping : target_map)
@@ -2748,6 +2747,8 @@ void NetPlayServer::ApplyBBADefaultPadMapping()
     m_pad_map[0].players.push_back(pid);
 
   DedupePadMappingPlayers(m_pad_map);
+}
+
 bool NetPlayServer::EnsurePortMappingsForPlatform()
 {
   bool changed = false;
