@@ -2257,7 +2257,6 @@ void NetPlayClient::ClearBuffers()
 
   m_shared_pad_in_flight.fill(0);
   m_shared_wiimote_in_flight.fill(0);
-  ExpansionInterface::ClearBBAPacketBuffer();
 }
 
 bool NetPlayClient::LocalPlayerOnPad(const PadMapping& mapping) const
@@ -2340,12 +2339,9 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     return true;
   }
 
-  // BBA mode: local input only. Rate-limit incoming LAN frames to one per emulated frame.
+  // BBA mode: local input only. LAN frames are injected immediately on arrival.
   if (m_net_settings.bba_mode)
   {
-    if (batching && IsFirstInGamePadForMap(pad_nb, pad_map))
-      ExpansionInterface::DrainBBAPacketBuffer();
-
     if (!LocalPlayerOnPad(pad_map[pad_nb]))
     {
       *pad_status = {};
@@ -2538,12 +2534,9 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
   const WiimoteEmu::SerializedWiimoteState neutral_state =
       WiimoteEmu::SerializeDesiredState(WiimoteEmu::DesiredWiimoteState{});
 
-  // BBA mode: local input only. Rate-limit incoming LAN frames to one per batch.
+  // BBA mode: local input only.
   if (m_net_settings.bba_mode)
   {
-    if (!entries.empty())
-      ExpansionInterface::DrainBBAPacketBuffer();
-
     PadMappingArray wiimote_map;
     {
       std::lock_guard lkg(m_crit.game);
@@ -3256,7 +3249,6 @@ void NetPlayClient::AdjustPadBufferSize(const unsigned int size)
 void NetPlayClient::ApplyPadBufferSize(const unsigned int size)
 {
   m_target_buffer_size = size;
-  ExpansionInterface::SetBBAPacketBufferSize(size);
 }
 
 void NetPlayClient::ApplyBBAMode(const bool enable)
@@ -3270,8 +3262,6 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
     // Each player needs a distinct identity on the shared virtual LAN (host = 0, client 1 = 1, ...).
     const int index = m_local_player ? static_cast<int>(m_local_player->pid) - 1 : 0;
     ExpansionInterface::SetBBANetPlayIndex(index);
-    ExpansionInterface::SetBBAPacketBufferSize(static_cast<u32>(m_target_buffer_size));
-    ExpansionInterface::ClearBBAPacketBuffer();
 
     // The host's frames are sent through the NetPlayServer's sender (registered when the server
     // starts), which fans them out to clients without looping back. Only non-host clients register
@@ -3288,7 +3278,6 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
   {
     if (!is_host)
       ExpansionInterface::RegisterBBAPacketSender(nullptr);
-    ExpansionInterface::ClearBBAPacketBuffer();
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::None);
   }
@@ -3306,7 +3295,7 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
   for (u32 i = 0; i < packet_size; ++i)
     packet >> bba_data[i];
 
-  ExpansionInterface::QueueBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
 }
 
 void NetPlayClient::OnBBAMode(sf::Packet& packet)
