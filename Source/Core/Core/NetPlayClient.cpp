@@ -2257,6 +2257,7 @@ void NetPlayClient::ClearBuffers()
 
   m_shared_pad_in_flight.fill(0);
   m_shared_wiimote_in_flight.fill(0);
+  ExpansionInterface::ClearBBAPacketQueue();
 }
 
 bool NetPlayClient::LocalPlayerOnPad(const PadMapping& mapping) const
@@ -2339,24 +2340,10 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     return true;
   }
 
-  // BBA mode: local input only. LAN frames are injected immediately on arrival.
-  if (m_net_settings.bba_mode)
+  if (m_net_settings.bba_mode && !LocalPlayerOnPad(pad_map[pad_nb]))
   {
-    if (!LocalPlayerOnPad(pad_map[pad_nb]))
-    {
-      *pad_status = {};
-      pad_status->isConnected = false;
-      return true;
-    }
-
-    const int local_pad = InGamePadToLocalPad(pad_nb);
-    if (local_pad < 4)
-      *pad_status = Pad::GetStatus(local_pad);
-    else
-    {
-      *pad_status = {};
-      pad_status->isConnected = false;
-    }
+    *pad_status = {};
+    pad_status->isConnected = false;
     return true;
   }
 
@@ -2408,7 +2395,7 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     m_wait_on_input_event.Wait();
   }
 
-  if (IsFirstInGamePadForMap(pad_nb, pad_map) && batching)
+  if (!m_net_settings.bba_mode && IsFirstInGamePadForMap(pad_nb, pad_map) && batching)
   {
     sf::Packet packet;
     packet << MessageID::PadData;
@@ -2428,7 +2415,19 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
       SendPadHostPoll(-1);
   }
 
-  if (!batching)
+  if (m_net_settings.bba_mode && batching && IsFirstInGamePadForMap(pad_nb, pad_map))
+  {
+    sf::Packet packet;
+    packet << MessageID::PadData;
+    const int num_local_pads =
+        m_local_player ? NumLocalPadsForMap(pad_map, m_local_player->pid) : 0;
+    for (int local_pad = 0; local_pad < num_local_pads; local_pad++)
+      PollLocalPad(local_pad, packet);
+
+    ExpansionInterface::DrainBBAPacketQueue();
+  }
+
+  if (!m_net_settings.bba_mode && !batching)
   {
     const int local_pad =
         m_local_player ? InGameToLocal(pad_nb, pad_map, m_local_player->pid) : 4;
@@ -2473,14 +2472,38 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
 
   // Now, we either use the data pushed earlier, or wait for the
   // other clients to send it to us
-  while (m_pad_buffer[pad_nb].Size() == 0)
+  if (m_net_settings.bba_mode)
   {
-    if (!m_is_running.IsSet())
+    if (m_pad_buffer[pad_nb].Size() == 0 && LocalPlayerOnPad(pad_map[pad_nb]))
     {
-      return false;
+      const int local_pad =
+          m_local_player ? InGameToLocal(pad_nb, pad_map, m_local_player->pid) : 4;
+      if (local_pad < 4)
+      {
+        sf::Packet packet;
+        packet << MessageID::PadData;
+        PollLocalPad(local_pad, packet);
+      }
     }
 
-    m_gc_pad_event.Wait();
+    if (m_pad_buffer[pad_nb].Size() == 0)
+    {
+      *pad_status = {};
+      pad_status->isConnected = false;
+      return true;
+    }
+  }
+  else
+  {
+    while (m_pad_buffer[pad_nb].Size() == 0)
+    {
+      if (!m_is_running.IsSet())
+      {
+        return false;
+      }
+
+      m_gc_pad_event.Wait();
+    }
   }
 
   m_pad_buffer[pad_nb].Pop(*pad_status);
@@ -2699,6 +2722,17 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   else
   {
     pad_status = Pad::GetStatus(local_pad);
+  }
+
+  // BBA mode: buffer local input only (no network upload) to keep frame pacing stable.
+  if (m_net_settings.bba_mode)
+  {
+    while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
+    {
+      m_pad_buffer[ingame_pad].Push(pad_status);
+      data_added = true;
+    }
+    return data_added;
   }
 
   // Multiple players on one port share a single emulated controller. Only the server-combined
@@ -3259,9 +3293,9 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
 
   if (enable)
   {
-    // Each player needs a distinct identity on the shared virtual LAN (host = 0, client 1 = 1, ...).
     const int index = m_local_player ? static_cast<int>(m_local_player->pid) - 1 : 0;
     ExpansionInterface::SetBBANetPlayIndex(index);
+    ExpansionInterface::ClearBBAPacketQueue();
 
     // The host's frames are sent through the NetPlayServer's sender (registered when the server
     // starts), which fans them out to clients without looping back. Only non-host clients register
@@ -3278,6 +3312,7 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
   {
     if (!is_host)
       ExpansionInterface::RegisterBBAPacketSender(nullptr);
+    ExpansionInterface::ClearBBAPacketQueue();
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::None);
   }
@@ -3295,7 +3330,7 @@ void NetPlayClient::OnBBAPacketData(sf::Packet& packet)
   for (u32 i = 0; i < packet_size; ++i)
     packet >> bba_data[i];
 
-  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  ExpansionInterface::QueueBBAPacketFromNetPlay(bba_data.data(), packet_size);
 }
 
 void NetPlayClient::OnBBAMode(sf::Packet& packet)
@@ -3329,10 +3364,9 @@ void NetPlayClient::SendBBAPacket(const u8* data, u32 size)
   sf::Packet packet;
   packet << MessageID::BBAPacketData;
   packet << size;
-  for (u32 i = 0; i < size; ++i)
-    packet << data[i];
+  packet.append(data, size);
 
-  SendAsync(std::move(packet));
+  Common::ENet::SendPacket(m_server, packet, DEFAULT_CHANNEL, false);
 }
 
 void NetPlayClient::SetWiiSyncData(std::unique_ptr<IOS::HLE::FS::FileSystem> fs,

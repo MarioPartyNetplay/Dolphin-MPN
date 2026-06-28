@@ -37,7 +37,7 @@ int ENET_CALLBACK InterceptCallback(ENetHost* host, ENetEvent* event)
   return 0;
 }
 
-bool SendPacket(ENetPeer* socket, const sf::Packet& packet, u8 channel_id)
+bool SendPacket(ENetPeer* socket, const sf::Packet& packet, const u8 channel_id, const bool reliable)
 {
   if (!socket)
   {
@@ -45,8 +45,8 @@ bool SendPacket(ENetPeer* socket, const sf::Packet& packet, u8 channel_id)
     return false;
   }
 
-  ENetPacket* epac =
-      enet_packet_create(packet.getData(), packet.getDataSize(), ENET_PACKET_FLAG_RELIABLE);
+  const int flags = reliable ? ENET_PACKET_FLAG_RELIABLE : 0;
+  ENetPacket* epac = enet_packet_create(packet.getData(), packet.getDataSize(), flags);
   if (!epac)
   {
     ERROR_LOG_FMT(NETPLAY, "Failed to create ENetPacket ({} bytes).", packet.getDataSize());

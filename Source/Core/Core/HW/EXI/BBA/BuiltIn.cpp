@@ -178,6 +178,8 @@ void CEXIETHERNET::BuiltInBBAInterface::WriteToQueue(std::vector<u8> data)
     m_queue_write = next_write_index;
   else
     WARN_LOG_FMT(SP1, "BBA queue overrun, data might be lost");
+
+  m_read_wake.Set();
 }
 
 bool CEXIETHERNET::BuiltInBBAInterface::WillQueueOverrun() const
@@ -902,8 +904,8 @@ void CEXIETHERNET::BuiltInBBAInterface::ReadThreadHandler(CEXIETHERNET::BuiltInB
   {
     if (datasize == 0)
     {
-      // Make thread less CPU hungry
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      // Wake immediately when netplay injects a frame; otherwise poll lightly.
+      self->m_read_wake.WaitFor(std::chrono::milliseconds(1));
     }
 
     if (!self->m_read_enabled.IsSet())
@@ -914,7 +916,10 @@ void CEXIETHERNET::BuiltInBBAInterface::ReadThreadHandler(CEXIETHERNET::BuiltInB
     if (rp > wp)
       wp += 16;
 
-    if ((wp - rp) >= 8)
+    // Standalone mode keeps half the 16-page ring free. Netplay uses more of the ring so LAN
+    // bursts from the transport do not stall waiting for the game to drain receive descriptors.
+    const u8 backpressure_pages = self->m_netplay_mode ? 14 : 8;
+    if ((wp - rp) >= backpressure_pages)
       continue;
 
     std::lock_guard<std::mutex> lock(self->m_mtx);

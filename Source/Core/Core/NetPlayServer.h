@@ -140,8 +140,9 @@ private:
   template <typename... Data>
   void SendResponseToAllPlayers(const MessageID message_id, Data&&... data_to_send);
   void SendToClients(const sf::Packet& packet, PlayerId skip_pid = 0,
-                     u8 channel_id = DEFAULT_CHANNEL);
-  void Send(ENetPeer* socket, const sf::Packet& packet, u8 channel_id = DEFAULT_CHANNEL);
+                     u8 channel_id = DEFAULT_CHANNEL, bool reliable = true);
+  void Send(ENetPeer* socket, const sf::Packet& packet, u8 channel_id = DEFAULT_CHANNEL,
+            bool reliable = true);
   ConnectionError OnConnect(ENetPeer* socket, sf::Packet& received_packet);
   unsigned int OnDisconnect(const Client& player);
   unsigned int OnData(sf::Packet& packet, Client& player);

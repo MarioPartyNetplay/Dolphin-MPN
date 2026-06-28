@@ -20,6 +20,7 @@
 #include <libipc/ipc.h>
 #endif
 
+#include "Common/Event.h"
 #include "Common/Flag.h"
 #include "Common/Network.h"
 #include "Core/HW/EXI/BBA/BuiltIn.h"
@@ -471,6 +472,7 @@ private:
     std::thread m_read_thread;
     Common::Flag m_read_enabled;
     Common::Flag m_read_thread_shutdown;
+    Common::Event m_read_wake;
     static void ReadThreadHandler(BuiltInBBAInterface* self);
 #endif
     void WriteToQueue(std::vector<u8> data);

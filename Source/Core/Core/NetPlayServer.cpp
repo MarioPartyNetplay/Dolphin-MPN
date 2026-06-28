@@ -2671,20 +2671,21 @@ u64 NetPlayServer::GetInitialNetPlayRTC() const
 
 // called from multiple threads
 void NetPlayServer::SendToClients(const sf::Packet& packet, const PlayerId skip_pid,
-                                  const u8 channel_id)
+                                  const u8 channel_id, const bool reliable)
 {
   for (auto& p : std::views::values(m_players))
   {
     if (p.pid && p.pid != skip_pid)
     {
-      Send(p.socket, packet, channel_id);
+      Send(p.socket, packet, channel_id, reliable);
     }
   }
 }
 
-void NetPlayServer::Send(ENetPeer* socket, const sf::Packet& packet, const u8 channel_id)
+void NetPlayServer::Send(ENetPeer* socket, const sf::Packet& packet, const u8 channel_id,
+                         const bool reliable)
 {
-  Common::ENet::SendPacket(socket, packet, channel_id);
+  Common::ENet::SendPacket(socket, packet, channel_id, reliable);
 }
 
 void NetPlayServer::KickPlayer(PlayerId player)
@@ -3460,16 +3461,13 @@ void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& p
   for (u32 i = 0; i < packet_size; ++i)
     packet >> bba_data[i];
 
-  INFO_LOG_FMT(NETPLAY, "Received BBA packet from player {}: {} bytes", player.pid, packet_size);
-
   sf::Packet bba_packet;
   bba_packet << MessageID::BBAPacketData;
   bba_packet << packet_size;
-  for (u8 byte : bba_data)
-    bba_packet << byte;
+  bba_packet.append(bba_data.data(), packet_size);
 
-  SendAsyncToClients(std::move(bba_packet), player.pid);
-  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  SendToClients(bba_packet, player.pid, DEFAULT_CHANNEL, false);
+  ExpansionInterface::QueueBBAPacketFromNetPlay(bba_data.data(), packet_size);
 }
 
 void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
@@ -3486,11 +3484,8 @@ void NetPlayServer::SendBBAPacket(const u8* data, u32 size)
   sf::Packet packet;
   packet << MessageID::BBAPacketData;
   packet << size;
-  for (u32 i = 0; i < size; ++i)
-    packet << data[i];
+  packet.append(data, size);
 
-  // Skip the host (pid 1) so locally transmitted frames are not injected back into the host's
-  // game. Echoing SSDP/UPnP discovery traffic makes MKDD think a non-GameCube device is on the LAN.
-  SendAsyncToClients(std::move(packet), 1);
+  SendToClients(packet, 1, DEFAULT_CHANNEL, false);
 }
 }  // namespace NetPlay

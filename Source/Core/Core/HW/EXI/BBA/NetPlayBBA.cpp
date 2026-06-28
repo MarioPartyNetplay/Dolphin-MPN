@@ -4,6 +4,7 @@
 #include "Core/HW/EXI/BBA/NetPlayBBA.h"
 
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -23,6 +24,10 @@ static std::mutex g_bba_injectors_mutex;
 static std::atomic<u64> g_bba_injector_next_id{1};
 
 static std::atomic<int> g_bba_netplay_index{0};
+
+static std::deque<std::vector<u8>> g_bba_packet_queue;
+static std::mutex g_bba_packet_queue_mutex;
+static constexpr size_t MAX_BBA_PACKET_QUEUE = 512;
 
 static void InjectToBackends(const u8* data, const u32 size)
 {
@@ -72,12 +77,36 @@ void UnregisterBBAPacketInjector(const u64 id)
   std::erase_if(g_bba_packet_injectors, [id](const InjectorEntry& e) { return e.id == id; });
 }
 
-void InjectBBAPacketFromNetPlay(const u8* data, u32 size)
+void QueueBBAPacketFromNetPlay(const u8* data, u32 size)
 {
-  if (!data || size == 0)
+  if (!data || size == 0 || size > 1518)
     return;
 
-  InjectToBackends(data, size);
+  std::lock_guard lock(g_bba_packet_queue_mutex);
+  if (g_bba_packet_queue.size() >= MAX_BBA_PACKET_QUEUE)
+    g_bba_packet_queue.pop_front();
+  g_bba_packet_queue.emplace_back(data, data + size);
+}
+
+void DrainBBAPacketQueue()
+{
+  std::vector<u8> packet;
+  {
+    std::lock_guard lock(g_bba_packet_queue_mutex);
+    if (g_bba_packet_queue.empty())
+      return;
+
+    packet = std::move(g_bba_packet_queue.front());
+    g_bba_packet_queue.pop_front();
+  }
+
+  InjectToBackends(packet.data(), static_cast<u32>(packet.size()));
+}
+
+void ClearBBAPacketQueue()
+{
+  std::lock_guard lock(g_bba_packet_queue_mutex);
+  g_bba_packet_queue.clear();
 }
 
 void SetBBANetPlayIndex(const int index)
