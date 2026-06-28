@@ -30,8 +30,7 @@ void InjectBBAPacketFromNetPlay(const u8* data, u32 size);
 u64 RegisterBBAPacketInjector(std::function<void(const u8*, u32)> injector);
 void UnregisterBBAPacketInjector(u64 id);
 
-// Virtual LAN identity. In mirror mode every player uses index 0 (same IP/MAC as the host) so
-// consoles appear co-located on the LAN.
+// Virtual LAN IP index (192.168.55.(10 + index)). Mirror mode always uses 0.
 void SetBBANetPlayIndex(int index);
 int GetBBANetPlayIndex();
 

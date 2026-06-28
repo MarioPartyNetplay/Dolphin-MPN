@@ -14,7 +14,6 @@
 #include "Common/Network.h"
 #include "Common/StringUtil.h"
 #include "Core/Config/MainSettings.h"
-#include "Core/HW/EXI/BBA/NetPlayBBA.h"
 #include "Core/CoreTiming.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/HW/Memmap.h"
@@ -228,10 +227,8 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
   auto mac = mac_addr.value();
   if (type == BBADeviceType::NetPlay)
   {
-    // Deterministic MAC per virtual LAN index so every player presents the same address for a
-    // given index regardless of local BBA settings (required for mirror-mode proximity).
-    const int index = GetBBANetPlayIndex();
-    mac = {0x00, 0x09, 0xBF, 0x00, 0x00, static_cast<u8>(0x10 + index)};
+    // Shared virtual BBA identity for mirror-mode netplay (same on host and all peers).
+    mac = {0x00, 0x09, 0xBF, 0x00, 0x00, 0x10};
   }
   memcpy(&mBbaMem[BBA_NAFR_PAR0], mac.data(), mac.size());
 
