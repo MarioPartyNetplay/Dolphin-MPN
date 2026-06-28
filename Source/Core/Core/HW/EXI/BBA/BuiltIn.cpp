@@ -92,8 +92,8 @@ bool CEXIETHERNET::BuiltInBBAInterface::Activate()
   u32 ip;
   if (m_netplay_mode)
   {
-    // Mirror mode gives every player the host's LAN identity (.10) so consoles appear co-located.
-    // Non-mirror netplay uses distinct addresses per index (host .10, next player .11, etc.).
+    // Put every netplay player on a fixed shared virtual LAN with a distinct address so the games
+    // can discover and talk to each other. Host gets .10, next player .11, etc.
     m_netplay_index = GetBBANetPlayIndex();
     ip = 0xC0A83700u | static_cast<u32>(10 + m_netplay_index);  // 192.168.55.(10 + index)
   }
@@ -170,11 +170,8 @@ bool CEXIETHERNET::BuiltInBBAInterface::IsActivated()
   return m_active;
 }
 
-void CEXIETHERNET::BuiltInBBAInterface::WriteToQueue(std::vector<u8> data, bool mirror_to_netplay)
+void CEXIETHERNET::BuiltInBBAInterface::WriteToQueue(std::vector<u8> data)
 {
-  if (mirror_to_netplay && m_netplay_mode && !GetBBANetPlayMirrorMode())
-    SendBBAFrameToNetPlay(data.data(), static_cast<u32>(data.size()));
-
   m_queue_data[m_queue_write] = std::move(data);
   const u8 next_write_index = (m_queue_write + 1) & 15;
   if (next_write_index != m_queue_read)
@@ -791,7 +788,7 @@ void CEXIETHERNET::BuiltInBBAInterface::InjectNetPlayFrame(const u8* data, u32 s
     WARN_LOG_FMT(SP1, "BBA netplay queue overrun, dropping injected frame");
     return;
   }
-  WriteToQueue(std::vector<u8>(data, data + copy_size), false);
+  WriteToQueue(std::vector<u8>(data, data + copy_size));
 }
 
 bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
@@ -804,14 +801,6 @@ bool CEXIETHERNET::BuiltInBBAInterface::SendFrame(const u8* frame, u32 size)
   {
     ERROR_LOG_FMT(SP1, "Unable to send frame with invalid ethernet header");
     return false;
-  }
-
-  // Mirror-mode peers are passive: the host owns all LAN traffic and peers only receive injected
-  // frames. Pretend bridged sends succeeded so the game does not retry discovery traffic.
-  if (m_netplay_mode && GetBBANetPlayMirrorMode() && ShouldBridgeFrame(frame, size))
-  {
-    m_eth_ref->SendComplete();
-    return true;
   }
 
   // In netplay mode, LAN/peer/broadcast traffic is tunneled to the other player instead of being

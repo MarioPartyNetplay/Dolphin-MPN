@@ -12,10 +12,10 @@ namespace ExpansionInterface
 {
 // Transport bridge between the BBA backend and the NetPlay client/server.
 //
-// Host-authoritative mirror model: only the host runs real BBA/LAN logic. The host mirrors its
-// ethernet stream (TX and locally generated RX) to peers via the registered sender. Peer BBAs are
-// passive injectors only — they do not originate LAN traffic. Frames from netplay are delivered
-// immediately to all registered injectors.
+// The BBA backend (BuiltIn HLE adapter in netplay mode) decides which ethernet frames are
+// LAN/peer traffic and bridges them to the other player(s) via the registered sender. Frames
+// received from netplay are delivered immediately to all registered injectors. LAN discovery is
+// latency-sensitive and must not be input-buffered.
 
 // Called by the BBA backend to push a frame onto the netplay transport.
 void SendBBAFrameToNetPlay(const u8* data, u32 size);
@@ -30,11 +30,8 @@ void InjectBBAPacketFromNetPlay(const u8* data, u32 size);
 u64 RegisterBBAPacketInjector(std::function<void(const u8*, u32)> injector);
 void UnregisterBBAPacketInjector(u64 id);
 
-// Virtual LAN IP index (192.168.55.(10 + index)). Mirror mode always uses 0.
+// Local player index on the shared virtual LAN (host = 0, client 1 = 1, ...). Used by the BBA
+// backend to assign a distinct IP/MAC per player.
 void SetBBANetPlayIndex(int index);
 int GetBBANetPlayIndex();
-
-// When true the BBA is passive: only inject frames from netplay, never originate LAN traffic.
-void SetBBANetPlayMirrorMode(bool mirror);
-bool GetBBANetPlayMirrorMode();
 }  // namespace ExpansionInterface

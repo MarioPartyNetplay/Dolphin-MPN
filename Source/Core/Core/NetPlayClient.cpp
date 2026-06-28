@@ -3259,15 +3259,25 @@ void NetPlayClient::ApplyBBAMode(const bool enable)
 
   if (enable)
   {
-    // Mirror mode: every player shares the host's LAN identity; only the host originates traffic.
-    ExpansionInterface::SetBBANetPlayIndex(0);
-    ExpansionInterface::SetBBANetPlayMirrorMode(!is_host);
+    // Each player needs a distinct identity on the shared virtual LAN (host = 0, client 1 = 1, ...).
+    const int index = m_local_player ? static_cast<int>(m_local_player->pid) - 1 : 0;
+    ExpansionInterface::SetBBANetPlayIndex(index);
+
+    // The host's frames are sent through the NetPlayServer's sender (registered when the server
+    // starts), which fans them out to clients without looping back. Only non-host clients register
+    // the client-side sender here; registering it on the host would echo the host's own frames.
+    if (!is_host)
+    {
+      ExpansionInterface::RegisterBBAPacketSender(
+          [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
+    }
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::EthernetNetPlay);
   }
   else
   {
-    ExpansionInterface::SetBBANetPlayMirrorMode(false);
+    if (!is_host)
+      ExpansionInterface::RegisterBBAPacketSender(nullptr);
     Config::SetCurrent(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::SP1),
                        ExpansionInterface::EXIDeviceType::None);
   }
