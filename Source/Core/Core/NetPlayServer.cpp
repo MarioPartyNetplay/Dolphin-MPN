@@ -181,9 +181,9 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
       Common::UPnP::TryPortmapping(port);
 #endif
 
-    // The host is always index 0 on the shared virtual LAN. Its sender broadcasts frames to all
-    // connected clients (without looping back into the host's own game).
+    // The host mirrors its BBA ethernet stream to all clients (without looping back locally).
     ExpansionInterface::SetBBANetPlayIndex(0);
+    ExpansionInterface::SetBBANetPlayMirrorMode(false);
     ExpansionInterface::RegisterBBAPacketSender(
         [this](const u8* data, u32 size) { SendBBAPacket(data, size); });
   }
@@ -826,6 +826,8 @@ void NetPlayServer::SetBBAMode(const bool enable)
 
   if (enable)
   {
+    ExpansionInterface::SetBBANetPlayIndex(0);
+    ExpansionInterface::SetBBANetPlayMirrorMode(false);
     ApplyBBADefaultPadMapping();
     UpdatePadMapping();
   }
@@ -3450,26 +3452,9 @@ WiimoteEmu::SerializedWiimoteState NetPlayServer::CombineWiimoteInputs(
 
 void NetPlayServer::OnBBAPacketData(sf::Packet& packet, NetPlayServer::Client& player)
 {
-  u32 packet_size = 0;
-  packet >> packet_size;
-
-  if (packet_size == 0 || packet_size > 1518)
-    return;
-
-  std::vector<u8> bba_data(packet_size);
-  for (u32 i = 0; i < packet_size; ++i)
-    packet >> bba_data[i];
-
-  INFO_LOG_FMT(NETPLAY, "Received BBA packet from player {}: {} bytes", player.pid, packet_size);
-
-  sf::Packet bba_packet;
-  bba_packet << MessageID::BBAPacketData;
-  bba_packet << packet_size;
-  for (u8 byte : bba_data)
-    bba_packet << byte;
-
-  SendAsyncToClients(std::move(bba_packet), player.pid);
-  ExpansionInterface::InjectBBAPacketFromNetPlay(bba_data.data(), packet_size);
+  // Mirror-mode peers never originate LAN frames; only the host's sender drives the BBA stream.
+  (void)packet;
+  (void)player;
 }
 
 void NetPlayServer::SendBBAPacket(const u8* data, u32 size)

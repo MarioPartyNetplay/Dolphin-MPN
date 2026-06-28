@@ -228,10 +228,10 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
   auto mac = mac_addr.value();
   if (type == BBADeviceType::NetPlay)
   {
-    // Each netplay player must present a distinct MAC so bridged ethernet frames are routable.
-    // Derive it deterministically from the local player index (host = 0, client = 1, ...).
+    // Deterministic MAC per virtual LAN index so every player presents the same address for a
+    // given index regardless of local BBA settings (required for mirror-mode proximity).
     const int index = GetBBANetPlayIndex();
-    mac[5] = static_cast<u8>((mac[5] & 0xF0) | (index & 0x0F));
+    mac = {0x00, 0x09, 0xBF, 0x00, 0x00, static_cast<u8>(0x10 + index)};
   }
   memcpy(&mBbaMem[BBA_NAFR_PAR0], mac.data(), mac.size());
 

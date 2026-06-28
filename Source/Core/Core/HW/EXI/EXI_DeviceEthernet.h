@@ -473,7 +473,7 @@ private:
     Common::Flag m_read_thread_shutdown;
     static void ReadThreadHandler(BuiltInBBAInterface* self);
 #endif
-    void WriteToQueue(std::vector<u8> data);
+    void WriteToQueue(std::vector<u8> data, bool mirror_to_netplay = true);
     bool WillQueueOverrun() const;
     void PollData(std::size_t* datasize);
     std::optional<std::vector<u8>> TryGetDataFromSocket(StackRef* ref);

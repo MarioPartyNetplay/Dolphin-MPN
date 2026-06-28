@@ -23,6 +23,7 @@ static std::mutex g_bba_injectors_mutex;
 static std::atomic<u64> g_bba_injector_next_id{1};
 
 static std::atomic<int> g_bba_netplay_index{0};
+static std::atomic<bool> g_bba_netplay_mirror_mode{false};
 
 static void InjectToBackends(const u8* data, const u32 size)
 {
@@ -88,6 +89,16 @@ void SetBBANetPlayIndex(const int index)
 int GetBBANetPlayIndex()
 {
   return g_bba_netplay_index.load(std::memory_order_relaxed);
+}
+
+void SetBBANetPlayMirrorMode(const bool mirror)
+{
+  g_bba_netplay_mirror_mode.store(mirror, std::memory_order_relaxed);
+}
+
+bool GetBBANetPlayMirrorMode()
+{
+  return g_bba_netplay_mirror_mode.load(std::memory_order_relaxed);
 }
 
 }  // namespace ExpansionInterface
