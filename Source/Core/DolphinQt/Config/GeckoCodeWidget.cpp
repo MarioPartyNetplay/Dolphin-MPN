@@ -4,6 +4,7 @@
 #include "DolphinQt/Config/GeckoCodeWidget.h"
 
 #include <algorithm>
+#include <functional>
 #include <utility>
 
 #include <QCursor>
@@ -221,13 +222,14 @@ void GeckoCodeWidget::OnItemChanged(QListWidgetItem* item)
   if (!m_restart_required)
     Gecko::SetActiveCodes(m_gecko_codes, m_game_id, m_game_revision);
 
+  UpdateToggleButton();
   SaveCodes();
 }
 
 void GeckoCodeWidget::AddCode()
 {
   Gecko::GeckoCode code;
-  code.enabled = true;
+  code.enabled = false;
 
   m_cheat_code_editor->SetGeckoCode(&code);
   if (m_cheat_code_editor->exec() == QDialog::Rejected)
@@ -344,6 +346,21 @@ void GeckoCodeWidget::SortDisabledCodesFirst()
   SaveCodes();
 }
 
+bool GeckoCodeWidget::IsEveryCodeEnabled()
+{
+  return std::ranges::all_of(m_gecko_codes, &Gecko::GeckoCode::enabled);
+}
+
+void GeckoCodeWidget::UpdateToggleButton()
+{
+  if (IsEveryCodeEnabled())
+    m_toggle_all_codes->setText(tr("Disable All"));
+  else
+    m_toggle_all_codes->setText(tr("Enable All"));
+
+  m_toggle_all_codes->setDisabled(m_gecko_codes.empty());
+}
+
 void GeckoCodeWidget::OnListReordered()
 {
   // Reorder codes based on the indices of table item
@@ -399,6 +416,7 @@ void GeckoCodeWidget::UpdateList()
   }
 
   m_code_list->setDragDropMode(QAbstractItemView::InternalMove);
+  UpdateToggleButton();
 }
 
 void GeckoCodeWidget::DownloadCodes()
@@ -445,4 +463,29 @@ void GeckoCodeWidget::DownloadCodes()
       this, tr("Download complete"),
       tr("Downloaded %1 codes. (added %2)")
           .arg(QString::number(codes.size()), QString::number(added_count)));
+}
+
+void GeckoCodeWidget::ToggleAllCodes()
+{
+  const bool new_state = !IsEveryCodeEnabled();
+  const Qt::CheckState new_check_state =
+      new_state ? Qt::CheckState::Checked : Qt::CheckState::Unchecked;
+
+  {
+    // Without this blocker, the call to setCheckState below would end up loading and saving the ini
+    // file once per code.
+    QSignalBlocker blocker(m_code_list);
+
+    for (int i = 0; i < static_cast<int>(m_gecko_codes.size()); ++i)
+    {
+      m_gecko_codes[i].enabled = new_state;
+      m_code_list->item(i)->setCheckState(new_check_state);
+    }
+  }
+
+  if (!m_restart_required)
+    Gecko::SetActiveCodes(m_gecko_codes, m_game_id, m_game_revision);
+
+  UpdateList();
+  SaveCodes();
 }

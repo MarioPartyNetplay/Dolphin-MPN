@@ -40,7 +40,6 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Config/SessionSettings.h"
-#include "Core/Config/WiimoteSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/GeckoCode.h"
 #include "Core/HW/EXI/EXI.h"
@@ -714,9 +713,9 @@ void NetPlayClient::OnWiimoteMapping(sf::Packet& packet)
 
 void NetPlayClient::OnGBAConfig(sf::Packet& packet)
 {
-  for (size_t i = 0; i < m_gba_config.size(); ++i)
+  for (size_t i = 0; i < m_net_settings.gba_config.size(); ++i)
   {
-    auto& config = m_gba_config[i];
+    auto& config = m_net_settings.gba_config[i];
     const auto old_config = config;
 
     packet >> config.enabled >> config.has_rom >> config.title;
@@ -735,7 +734,6 @@ void NetPlayClient::OnGBAConfig(sf::Packet& packet)
   }
 
   SendGameStatus();
-  UpdateDevices();
 
   m_dialog->Update();
 }
@@ -749,16 +747,18 @@ void NetPlayClient::OnPadData(sf::Packet& packet)
 
     GCPadStatus pad;
     packet >> pad.button;
-    if (!m_gba_config.at(map).enabled)
+    if (static_cast<size_t>(map) < m_net_settings.gba_config.size() &&
+        !m_net_settings.gba_config.at(map).enabled)
     {
       packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
           pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
     }
 
-    // Trusting server for good map value (>=0 && <4)
-    // add to pad buffer
-    m_pad_buffer.at(map).Push(pad);
-    m_gc_pad_event.Set();
+    if (static_cast<size_t>(map) < m_pad_buffer.size())
+    {
+      m_pad_buffer.at(map).Push(pad);
+      m_gc_pad_event.Set();
+    }
   }
 }
 
@@ -771,20 +771,23 @@ void NetPlayClient::OnPadHostData(sf::Packet& packet)
 
     GCPadStatus pad;
     packet >> pad.button;
-    if (!m_gba_config.at(map).enabled)
+    if (static_cast<size_t>(map) < m_net_settings.gba_config.size() &&
+        !m_net_settings.gba_config.at(map).enabled)
     {
       packet >> pad.analogA >> pad.analogB >> pad.stickX >> pad.stickY >> pad.substickX >>
           pad.substickY >> pad.triggerLeft >> pad.triggerRight >> pad.isConnected;
     }
 
-    // Trusting server for good map value (>=0 && <4)
-    // write to last status
-    m_last_pad_status[map] = pad;
+    if (static_cast<size_t>(map) < m_last_pad_status.size())
+      m_last_pad_status[map] = pad;
 
-    if (!m_first_pad_status_received[map])
+    if (static_cast<size_t>(map) < m_first_pad_status_received.size())
     {
-      m_first_pad_status_received[map] = true;
-      m_first_pad_status_received_event.Set();
+      if (!m_first_pad_status_received[map])
+      {
+        m_first_pad_status_received[map] = true;
+        m_first_pad_status_received_event.Set();
+      }
     }
   }
 }
@@ -809,10 +812,11 @@ void NetPlayClient::OnWiimoteData(sf::Packet& packet)
       pad.length = 0;
     }
 
-    // Trusting server for good map value (>=0 && <4)
-    // add to pad buffer
-    m_wiimote_buffer.at(map).Push(pad);
-    m_wii_pad_event.Set();
+    if (static_cast<size_t>(map) < m_wiimote_buffer.size())
+    {
+      m_wiimote_buffer.at(map).Push(pad);
+      m_wii_pad_event.Set();
+    }
   }
 }
 
@@ -1276,7 +1280,7 @@ void NetPlayClient::OnSyncSaveDataWii(sf::Packet& packet)
     for (u8& byte : header.md5)
       packet >> byte;
     packet >> header.unk2;
-    for (size_t i = 0; i < header.banner_size; i++)
+    for (size_t i = 0; i < std::min<size_t>(header.banner_size, sizeof(header.banner)); i++)
       packet >> header.banner[i];
 
     // BkHeader
@@ -1715,7 +1719,8 @@ void NetPlayClient::ThreadFunc()
         if (static_cast<int>(netEvent.type) == Common::ENet::SKIPPABLE_EVENT)
           INFO_LOG_FMT(NETPLAY, "enet_host_service: skippable packet event");
         else
-          ERROR_LOG_FMT(NETPLAY, "enet_host_service: unknown event type: {}", int(netEvent.type));
+          ERROR_LOG_FMT(NETPLAY, "enet_host_service: unknown event type: {}",
+                        static_cast<int>(netEvent.type));
         break;
       }
     }
@@ -1768,7 +1773,7 @@ void NetPlayClient::AddPadStateToPacket(const int in_game_pad, const GCPadStatus
 {
   packet << static_cast<PadIndex>(in_game_pad);
   packet << pad.button;
-  if (!m_gba_config[in_game_pad].enabled)
+  if (!m_net_settings.gba_config[in_game_pad].enabled)
   {
     packet << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
            << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
@@ -1897,11 +1902,11 @@ bool NetPlayClient::StartGame(const std::string& path)
                                       if (File::Exists(redirect_path))
                                         File::DeleteDirRecursively(redirect_path);
                                     });
+
+  m_net_settings.local_player_id = m_local_player->pid;
   boot_session_data->SetNetplaySettings(std::make_unique<NetPlay::NetSettings>(m_net_settings));
 
   m_dialog->BootGame(path, std::move(boot_session_data));
-
-  UpdateDevices();
 
   return true;
 }
@@ -2308,7 +2313,7 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   bool data_added = false;
   GCPadStatus pad_status;
 
-  if (m_gba_config[ingame_pad].enabled)
+  if (m_net_settings.gba_config[ingame_pad].enabled)
   {
     pad_status = Pad::GetGBAStatus(local_pad);
   }
@@ -2416,7 +2421,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 
   if (pad_num < 0)
   {
-    for (size_t i = 0; i < m_pad_map.size(); i++)
+    for (size_t i = 0; i < m_net_settings.pad_map.size(); i++)
     {
       if (m_pad_map[i].players.empty())
         continue;
@@ -2430,7 +2435,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
       }
     }
 
-    for (size_t i = 0; i < m_pad_map.size(); i++)
+    for (size_t i = 0; i < m_net_settings.pad_map.size(); i++)
     {
       if (m_pad_map[i].players.empty() || m_pad_buffer[i].Size() > 0)
         continue;
@@ -2614,22 +2619,22 @@ static int LocalToInGame(int local_pad, const PadMappingArray& pad_map, PlayerId
 
 int NetPlayClient::InGamePadToLocalPad(int ingame_pad) const
 {
-  return InGameToLocal(ingame_pad, m_pad_map, m_local_player->pid);
+  return InGameToLocal(ingame_pad, m_net_settings.pad_map, m_local_player->pid);
 }
 
 int NetPlayClient::LocalPadToInGamePad(int local_pad) const
 {
-  return LocalToInGame(local_pad, m_pad_map, m_local_player->pid);
+  return LocalToInGame(local_pad, m_net_settings.pad_map, m_local_player->pid);
 }
 
 int NetPlayClient::InGameWiimoteToLocalWiimote(int ingame_wiimote) const
 {
-  return InGameToLocal(ingame_wiimote, m_wiimote_map, m_local_player->pid);
+  return InGameToLocal(ingame_wiimote, m_net_settings.wiimote_map, m_local_player->pid);
 }
 
 int NetPlayClient::LocalWiimoteToInGameWiimote(int local_wiimote) const
 {
-  return LocalToInGame(local_wiimote, m_wiimote_map, m_local_player->pid);
+  return LocalToInGame(local_wiimote, m_net_settings.wiimote_map, m_local_player->pid);
 }
 
 bool NetPlayClient::PlayerHasControllerMapped(const PlayerId pid) const
@@ -2661,7 +2666,7 @@ void NetPlayClient::SendGameStatus()
   m_dialog->FindGameFile(m_selected_game, &result);
   for (size_t i = 0; i < 4; ++i)
   {
-    if (m_gba_config[i].enabled && m_gba_config[i].has_rom &&
+    if (m_net_settings.gba_config[i].enabled && m_net_settings.gba_config[i].has_rom &&
         m_net_settings.gba_rom_paths[i].empty())
     {
       result = SyncIdentifierComparison::DifferentGame;
@@ -2774,17 +2779,17 @@ void NetPlayClient::ComputeGameDigest(const SyncIdentifier& sync_identifier)
 
 const PadMappingArray& NetPlayClient::GetPadMapping() const
 {
-  return m_pad_map;
+  return m_net_settings.pad_map;
 }
 
 const GBAConfigArray& NetPlayClient::GetGBAConfig() const
 {
-  return m_gba_config;
+  return m_net_settings.gba_config;
 }
 
 const PadMappingArray& NetPlayClient::GetWiimoteMapping() const
 {
-  return m_wiimote_map;
+  return m_net_settings.wiimote_map;
 }
 
 void NetPlayClient::AdjustPadBufferSize(const unsigned int size)

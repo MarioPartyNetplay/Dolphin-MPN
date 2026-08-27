@@ -1,4 +1,3 @@
-// Copyright 2003 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package org.dolphinemu.dolphinemu.features.netplay
@@ -31,23 +30,29 @@ import org.dolphinemu.dolphinemu.features.netplay.model.SaveTransferProgress
 import org.dolphinemu.dolphinemu.features.netplay.model.TraversalState
 import org.dolphinemu.dolphinemu.features.settings.model.StringSetting
 import org.dolphinemu.dolphinemu.model.GameFile
+import org.dolphinemu.dolphinemu.services.GameFileCacheManager
 
 class NetplaySession(
     private val onClosed: (NetplaySession) -> Unit,
 ) {
 
-    private var netPlayUICallbacksPointer: Long = nativeCreateUICallbacks()
+    @Keep
+    private var netPlayUICallbacksPointer: Long =
+        nativeCreateUICallbacks(GameFileCacheManager.getGameFiles().value ?: emptyArray())
 
+    @Keep
     private var netPlayClientPointer: Long = 0
 
+    @Keep
     private var netPlayServerPointer: Long = 0
 
+    @Keep
     private var bootSessionDataPointer: Long = 0
 
     private val sessionScope = CoroutineScope(SupervisorJob())
 
     @Volatile
-    var isClosing = false
+    var isClosed = false
         private set
 
     val isHosting: Boolean
@@ -128,6 +133,8 @@ class NetplaySession(
     val fatalTraversalError = _fatalTraversalError.receiveAsFlow()
 
     suspend fun join(): Boolean = withContext(Dispatchers.IO) {
+        if (isClosed) throw IllegalStateException("Cannot join a closed session")
+
         mergeMessages()
             .runningFold(emptyList<NetplayMessage>()) { acc, msg -> listOf(msg) + acc }
             .onEach { _messages.tryEmit(it) }
@@ -144,6 +151,8 @@ class NetplaySession(
     }
 
     suspend fun host(): Boolean = withContext(Dispatchers.IO) {
+        if (isClosed) throw IllegalStateException("Cannot host a closed session")
+
         netPlayServerPointer = nativeHost()
         if (netPlayServerPointer == 0L || !isActive) {
             closeBlocking()
@@ -188,8 +197,8 @@ class NetplaySession(
 
     @Synchronized
     fun closeBlocking() {
-        if (isClosing) return
-        isClosing = true
+        if (isClosed) return
+        isClosed = true
         sessionScope.cancel()
         releaseNativeResources()
         onClosed(this)
@@ -235,7 +244,7 @@ class NetplaySession(
 
     // JNI methods
 
-    private external fun nativeCreateUICallbacks(): Long
+    private external fun nativeCreateUICallbacks(gameFiles: Array<GameFile>): Long
 
     private external fun nativeJoin(): Long
 

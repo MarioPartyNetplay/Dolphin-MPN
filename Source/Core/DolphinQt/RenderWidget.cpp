@@ -33,7 +33,7 @@
 #include "VideoCommon/Present.h"
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <dwmapi.h>
 #endif
 

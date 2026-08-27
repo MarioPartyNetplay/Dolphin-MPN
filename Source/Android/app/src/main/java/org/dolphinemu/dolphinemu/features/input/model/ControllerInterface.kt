@@ -4,10 +4,12 @@ package org.dolphinemu.dolphinemu.features.input.model
 
 import android.content.Context
 import android.hardware.input.InputManager
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -154,8 +156,14 @@ object ControllerInterface {
 
     @Keep
     @JvmStatic
-    private fun getDeviceVibratorManager(device: InputDevice): DolphinVibratorManager =
-        DolphinVibratorManagerFactory.getDeviceVibratorManager(device)
+    private fun getVibratorManager(device: InputDevice): DolphinVibratorManager {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            DolphinVibratorManagerPassthrough(device.vibratorManager)
+        } else {
+            @Suppress("DEPRECATION")
+            DolphinVibratorManagerCompat(device.vibrator)
+        }
+    }
 
     @Keep
     @JvmStatic
@@ -167,6 +175,7 @@ object ControllerInterface {
                 return DolphinVibratorManagerPassthrough(vibratorManager)
             }
         }
+        @Suppress("DEPRECATION")
         val vibrator = DolphinApplication.getAppContext()
             .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         return DolphinVibratorManagerCompat(vibrator)
@@ -175,11 +184,30 @@ object ControllerInterface {
     @Keep
     @JvmStatic
     private fun vibrate(vibrator: Vibrator) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(10000, VibrationEffect.DEFAULT_AMPLITUDE),
+                VibrationAttributes.Builder().setUsage(VibrationAttributes.USAGE_MEDIA).build()
+            )
         } else {
-            vibrator.vibrate(100)
+            val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(
+                    VibrationEffect.createOneShot(10000, VibrationEffect.DEFAULT_AMPLITUDE),
+                    attributes
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(10000, attributes)
+            }
         }
+    }
+
+    @Keep
+    @JvmStatic
+    private fun cancelVibration(vibrator: Vibrator) {
+        vibrator.cancel()
     }
 
     private class InputDeviceListener : InputManager.InputDeviceListener {

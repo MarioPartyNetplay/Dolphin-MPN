@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 
+#include <fmt/format.h>
 #include <picojson.h>
 
 #include "Common/Common.h"
@@ -126,9 +127,12 @@ void NetPlayIndex::NotificationLoop()
   {
     Common::HttpRequest request;
     auto response = request.Get(
-        Config::Get(Config::NETPLAY_INDEX_URL) + "/v0/session/active?secret=" + m_secret +
-            "&player_count=" + std::to_string(m_player_count) +
-            "&game=" + request.EscapeComponent(m_game) + "&in_game=" + std::to_string(m_in_game),
+        fmt::format(
+            "{base}/v0/session/active?secret={secret}&player_count={player_count}&game={game}"
+            "&in_game={in_game}",
+            fmt::arg("base", Config::Get(Config::NETPLAY_INDEX_URL)), fmt::arg("secret", m_secret),
+            fmt::arg("player_count", m_player_count),
+            fmt::arg("game", request.EscapeComponent(m_game)), fmt::arg("in_game", m_in_game)),
         {{"X-Is-Dolphin", "1"}}, Common::HttpRequest::AllowedReturnCodes::All);
 
     if (!response)
