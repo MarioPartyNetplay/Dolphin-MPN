@@ -162,14 +162,15 @@ void HiresTexture::Update()
   // Display message depending on whether textures are being cached or not
   if (g_ActiveConfig.bCacheHiresTextures)
   {
-    OSD::AddMessage(fmt::format("Loading '{}' custom textures", s_hires_texture_cache.size()),
-                    10000);
+    message = fmt::format("Preloading '{}' custom textures for '{}'", s_hires_texture_cache.size(),
+                          game_id_display);
   }
   else
   {
     OSD::AddMessage(fmt::format("Found '{}' custom textures", s_hires_texture_id_to_arbmipmap.size()),
                     10000);
   }
+  OSD::AddMessage(message, 10000);
 }
 
 void HiresTexture::Clear()
@@ -256,4 +257,17 @@ std::set<std::string> GetTextureDirectoriesWithGameId(const std::string& root_di
   }
 
   return result;
+}
+
+std::set<std::string>
+GetTextureDirectoriesForFirstMatchingGameId(const std::string& root_directory,
+                                            const std::vector<std::string>& game_ids)
+{
+  for (const auto& game_id : game_ids)
+  {
+    auto directories = GetTextureDirectoriesWithGameId(root_directory, game_id);
+    if (!directories.empty())
+      return directories;
+  }
+  return {};
 }

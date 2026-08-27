@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package org.dolphinemu.dolphinemu.features.netplay.ui
@@ -28,11 +30,9 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import org.dolphinemu.dolphinemu.R
 import org.dolphinemu.dolphinemu.features.netplay.model.ConnectionRole
 import org.dolphinemu.dolphinemu.features.netplay.model.ConnectionType
+import org.dolphinemu.dolphinemu.ui.theme.DolphinScaffold
 import org.dolphinemu.dolphinemu.ui.theme.DolphinTheme
 import org.dolphinemu.dolphinemu.ui.theme.MenuSpacer
 
@@ -86,19 +87,15 @@ fun NetplaySetupScreen(
     onHostClicked: () -> Unit,
     onConnectClicked: () -> Unit,
 ) {
-    Scaffold(
-        topBar = {
-            MediumTopAppBar(
-                title = { Text(stringResource(R.string.netplay_setup_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClicked) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-            )
+    DolphinScaffold(
+        title = { Text(stringResource(R.string.netplay_setup_title)) },
+        navigationIcon = {
+            IconButton(onClick = onBackClicked) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back"
+                )
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(

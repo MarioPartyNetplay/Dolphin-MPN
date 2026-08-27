@@ -1,3 +1,6 @@
+// Copyright 2026 Dolphin Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #pragma once
 
 #include <memory>
@@ -10,10 +13,13 @@
 #include "Common/HookableEvent.h"
 #include "Core/NetPlayClient.h"
 #include "UICommon/GameFile.h"
+#include "jni/AndroidCommon/IDCache.h"
 
-namespace NetPlay {
+namespace NetPlay
+{
 
-class NetPlayUICallbacks : public NetPlay::NetPlayUI {
+class NetPlayUICallbacks : public NetPlay::NetPlayUI
+{
 public:
   NetPlayUICallbacks(jobject netplay_session,
                      std::vector<std::shared_ptr<const UICommon::GameFile>> games);
@@ -63,6 +69,17 @@ public:
 
 private:
   jobject GetNetplaySessionLocalRef(JNIEnv* env) const;
+
+  template <typename F>
+  void WithSession(F&& callback) const
+  {
+    JNIEnv* env = IDCache::GetEnvForThread();
+    jobject netplay_session = GetNetplaySessionLocalRef(env);
+    if (!netplay_session)
+      return;
+    callback(env, netplay_session);
+    env->DeleteLocalRef(netplay_session);
+  }
 
   jweak m_netplay_session;
   std::vector<std::shared_ptr<const UICommon::GameFile>> m_games;

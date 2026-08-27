@@ -252,9 +252,7 @@ bool Init(Core::System& system, std::unique_ptr<BootParameters> boot, const Wind
 
 static void ResetRumble()
 {
-#if defined(__LIBUSB__)
   GCAdapter::ResetRumble();
-#endif
   if (!Pad::IsInitialized())
     return;
   for (int i = 0; i < 4; ++i)
@@ -868,6 +866,9 @@ void Callback_FramePresented(const PresentInfo& present_info)
   const auto presentation_offset =
       present_info.actual_present_time - present_info.intended_present_time;
   perf_metrics.SetLatestFramePresentationOffset(presentation_offset);
+
+  perf_metrics.SetLatestFrameBufferSize(present_info.frame_buffer_width,
+                                        present_info.frame_buffer_height);
 
   if (present_info.reason == PresentInfo::PresentReason::VideoInterfaceDuplicate)
     return;

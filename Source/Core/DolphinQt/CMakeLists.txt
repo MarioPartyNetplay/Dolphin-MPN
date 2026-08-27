@@ -493,6 +493,13 @@ target_include_directories(dolphin-mpn PRIVATE
   ${CMAKE_SOURCE_DIR}/Externals/minizip-ng
 )
 
+if(ENABLE_SDL)
+  target_link_libraries(dolphin-emu
+  PRIVATE
+    SDL3::SDL3
+  )
+endif()
+
 if (NEED_QT_GUI_PRIVATE_COMPONENT)
   target_link_libraries(dolphin-mpn
   PRIVATE
@@ -591,6 +598,7 @@ if(WIN32)
                                  --no-translations
                                  --no-compiler-runtime
                                  --no-system-d3d-compiler
+                                 --no-system-dxc-compiler
                                  --no-opengl-sw
                                  "$<TARGET_FILE:dolphin-mpn>"
   )
@@ -631,20 +639,11 @@ if(GETTEXT_MSGFMT_EXECUTABLE)
       install(FILES ${mo} DESTINATION share/locale/${lang}/LC_MESSAGES)
     endif()
 
-    if(WIN32)
-      add_custom_command(OUTPUT ${mo}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${mo_dir}
-        COMMAND ${GETTEXT_MSGFMT_EXECUTABLE} -o ${mo} ${po}
-        DEPENDS ${po}
-      )
-    else()
-      add_custom_command(OUTPUT ${mo}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${mo_dir}
-        COMMAND ${GETTEXT_MSGMERGE_EXECUTABLE} --quiet --update --backup=none ${po} ${pot_file}
-        COMMAND ${GETTEXT_MSGFMT_EXECUTABLE} -o ${mo} ${po}
-        DEPENDS ${po}
-      )
-    endif()
+    add_custom_command(OUTPUT ${mo}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${mo_dir}
+      COMMAND ${GETTEXT_MSGFMT_EXECUTABLE} -o ${mo} ${po}
+      DEPENDS ${po}
+    )
   endforeach()
 endif()
 
@@ -694,10 +693,7 @@ if(APPLE)
   include(DolphinInjectVersionInfo)
   dolphin_inject_version_info(dolphin-mpn)
 
-  # Copy MoltenVK into the bundle
-  if(ENABLE_VULKAN)
-    if(USE_BUNDLED_MOLTENVK)
-      add_dependencies(dolphin-mpn MoltenVK)
+  # Copy Moltioependencies(dolphin-mpn MoltenVK)
       ExternalProject_Get_Property(MoltenVK SOURCE_DIR)
       target_sources(dolphin-mpn PRIVATE "${SOURCE_DIR}/Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib")
       set_source_files_properties("${SOURCE_DIR}/Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks GENERATED ON)
