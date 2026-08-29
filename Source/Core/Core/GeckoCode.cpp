@@ -200,7 +200,14 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
   const bool is_mpn_handler_and_game_id_gp5e01 =
       IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GP5E01");
   const bool is_mpn_handler_and_game_id_gmpe01 =
-      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GMPE01") || (SConfig::GetInstance().GetGameID() == "GMPEDX" || SConfig::GetInstance().GetGameID() == "GMPDX2");
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GMPE01") ||
+      (SConfig::GetInstance().GetGameID() == "GMPEDX" ||
+       SConfig::GetInstance().GetGameID() == "GMPDX2");
+
+  const bool is_mpn_relocated =
+      is_mpn_handler_and_game_id_rm8e01 || is_mpn_handler_and_game_id_gp7e01 ||
+      is_mpn_handler_and_game_id_gp6e01 || is_mpn_handler_and_game_id_gp5e01 ||
+      is_mpn_handler_and_game_id_gmpe01;
 
   u32 codelist_base_address =
       is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_BASE_ADDRESS_MP8 :
@@ -211,17 +218,14 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
                                           INSTALLER_BASE_ADDRESS + static_cast<u32>(data.size()) -
                                               CODE_SIZE;
 
-  u32 codelist_end_address = is_mpn_handler_and_game_id_gm4e01 ? INSTALLER_END_ADDRESS_MKDD :
-                             is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_END_ADDRESS_MP8 :
+  u32 codelist_end_address = is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_END_ADDRESS_MP8 :
                              is_mpn_handler_and_game_id_gp7e01 ? INSTALLER_END_ADDRESS_MP7 :
                              is_mpn_handler_and_game_id_gp6e01 ? INSTALLER_END_ADDRESS_MP6 :
                              is_mpn_handler_and_game_id_gp5e01 ? INSTALLER_END_ADDRESS_MP5 :
                              is_mpn_handler_and_game_id_gmpe01 ? INSTALLER_END_ADDRESS_MP4 :
                                                                  INSTALLER_END_ADDRESS;
 
-  if (is_mpn_handler_and_game_id_rm8e01 || is_mpn_handler_and_game_id_gp7e01 ||
-      is_mpn_handler_and_game_id_gp6e01 || is_mpn_handler_and_game_id_gp5e01 ||
-      is_mpn_handler_and_game_id_gmpe01 || is_mpn_handler_and_game_id_gm4e01)
+  if (is_mpn_relocated)
   {
     // Move Gecko code handler to the free mem region
     for (u32 addr = codelist_base_address; addr < codelist_end_address; addr += 4)
@@ -229,26 +233,29 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
       PowerPC::MMU::HostWrite<u32>(guard, 0x00000000, addr);
     }
     PowerPC::MMU::HostWrite<u32>(guard, ((codelist_base_address & 0xFFFF0000) >> 16) + 0x3DE00000,
-                                0x80001904);
+                                 CODEHANDLER_CODELIST_PTR_HI);
     PowerPC::MMU::HostWrite<u32>(guard, (codelist_base_address & 0x0000FFFF) + 0x61EF0000,
-                                0x80001908);
+                                 CODEHANDLER_CODELIST_PTR_LO);
   }
+  else
+  {
+    // Carve codelist space out of ArenaHi so the list can grow well beyond the installer region.
+    const u32 arena_hi = PowerPC::MMU::HostRead<u32>(guard, ARENA_HI_ADDRESS);
 
-  const u32 arena_hi = PowerPC::MMU::HostRead<u32>(guard, ARENA_HI_ADDRESS);
+    u32 total_bytes = 0;
+    for (const GeckoCode& code : s_active_codes)
+      total_bytes += static_cast<u32>(code.codes.size()) * CODE_SIZE;
 
-  u32 total_bytes = 0;
-  for (const GeckoCode& code : s_active_codes)
-    total_bytes += static_cast<u32>(code.codes.size()) * CODE_SIZE;
+    codelist_base_address = arena_hi - total_bytes - EXPANDED_CODELIST_PADDING;
+    codelist_end_address = arena_hi;
 
-  *codelist_base_address = arena_hi - total_bytes - EXPANDED_CODELIST_PADDING;
-  *codelist_end_address = arena_hi;
+    PowerPC::MMU::HostWrite<u32>(guard, codelist_base_address, ARENA_HI_ADDRESS);
 
-  PowerPC::MMU::HostWrite<u32>(guard, *codelist_base_address, ARENA_HI_ADDRESS);
-
-  PowerPC::MMU::HostWrite<u32>(guard, ((*codelist_base_address & 0xFFFF0000) >> 16) + 0x3DE00000,
-                                CODEHANDLER_CODELIST_PTR_HI);
-  PowerPC::MMU::HostWrite<u32>(guard, (*codelist_base_address & 0x0000FFFF) + 0x61EF0000,
-                                CODEHANDLER_CODELIST_PTR_LO);
+    PowerPC::MMU::HostWrite<u32>(guard, ((codelist_base_address & 0xFFFF0000) >> 16) + 0x3DE00000,
+                                 CODEHANDLER_CODELIST_PTR_HI);
+    PowerPC::MMU::HostWrite<u32>(guard, (codelist_base_address & 0x0000FFFF) + 0x61EF0000,
+                                 CODEHANDLER_CODELIST_PTR_LO);
+  }
 
   // Write a magic value to 'gameid' (codehandleronly does not actually read this).
   // This value will be read back and modified over time by HLE_Misc::GeckoCodeHandlerICacheFlush.
@@ -316,7 +323,7 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
   // invalidate icache for region where codelist was placed
   for (u32 j = 0; j < (codelist_end_address - codelist_base_address); j += 32)
   {
-    ppc_state.iCache.Invalidate(memory, jit_interface, codelist_base_address + j);
+    ppc_state.iCache.Invalidate(codelist_base_address + j);
   }
 
   return Installation::Installed;

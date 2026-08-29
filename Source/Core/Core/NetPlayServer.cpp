@@ -544,9 +544,10 @@ unsigned int NetPlayServer::OnDisconnect(const Client& player)
       }
     }
 
-    for (PlayerId& mapping : m_wiimote_map)
+    for (const auto& mapping : m_wiimote_map)
     {
-      if (m_is_running && mapping == pid && pid != 1)
+      if (std::find(mapping.players.begin(), mapping.players.end(), pid) != mapping.players.end() &&
+          pid != 1)
       {
         std::lock_guard lkg(m_crit.game);
         m_is_running = false;
@@ -2543,12 +2544,11 @@ void NetPlayServer::AssignNewUserAPad(const Client& player)
       break;
     }
   }
-  for (PlayerId& mapping : m_wiimote_map)
+  for (PadMapping& mapping : m_wiimote_map)
   {
-    // 0 means unmapped
-    if (mapping == 0)
+    if (mapping.players.empty())
     {
-      mapping = player.pid;
+      mapping.players.push_back(player.pid);
       break;
     }
   }

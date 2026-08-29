@@ -3,6 +3,7 @@
 
 #include "Core/ConfigLoaders/NetPlayConfigLoader.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -136,16 +137,20 @@ public:
     u8 local_pad = 0;
     for (int i = 0; i < SerialInterface::MAX_SI_CHANNELS; ++i)
     {
-      const NetPlay::PlayerId player_id = m_settings.pad_map[i];
+      const auto& pad_players = m_settings.pad_map[i].players;
+      const bool has_players = !pad_players.empty();
+      const bool is_local =
+          std::find(pad_players.begin(), pad_players.end(), m_settings.local_player_id) !=
+          pad_players.end();
       const SerialInterface::SIDevices si_device =
           Config::Get(Config::GetInfoForSIDevice(local_pad));
       const auto config_info = Config::GetInfoForSIDevice(i);
 
-      if (m_settings.gba_config[i].enabled && player_id > 0)
+      if (m_settings.gba_config[i].enabled && has_players)
       {
         layer->Set(config_info, SerialInterface::SIDEVICE_GC_GBA_EMULATED);
       }
-      else if (player_id == m_settings.local_player_id)
+      else if (is_local)
       {
         // Use local controller types for local controllers if they are compatible
         if (SerialInterface::SIDevice_IsGCController(si_device))
@@ -163,7 +168,7 @@ public:
         }
         local_pad++;
       }
-      else if (player_id > 0)
+      else if (has_players)
       {
         if (si_device != SerialInterface::SIDEVICE_AM_BASEBOARD)
           layer->Set(config_info, SerialInterface::SIDEVICE_GC_CONTROLLER);
@@ -176,9 +181,9 @@ public:
 
     for (int i = 0; i < MAX_WIIMOTES; ++i)
     {
-      NetPlay::PlayerId player_id = m_settings.wiimote_map[i];
-      layer->Set(Config::GetInfoForWiimoteSource(i),
-                 player_id > 0 ? WiimoteSource::Emulated : WiimoteSource::None);
+      layer->Set(Config::GetInfoForWiimoteSource(i), !m_settings.wiimote_map[i].players.empty() ?
+                                                         WiimoteSource::Emulated :
+                                                         WiimoteSource::None);
     }
 
     if (m_settings.savedata_load)
