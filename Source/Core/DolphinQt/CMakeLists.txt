@@ -693,7 +693,10 @@ if(APPLE)
   include(DolphinInjectVersionInfo)
   dolphin_inject_version_info(dolphin-mpn)
 
-  # Copy Moltioependencies(dolphin-mpn MoltenVK)
+  # Copy MoltenVK into the bundle
+  if(ENABLE_VULKAN)
+    if(USE_BUNDLED_MOLTENVK)
+      add_dependencies(dolphin-mpn MoltenVK)
       ExternalProject_Get_Property(MoltenVK SOURCE_DIR)
       target_sources(dolphin-mpn PRIVATE "${SOURCE_DIR}/Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib")
       set_source_files_properties("${SOURCE_DIR}/Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks GENERATED ON)
