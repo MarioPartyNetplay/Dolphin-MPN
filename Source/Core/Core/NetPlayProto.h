@@ -5,6 +5,7 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
 #include "Common/CommonTypes.h"
 #include "Common/EnumMap.h"
@@ -40,7 +41,15 @@ struct GBAConfig
 using PlayerId = u8;
 using FrameNum = u32;
 using PadIndex = s8;
-using PadMappingArray = std::array<PlayerId, 4>;
+
+struct PadMapping
+{
+  std::vector<PlayerId> players{};
+  bool operator==(const PadMapping& other) const { return players == other.players; }
+  bool operator!=(const PadMapping& other) const { return players != other.players; }
+};
+
+using PadMappingArray = std::array<PadMapping, 4>;
 using GBAConfigArray = std::array<GBAConfig, 4>;
 
 struct NetSettings
@@ -257,28 +266,6 @@ enum : u8
   CHUNKED_DATA_CHANNEL,
   CHANNEL_COUNT
 };
-
-using PlayerId = u8;
-using FrameNum = u32;
-using PadIndex = s8;
-
-struct PadMapping
-{
-  std::vector<PlayerId> players{};
-  bool operator==(const PadMapping& other) const { return players == other.players; }
-  bool operator!=(const PadMapping& other) const { return players != other.players; }
-};
-
-using PadMappingArray = std::array<PadMapping, 4>;
-
-struct GBAConfig
-{
-  bool enabled = false;
-  bool has_rom = false;
-  std::string title;
-  std::array<u8, 20> hash{};
-};
-using GBAConfigArray = std::array<GBAConfig, 4>;
 
 struct PadDetails
 {
