@@ -160,15 +160,16 @@ void HiresTexture::Update()
   }
 
   // Display message depending on whether textures are being cached or not
+  std::string message;
   if (g_ActiveConfig.bCacheHiresTextures)
   {
     message = fmt::format("Preloading '{}' custom textures for '{}'", s_hires_texture_cache.size(),
-                          game_id_display);
+                          game_id);
   }
   else
   {
-    OSD::AddMessage(fmt::format("Found '{}' custom textures", s_hires_texture_id_to_arbmipmap.size()),
-                    10000);
+    message = fmt::format("Found '{}' custom textures for '{}'",
+                          s_hires_texture_id_to_arbmipmap.size(), game_id);
   }
   OSD::AddMessage(message, 10000);
 }
