@@ -17,6 +17,7 @@
     <!--ClCompile Base-->
     <ClCompile>
       <!--Base external header policy: ignore all warnings except template instantiations, and disable analyzer-->
+      <PreprocessorDefinitions>_USE_STD_VECTOR_ALGORITHMS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <ExternalTemplatesDiagnostics>true</ExternalTemplatesDiagnostics>
       <DisableAnalyzeExternal>true</DisableAnalyzeExternal>
