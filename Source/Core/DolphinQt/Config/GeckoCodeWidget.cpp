@@ -36,7 +36,6 @@
 #include "DolphinQt/Config/CheatCodeEditor.h"
 #include "DolphinQt/Config/CheatWarningWidget.h"
 #include "DolphinQt/Config/HardcoreWarningWidget.h"
-#include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
 #include "DolphinQt/QtUtils/QtUtils.h"
 #include "DolphinQt/QtUtils/WrapInScrollArea.h"
@@ -222,7 +221,6 @@ void GeckoCodeWidget::OnItemChanged(QListWidgetItem* item)
   if (!m_restart_required)
     Gecko::SetActiveCodes(m_gecko_codes, m_game_id, m_game_revision);
 
-  UpdateToggleButton();
   SaveCodes();
 }
 
@@ -346,21 +344,6 @@ void GeckoCodeWidget::SortDisabledCodesFirst()
   SaveCodes();
 }
 
-bool GeckoCodeWidget::IsEveryCodeEnabled()
-{
-  return std::ranges::all_of(m_gecko_codes, &Gecko::GeckoCode::enabled);
-}
-
-void GeckoCodeWidget::UpdateToggleButton()
-{
-  if (IsEveryCodeEnabled())
-    m_toggle_all_codes->setText(tr("Disable All"));
-  else
-    m_toggle_all_codes->setText(tr("Enable All"));
-
-  m_toggle_all_codes->setDisabled(m_gecko_codes.empty());
-}
-
 void GeckoCodeWidget::OnListReordered()
 {
   // Reorder codes based on the indices of table item
@@ -416,76 +399,4 @@ void GeckoCodeWidget::UpdateList()
   }
 
   m_code_list->setDragDropMode(QAbstractItemView::InternalMove);
-  UpdateToggleButton();
-}
-
-void GeckoCodeWidget::DownloadCodes()
-{
-  const auto codes_result = Gecko::DownloadCodes(m_gametdb_id);
-
-  if (!codes_result)
-  {
-    QString message = tr("Failed to download Gecko codes. The code server may be temporarily "
-                         "unavailable. Please try again later.");
-
-    const int http_response_code = codes_result.error();
-    if (http_response_code > 0)
-      message += tr("\n\nServer response: HTTP %1.").arg(http_response_code);
-
-    ModalMessageBox::critical(this, tr("Download Failed"), message);
-    return;
-  }
-
-  const std::vector<Gecko::GeckoCode>& codes = *codes_result;
-  if (codes.empty())
-  {
-    ModalMessageBox::critical(this, tr("Error"), tr("File contained no codes."));
-    return;
-  }
-
-  size_t added_count = 0;
-
-  for (const auto& code : codes)
-  {
-    auto it = std::ranges::find(m_gecko_codes, code);
-
-    if (it == m_gecko_codes.end())
-    {
-      m_gecko_codes.push_back(code);
-      added_count++;
-    }
-  }
-
-  UpdateList();
-  SaveCodes();
-
-  ModalMessageBox::information(
-      this, tr("Download complete"),
-      tr("Downloaded %1 codes. (added %2)")
-          .arg(QString::number(codes.size()), QString::number(added_count)));
-}
-
-void GeckoCodeWidget::ToggleAllCodes()
-{
-  const bool new_state = !IsEveryCodeEnabled();
-  const Qt::CheckState new_check_state =
-      new_state ? Qt::CheckState::Checked : Qt::CheckState::Unchecked;
-
-  {
-    // Without this blocker, the call to setCheckState below would end up loading and saving the ini
-    // file once per code.
-    QSignalBlocker blocker(m_code_list);
-
-    for (int i = 0; i < static_cast<int>(m_gecko_codes.size()); ++i)
-    {
-      m_gecko_codes[i].enabled = new_state;
-      m_code_list->item(i)->setCheckState(new_check_state);
-    }
-  }
-
-  if (!m_restart_required)
-    Gecko::SetActiveCodes(m_gecko_codes, m_game_id, m_game_revision);
-
-  UpdateList();
-  SaveCodes();
 }
