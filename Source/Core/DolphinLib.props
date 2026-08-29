@@ -185,7 +185,9 @@
     <ClInclude Include="Common\WindowsRegistry.h" />
     <ClInclude Include="Common\WindowSystemInfo.h" />
     <ClInclude Include="Common\WorkQueueThread.h" />
-    <ClInclude Include="Core\AchievementApprovedHash.h" />
+    <ClInclude Include="$(IntDir)Core\AchievementApprovedHash.h" Condition="Exists('$(IntDir)Core\AchievementApprovedHash.h')">
+      <Filter>Generated</Filter>
+    </ClInclude>
     <ClInclude Include="Core\AchievementManager.h" />
     <ClInclude Include="Core\ActionReplay.h" />
     <ClInclude Include="Core\ARDecrypt.h" />

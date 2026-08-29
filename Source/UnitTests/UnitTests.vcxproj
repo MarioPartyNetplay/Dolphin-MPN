@@ -26,6 +26,10 @@
     <Link>
       <SubSystem>Console</SubSystem>
     </Link>
+    <PreBuildEvent>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(CoreDir)Core\generate_achievement_hash.ps1" -JsonFile "$(DolphinRootDir)Data\Sys\ApprovedInis.json" -TemplateFile "$(CoreDir)Core\AchievementApprovedHash.h.in" -OutputFile "$(IntDir)Core\AchievementApprovedHash.h"</Command>
+      <Message>Generating AchievementApprovedHash.h</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Core\DSP\DSPTestBinary.h" />

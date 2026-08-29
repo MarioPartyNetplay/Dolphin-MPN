@@ -93,8 +93,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <PreBuildEvent>
-      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
-      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h" &amp; powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_achievement_hash.ps1" -JsonFile "$(DolphinRootDir)Data\Sys\ApprovedInis.json" -TemplateFile "$(ProjectDir)Core\AchievementApprovedHash.h.in" -OutputFile "$(IntDir)Core\AchievementApprovedHash.h"</Command>
+      <Message>Generating ChatBlocklist.h and AchievementApprovedHash.h</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -102,20 +102,20 @@
       <PreprocessorDefinitions>CURL_STATICLIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <PreBuildEvent>
-      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
-      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h" &amp; powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_achievement_hash.ps1" -JsonFile "$(DolphinRootDir)Data\Sys\ApprovedInis.json" -TemplateFile "$(ProjectDir)Core\AchievementApprovedHash.h.in" -OutputFile "$(IntDir)Core\AchievementApprovedHash.h"</Command>
+      <Message>Generating ChatBlocklist.h and AchievementApprovedHash.h</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <PreBuildEvent>
-      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
-      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h" &amp; powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_achievement_hash.ps1" -JsonFile "$(DolphinRootDir)Data\Sys\ApprovedInis.json" -TemplateFile "$(ProjectDir)Core\AchievementApprovedHash.h.in" -OutputFile "$(IntDir)Core\AchievementApprovedHash.h"</Command>
+      <Message>Generating ChatBlocklist.h and AchievementApprovedHash.h</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <PreBuildEvent>
-      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h"</Command>
-      <Message>Generating ChatBlocklist.h from blocklist.txt</Message>
+      <Command>powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_blocklist.ps1" -InputFile "$(ProjectDir)Core\blocklist.txt" -OutputFile "$(IntDir)ChatBlocklist.h" &amp; powershell.exe -ExecutionPolicy Bypass -File "$(ProjectDir)Core\generate_achievement_hash.ps1" -JsonFile "$(DolphinRootDir)Data\Sys\ApprovedInis.json" -TemplateFile "$(ProjectDir)Core\AchievementApprovedHash.h.in" -OutputFile "$(IntDir)Core\AchievementApprovedHash.h"</Command>
+      <Message>Generating ChatBlocklist.h and AchievementApprovedHash.h</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
