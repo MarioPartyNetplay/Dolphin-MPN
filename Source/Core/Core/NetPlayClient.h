@@ -42,36 +42,6 @@ struct SerializedWiimoteState;
 
 namespace NetPlay
 {
-constexpr int rollback_frames_supported = 10;
-using SaveState = std::vector<u8>;
-// 0 is the closest SaveState in time from the current frame
-class SaveStateArray
-{
-public:
-  std::shared_ptr<SaveState>& New()
-  {
-    std::array<std::shared_ptr<SaveState>, rollback_frames_supported> new_array{};
-
-    for (int i = rollback_frames_supported - 2; i >= 0; i--)
-    {
-      new_array.at(i + 1) = main_array.at(i);
-    }
-    new_array.at(0) = std::shared_ptr<SaveState>{};
-    main_array = std::move(new_array);
-
-    return main_array.at(0);
-  };
-
-  void reset()
-  {
-    for (auto& save_state : main_array)
-      save_state = std::shared_ptr<SaveState>{};
-  }
-
-private:
-  std::array<std::shared_ptr<SaveState>, rollback_frames_supported> main_array;
-};
-
 class NetPlayUI
 {
 public:
@@ -152,7 +122,6 @@ public:
 
   // Called from the GUI thread.
   bool IsConnected() const { return m_is_connected; }
-  bool IsRunning() const { return m_is_running.IsSet(); }
   bool StartGame(const std::string& path);
   void InvokeStop();
   bool StopGame();
@@ -161,13 +130,9 @@ public:
   void SendChatMessage(const std::string& msg);
   void RequestStopGame();
   void SendPowerButtonEvent();
-  void SendActiveGeckoCodes();
-  void GetActiveGeckoCodes();
   void RequestGolfControl(PlayerId pid);
   void RequestGolfControl();
   std::string GetCurrentGolfer();
-  std::vector<std::string> v_ActiveGeckoCodes;
-  std::vector<std::string> v_ActiveARCodes;
 
   // Send and receive pads values
   struct WiimoteDataBatchEntry
@@ -184,9 +149,6 @@ public:
   void OnConnectReady(ENetAddress addr) override;
   void OnConnectFailed(Common::TraversalConnectFailedReason reason) override;
   void OnTtlDetermined(u8 ttl) override {}
-
-  // Message processing methods - made public for Android client
-  void OnData(sf::Packet& packet);
 
   bool IsFirstInGamePad(int ingame_pad) const;
   int NumLocalPads() const;
@@ -306,6 +268,7 @@ private:
   void DisplayPlayersPing();
   u32 GetPlayersMaxPing() const;
 
+  void OnData(sf::Packet& packet);
   void OnPlayerJoin(sf::Packet& packet);
   void OnPlayerLeave(sf::Packet& packet);
   void OnChatMessage(sf::Packet& packet);
@@ -348,8 +311,6 @@ private:
   void OnGameDigestResult(sf::Packet& packet);
   void OnGameDigestError(sf::Packet& packet);
   void OnGameDigestAbort();
-  void OnSendCodesMsg(sf::Packet& packet);
-
 
   bool m_is_connected = false;
   ConnectionState m_connection_state = ConnectionState::Failure;
@@ -383,11 +344,6 @@ private:
   std::unique_ptr<IOS::HLE::FS::FileSystem> m_wii_sync_fs;
   std::vector<u64> m_wii_sync_titles;
   std::string m_wii_sync_redirect_folder;
-
-  std::vector<std::vector<GCPadStatus>> inputs;
-  int delay = 2;
-  std::condition_variable wait_for_inputs;
-  SaveStateArray save_states;
 };
 
 void NetPlay_Enable(NetPlayClient* const np);

@@ -22,5 +22,4 @@ private:
   std::weak_ptr<NetPlay::NetPlayClient> m_netplay_client;
 };
 
-std::shared_ptr<NetPlayGolfUI> GetNetPlayGolfUI();
-void SetNetPlayGolfUI(std::shared_ptr<NetPlayGolfUI> ui);
+extern std::unique_ptr<NetPlayGolfUI> g_netplay_golf_ui;

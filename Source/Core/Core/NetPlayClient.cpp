@@ -76,19 +76,6 @@ namespace NetPlay
 {
 using namespace WiimoteCommon;
 
-static bool IsSharedControllerPort(const PadMapping& mapping)
-{
-  return mapping.players.size() > 1;
-}
-
-static GCPadStatus DefaultConnectedPadStatus()
-{
-  GCPadStatus pad{};
-  pad.isConnected = true;
-  pad.stickX = pad.stickY = pad.substickX = pad.substickY = 128;
-  return pad;
-}
-
 static std::mutex crit_netplay_client;
 static NetPlayClient* netplay_client = nullptr;
 static bool s_si_poll_batching = false;
@@ -465,7 +452,6 @@ void NetPlayClient::OnData(sf::Packet& packet)
     OnSyncCodes(packet);
     break;
 
-
   case MessageID::ComputeGameDigest:
     OnComputeGameDigest(packet);
     break;
@@ -539,27 +525,12 @@ void NetPlayClient::OnChatMessage(sf::Packet& packet)
   packet >> msg;
 
   // don't need lock to read in this thread
-  // PlayerId{0} is used for system/server messages
-  if (pid == 0)
-  {
-    INFO_LOG_FMT(NETPLAY, "System message: {}", msg);
-    m_dialog->AppendChat(fmt::format("System: {}", msg));
-  }
-  else
-  {
-    const auto it = m_players.find(pid);
-    if (it != m_players.end())
-    {
-      const Player& player = it->second;
-      INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
-      m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
-    }
-    else
-    {
-      INFO_LOG_FMT(NETPLAY, "Unknown player {} wrote: {}", pid, msg);
-      m_dialog->AppendChat(fmt::format("Unknown[{}]: {}", pid, msg));
-    }
-  }
+  const Player& player = m_players[pid];
+
+  INFO_LOG_FMT(NETPLAY, "Player {} ({}) wrote: {}", player.name, player.pid, msg);
+
+  // add to gui
+  m_dialog->AppendChat(fmt::format("{}[{}]: {}", player.name, pid, msg));
 }
 
 void NetPlayClient::OnChunkedDataStart(sf::Packet& packet)
@@ -655,56 +626,16 @@ void NetPlayClient::OnChunkedDataAbort(sf::Packet& packet)
 
 void NetPlayClient::OnPadMapping(sf::Packet& packet)
 {
-  for (auto& mapping : m_net_settings.pad_map)
-  {
-    mapping.players.clear();
-    u8 player_count;
-    packet >> player_count;
-    for (u8 i = 0; i < player_count; ++i)
-    {
-      PlayerId pid;
-      packet >> pid;
-      mapping.players.push_back(pid);
-    }
-  }
-
-  if (m_is_running.IsSet())
-  {
-    const GCPadStatus default_pad = DefaultConnectedPadStatus();
-    const WiimoteEmu::SerializedWiimoteState default_wii{};
-    for (unsigned int i = 0; i < 4; ++i)
-    {
-      if (IsSharedControllerPort(m_net_settings.pad_map[i]) && m_pad_buffer[i].Size() == 0)
-      {
-        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-          m_pad_buffer[i].Push(default_pad);
-      }
-
-      if (IsSharedControllerPort(m_net_settings.wiimote_map[i]) && m_wiimote_buffer[i].Size() == 0)
-      {
-        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-          m_wiimote_buffer[i].Push(default_wii);
-      }
-    }
-  }
+  for (PlayerId& mapping : m_net_settings.pad_map)
+    packet >> mapping;
 
   m_dialog->Update();
 }
 
 void NetPlayClient::OnWiimoteMapping(sf::Packet& packet)
 {
-  for (auto& mapping : m_net_settings.wiimote_map)
-  {
-    mapping.players.clear();
-    u8 player_count;
-    packet >> player_count;
-    for (u8 i = 0; i < player_count; ++i)
-    {
-      PlayerId pid;
-      packet >> pid;
-      mapping.players.push_back(pid);
-    }
-  }
+  for (PlayerId& mapping : m_net_settings.wiimote_map)
+    packet >> mapping;
 
   m_dialog->Update();
 }
@@ -1829,27 +1760,6 @@ bool NetPlayClient::StartGame(const std::string& path)
 
   ClearBuffers();
 
-  // Shared ports only fill from server-combined input. Prime identical neutral samples on every
-  // peer so GetNetPads is not stuck on frame 0 waiting for the first aggregated packet.
-  {
-    const GCPadStatus default_pad = DefaultConnectedPadStatus();
-    const WiimoteEmu::SerializedWiimoteState default_wii{};
-    for (unsigned int i = 0; i < 4; ++i)
-    {
-      if (IsSharedControllerPort(m_net_settings.pad_map[i]))
-      {
-        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-          m_pad_buffer[i].Push(default_pad);
-      }
-
-      if (IsSharedControllerPort(m_net_settings.wiimote_map[i]))
-      {
-        for (unsigned int copy = 0; copy <= m_target_buffer_size; ++copy)
-          m_wiimote_buffer[i].Push(default_wii);
-      }
-    }
-  }
-
   m_first_pad_status_received.fill(false);
 
   if (m_dialog->IsRecording())
@@ -1862,13 +1772,13 @@ bool NetPlayClient::StartGame(const std::string& path)
     Movie::WiimoteEnabledArray wiimotes{};
     for (unsigned int i = 0; i < 4; ++i)
     {
-      if (!m_net_settings.pad_map[i].players.empty() && m_net_settings.gba_config[i].enabled)
+      if (m_net_settings.pad_map[i] > 0 && m_net_settings.gba_config[i].enabled)
         controllers[i] = Movie::ControllerType::GBA;
-      else if (!m_net_settings.pad_map[i].players.empty())
+      else if (m_net_settings.pad_map[i] > 0)
         controllers[i] = Movie::ControllerType::GC;
       else
         controllers[i] = Movie::ControllerType::None;
-      wiimotes[i] = !m_net_settings.wiimote_map[i].players.empty();
+      wiimotes[i] = m_net_settings.wiimote_map[i] > 0;
     }
     movie.BeginRecordingInput(controllers, wiimotes);
   }
@@ -2032,21 +1942,11 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
-  // Check if BBA mode is enabled - if so, disable input synchronization
-  // In BBA mode, we only sync BBA packets, not controller inputs
-  if (m_net_settings.bba_mode)
-  {
-    // In BBA mode, everyone uses local pad 0 (first controller slot)
-    // since we're only syncing BBA packets, not controller inputs
-    *pad_status = Pad::GetStatus(0);
-    return true;
-  }
-
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
   // and emulates NetPlay that way. Which GameCube controls which
-  // in-game controllers can be configured on the device (m_net_settings.pad_map)
+  // in-game controllers can be configured on the device (m_pad_map)
   // but which sockets on each individual GameCube should be used
   // to control which players? The solution that Dolphin uses is
   // that we hardcode the knowledge that they go in order, so if
@@ -2187,21 +2087,6 @@ u64 NetPlayClient::GetInitialRTCValue() const
 // called from ---CPU--- thread
 bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entries)
 {
-  // Check if BBA mode is enabled - if so, disable Wiimote synchronization
-  // In BBA mode, we only sync BBA packets, not controller inputs
-  if (m_net_settings.bba_mode)
-  {
-    // In BBA mode, everyone gets a default Wiimote state
-    // since we're only syncing BBA packets, not controller inputs
-    for (const WiimoteDataBatchEntry& entry : entries)
-    {
-      // Create a default/empty Wiimote state for all Wiimote requests
-      WiimoteEmu::SerializedWiimoteState default_state{};
-      *entry.state = default_state;
-    }
-    return true;
-  }
-
   for (const WiimoteDataBatchEntry& entry : entries)
   {
     const int local_wiimote = InGameWiimoteToLocalWiimote(entry.wiimote);
@@ -2241,9 +2126,6 @@ bool NetPlayClient::WiimoteUpdate(const std::span<WiimoteDataBatchEntry>& entrie
 bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
 {
   const int ingame_pad = LocalPadToInGamePad(local_pad);
-  if (ingame_pad >= 4)
-    return false;
-
   bool data_added = false;
   GCPadStatus pad_status;
 
@@ -2261,38 +2143,31 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
     pad_status = Pad::GetStatus(local_pad);
   }
 
-  // Multiple players on one port share a single emulated controller. Only the server-combined
-  // input may be applied; buffering local input here desyncs each peer.
-  const bool shared_port = IsSharedControllerPort(m_net_settings.pad_map[ingame_pad]);
-
   if (m_host_input_authority)
   {
     if (m_local_player->pid != m_current_golfer)
     {
+      // add to packet
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
     }
-    else if (!shared_port)
+    else
     {
+      // set locally
       m_last_pad_status[ingame_pad] = pad_status;
       m_first_pad_status_received[ingame_pad] = true;
     }
   }
-  else if (shared_port)
-  {
-    // Mirror non-shared buffer depth without pushing local input (server aggregates one frame per
-    // sample). Do not gate on buffer size with a single sample — that starved the FIFO.
-    while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      AddPadStateToPacket(ingame_pad, pad_status, packet);
-      data_added = true;
-    }
-  }
   else
   {
+    // adjust the buffer either up or down
+    // inserting multiple padstates or dropping states
     while (m_pad_buffer[ingame_pad].Size() <= m_target_buffer_size)
     {
+      // add to buffer
       m_pad_buffer[ingame_pad].Push(pad_status);
+
+      // add to packet
       AddPadStateToPacket(ingame_pad, pad_status, packet);
       data_added = true;
     }
@@ -2306,28 +2181,18 @@ bool NetPlayClient::AddLocalWiimoteToBuffer(const int local_wiimote,
                                             sf::Packet& packet)
 {
   const int ingame_pad = LocalWiimoteToInGameWiimote(local_wiimote);
-  if (ingame_pad >= 4)
-    return false;
-
   bool data_added = false;
-  const bool shared_port = IsSharedControllerPort(m_net_settings.wiimote_map[ingame_pad]);
 
-  if (shared_port)
+  // adjust the buffer either up or down
+  // inserting multiple padstates or dropping states
+  while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
   {
-    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      AddWiimoteStateToPacket(ingame_pad, state, packet);
-      data_added = true;
-    }
-  }
-  else
-  {
-    while (m_wiimote_buffer[ingame_pad].Size() <= m_target_buffer_size)
-    {
-      m_wiimote_buffer[ingame_pad].Push(state);
-      AddWiimoteStateToPacket(ingame_pad, state, packet);
-      data_added = true;
-    }
+    // add to buffer
+    m_wiimote_buffer[ingame_pad].Push(state);
+
+    // add to packet
+    AddWiimoteStateToPacket(ingame_pad, state, packet);
+    data_added = true;
   }
 
   return data_added;
@@ -2357,7 +2222,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
   {
     for (size_t i = 0; i < m_net_settings.pad_map.size(); i++)
     {
-      if (m_net_settings.pad_map[i].players.empty())
+      if (m_net_settings.pad_map[i] <= 0)
         continue;
 
       while (!m_first_pad_status_received[i])
@@ -2371,7 +2236,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 
     for (size_t i = 0; i < m_net_settings.pad_map.size(); i++)
     {
-      if (m_net_settings.pad_map[i].players.empty() || m_pad_buffer[i].Size() > 0)
+      if (m_net_settings.pad_map[i] == 0 || m_pad_buffer[i].Size() > 0)
         continue;
 
       const GCPadStatus& pad_status = m_last_pad_status[i];
@@ -2379,7 +2244,7 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
       AddPadStateToPacket(static_cast<int>(i), pad_status, packet);
     }
   }
-  else if (!m_net_settings.pad_map[pad_num].players.empty())
+  else if (m_net_settings.pad_map[pad_num] != 0)
   {
     while (!m_first_pad_status_received[pad_num])
     {
@@ -2403,7 +2268,6 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 void NetPlayClient::InvokeStop()
 {
   m_is_running.Clear();
-  NetPlay_Disable();
 
   // stop waiting for input
   m_gc_pad_event.Set();
@@ -2416,6 +2280,8 @@ void NetPlayClient::InvokeStop()
 bool NetPlayClient::StopGame()
 {
   InvokeStop();
+
+  NetPlay_Disable();
 
   // stop game
   m_dialog->StopGame();
@@ -2486,36 +2352,23 @@ bool NetPlayClient::LocalPlayerHasControllerMapped() const
 bool NetPlayClient::IsFirstInGamePad(int ingame_pad) const
 {
   return std::none_of(m_net_settings.pad_map.begin(), m_net_settings.pad_map.begin() + ingame_pad,
-                      [](const auto& mapping) { return !mapping.players.empty(); });
+                      [](auto mapping) { return mapping > 0; });
 }
 
 int NetPlayClient::NumLocalPads() const
 {
-  int count = 0;
-  for (const auto& mapping : m_net_settings.pad_map)
-  {
-    if (std::find(mapping.players.begin(), mapping.players.end(), m_local_player->pid) != mapping.players.end())
-      ++count;
-  }
-  return count;
+  return std::ranges::count(m_net_settings.pad_map, m_local_player->pid);
 }
 
 int NetPlayClient::NumLocalWiimotes() const
 {
-  int count = 0;
-  for (const auto& mapping : m_net_settings.wiimote_map)
-  {
-    if (std::find(mapping.players.begin(), mapping.players.end(), m_local_player->pid) != mapping.players.end())
-      ++count;
-  }
-  return count;
+  return std::ranges::count(m_net_settings.wiimote_map, m_local_player->pid);
 }
 
 static int InGameToLocal(int ingame_pad, const PadMappingArray& pad_map, PlayerId local_player_pid)
 {
   // not our pad
-  const auto& players = pad_map[ingame_pad].players;
-  if (std::find(players.begin(), players.end(), local_player_pid) == players.end())
+  if (pad_map[ingame_pad] != local_player_pid)
     return 4;
 
   int local_pad = 0;
@@ -2523,8 +2376,7 @@ static int InGameToLocal(int ingame_pad, const PadMappingArray& pad_map, PlayerI
 
   for (; pad < ingame_pad; ++pad)
   {
-    const auto& pad_players = pad_map[pad].players;
-    if (std::find(pad_players.begin(), pad_players.end(), local_player_pid) != pad_players.end())
+    if (pad_map[pad] == local_player_pid)
       local_pad++;
   }
 
@@ -2540,15 +2392,14 @@ static int LocalToInGame(int local_pad, const PadMappingArray& pad_map, PlayerId
   int ingame_pad = 0;
   for (; ingame_pad < 4; ingame_pad++)
   {
-    const auto& players = pad_map[ingame_pad].players;
-    if (std::find(players.begin(), players.end(), local_player_pid) != players.end())
+    if (pad_map[ingame_pad] == local_player_pid)
       local_pad_count++;
 
     if (local_pad_count == local_pad)
       break;
   }
 
-  return ingame_pad < 4 ? ingame_pad : 4;
+  return ingame_pad;
 }
 
 int NetPlayClient::InGamePadToLocalPad(int ingame_pad) const
@@ -2573,12 +2424,10 @@ int NetPlayClient::LocalWiimoteToInGameWiimote(int local_wiimote) const
 
 bool NetPlayClient::PlayerHasControllerMapped(const PlayerId pid) const
 {
-  const auto mapping_contains_player_id = [pid](const PadMapping& mapping) {
-    return std::find(mapping.players.begin(), mapping.players.end(), pid) != mapping.players.end();
-  };
+  const auto mapping_matches_player_id = [pid](const PlayerId& mapping) { return mapping == pid; };
 
-  return std::ranges::any_of(m_net_settings.pad_map, mapping_contains_player_id) ||
-         std::ranges::any_of(m_net_settings.wiimote_map, mapping_contains_player_id);
+  return std::ranges::any_of(m_net_settings.pad_map, mapping_matches_player_id) ||
+         std::ranges::any_of(m_net_settings.wiimote_map, mapping_matches_player_id);
 }
 
 bool NetPlayClient::IsLocalPlayer(const PlayerId pid) const
@@ -2752,19 +2601,11 @@ std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
   std::vector<size_t> gc_slots, gba_slots, wiimote_slots;
   for (size_t i = 0; i < pad_map.size(); ++i)
   {
-    // Check if this player is in the pad mapping for this slot
-    const auto& pad_players = pad_map[i].players;
-    if (std::find(pad_players.begin(), pad_players.end(), pid) != pad_players.end())
-    {
-      if (!gba_config[i].enabled)
-        gc_slots.push_back(i + 1);
-      else
-        gba_slots.push_back(i + 1);
-    }
-    
-    // Check if this player is in the wiimote mapping for this slot
-    const auto& wii_players = wiimote_map[i].players;
-    if (std::find(wii_players.begin(), wii_players.end(), pid) != wii_players.end())
+    if (pad_map[i] == pid && !gba_config[i].enabled)
+      gc_slots.push_back(i + 1);
+    if (pad_map[i] == pid && gba_config[i].enabled)
+      gba_slots.push_back(i + 1);
+    if (wiimote_map[i] == pid)
       wiimote_slots.push_back(i + 1);
   }
   std::vector<std::string> groups;
@@ -2826,48 +2667,25 @@ PadDetails GetPadDetails(int pad_num)
     return res;
 
   auto pad_map = netplay_client->GetPadMapping();
-  if (pad_map[pad_num].players.empty())
+  if (pad_map[pad_num] <= 0)
     return res;
 
-  std::vector<std::string> player_names;
   for (auto player : netplay_client->GetPlayers())
   {
-    if (std::find(pad_map[pad_num].players.begin(), pad_map[pad_num].players.end(), player->pid) != pad_map[pad_num].players.end())
-      player_names.push_back(player->name);
-  }
-  res.player_name = fmt::format("{}", fmt::join(player_names, ", "));
-
-  // Check if any local player controls this pad
-  bool has_local_player = false;
-  for (PlayerId pid : pad_map[pad_num].players)
-  {
-    if (netplay_client->IsLocalPlayer(pid))
-    {
-      has_local_player = true;
-      break;
-    }
+    if (player->pid == pad_map[pad_num])
+      res.player_name = player->name;
   }
 
   int local_pad = 0;
   int non_local_pad = 0;
   for (int i = 0; i < pad_num; ++i)
   {
-    bool slot_has_local = false;
-    for (PlayerId pid : pad_map[i].players)
-    {
-      if (netplay_client->IsLocalPlayer(pid))
-      {
-        slot_has_local = true;
-        break;
-      }
-    }
-    if (slot_has_local)
+    if (netplay_client->IsLocalPlayer(pad_map[i]))
       ++local_pad;
     else
       ++non_local_pad;
   }
-  
-  res.is_local = has_local_player;
+  res.is_local = netplay_client->IsLocalPlayer(pad_map[pad_num]);
   res.local_pad = res.is_local ? local_pad : netplay_client->NumLocalPads() + non_local_pad;
   res.hide_gba = !res.is_local && netplay_client->GetNetSettings().hide_remote_gbas &&
                  netplay_client->LocalPlayerHasControllerMapped();
@@ -2936,8 +2754,7 @@ unsigned int NetPlay::NetPlay_GetLocalWiimoteForSlot(unsigned int slot)
   size_t player_count = 0;
   for (size_t i = 0; i < mapping.size(); ++i)
   {
-    const auto& players = mapping[i].players;
-    if (std::find(players.begin(), players.end(), local_player_id) != players.end())
+    if (mapping[i] == local_player_id)
     {
       slot_map[i] = static_cast<unsigned int>(player_count);
       ++player_count;
@@ -2945,8 +2762,7 @@ unsigned int NetPlay::NetPlay_GetLocalWiimoteForSlot(unsigned int slot)
   }
   for (size_t i = 0; i < mapping.size(); ++i)
   {
-    const auto& players = mapping[i].players;
-    if (!players.empty() && std::find(players.begin(), players.end(), local_player_id) == players.end())
+    if (mapping[i] != local_player_id)
     {
       slot_map[i] = static_cast<unsigned int>(player_count);
       ++player_count;

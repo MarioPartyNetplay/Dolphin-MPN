@@ -33,5 +33,4 @@ private:
   std::function<void(const std::string&)> m_message_callback;
 };
 
-std::shared_ptr<NetPlayChatUI> GetNetPlayChatUI();
-void SetNetPlayChatUI(std::shared_ptr<NetPlayChatUI> ui);
+extern std::unique_ptr<NetPlayChatUI> g_netplay_chat_ui;

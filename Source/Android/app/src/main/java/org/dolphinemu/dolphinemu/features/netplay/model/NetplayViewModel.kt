@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.dolphinemu.dolphinemu.features.netplay.NetplaySession
+import org.dolphinemu.dolphinemu.features.netplay.model.ControllerMapping.Companion.emptyControllerMapping
 import org.dolphinemu.dolphinemu.features.settings.model.BooleanSetting
 import org.dolphinemu.dolphinemu.features.settings.model.IntSetting
 import org.dolphinemu.dolphinemu.features.settings.model.NativeConfig
@@ -58,6 +59,9 @@ class NetplayViewModel(
 
     val players = netplaySession.players
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyList())
+
+    val controllerMapping = netplaySession.controllerMapping
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyControllerMapping())
 
     val messages = netplaySession.messages
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyList())
@@ -168,6 +172,18 @@ class NetplayViewModel(
         netplaySession.changeGame(gameFile)
     }
 
+    fun setGamecubePort(portNumber: Int, player: Player?) {
+        netplaySession.setControllerMapping(
+            controllerMapping.value.withGamecubePort(portNumber, player)
+        )
+    }
+
+    fun setWiiRemote(remoteNumber: Int, player: Player?) {
+        netplaySession.setControllerMapping(
+            controllerMapping.value.withWiiRemote(remoteNumber, player)
+        )
+    }
+
     private fun getLocalIp(): JoinAddress {
         val localIp = networkHelper.getLocalIpString()
             ?: return JoinAddress.Unknown { _joinAddresses.value += JoinInfoType.LOCAL to getLocalIp() }
@@ -196,12 +212,14 @@ class NetplayViewModel(
                         JoinInfoType.EXTERNAL to JoinAddress.Loading,
                     )
                 }
+
                 is TraversalState.Connected -> {
                     _joinAddresses.value += mapOf(
                         JoinInfoType.ROOM_ID to JoinAddress.Loaded(state.hostCode),
                         JoinInfoType.EXTERNAL to JoinAddress.Loaded(state.externalAddress),
                     )
                 }
+
                 is TraversalState.Failure -> {
                     _joinAddresses.value += mapOf(
                         JoinInfoType.ROOM_ID to JoinAddress.Unknown(retry),

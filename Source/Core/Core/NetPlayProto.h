@@ -5,7 +5,6 @@
 
 #include <array>
 #include <string>
-#include <vector>
 
 #include "Common/CommonTypes.h"
 #include "Common/EnumMap.h"
@@ -41,15 +40,7 @@ struct GBAConfig
 using PlayerId = u8;
 using FrameNum = u32;
 using PadIndex = s8;
-
-struct PadMapping
-{
-  std::vector<PlayerId> players{};
-  bool operator==(const PadMapping& other) const { return players == other.players; }
-  bool operator!=(const PadMapping& other) const { return players != other.players; }
-};
-
-using PadMappingArray = std::array<PadMapping, 4>;
+using PadMappingArray = std::array<PlayerId, 4>;
 using GBAConfigArray = std::array<GBAConfig, 4>;
 
 struct NetSettings
@@ -131,7 +122,6 @@ struct NetSettings
   bool golf_mode = false;
   bool use_fma = false;
   bool hide_remote_gbas = false;
-  bool bba_mode = false;
 
   Sram sram;
 
@@ -220,9 +210,6 @@ enum class MessageID : u8
 
   SyncSaveData = 0xF1,
   SyncCodes = 0xF2,
-  
-  //MPN
-  SendCodes = 0xF3,
 };
 
 enum class ConnectionError : u8

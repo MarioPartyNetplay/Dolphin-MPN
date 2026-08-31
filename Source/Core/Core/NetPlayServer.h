@@ -9,7 +9,6 @@
 #include <mutex>
 #include <optional>
 #include <thread>
-#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -22,8 +21,6 @@
 #include "Core/NetPlayProto.h"
 #include "Core/SyncIdentifier.h"
 #include "UICommon/NetPlayIndex.h"
-#include "Core/HW/WiimoteEmu/DesiredWiimoteState.h"
-#include "InputCommon/GCPadStatus.h"
 
 namespace NetPlay
 {
@@ -35,9 +32,8 @@ class NetPlayServer : public Common::TraversalClientClient
 public:
   void ThreadFunc();
   void SendAsync(sf::Packet&& packet, PlayerId pid, u8 channel_id = DEFAULT_CHANNEL);
-  void SendAsyncToClients(sf::Packet&& packet, const PlayerId skip_pid = 0, const u8 channel_id = 0);
-  void SendAsyncToClients(sf::Packet&& packet, const std::vector<PlayerId>& skip_pids,
-                           const u8 channel_id = 0);
+  void SendAsyncToClients(sf::Packet&& packet, PlayerId skip_pid = 0,
+                          u8 channel_id = DEFAULT_CHANNEL);
   void SendChunked(sf::Packet&& packet, PlayerId pid, const std::string& title = "");
   void SendChunkedToClients(sf::Packet&& packet, PlayerId skip_pid = 0,
                             const std::string& title = "");
@@ -76,7 +72,9 @@ public:
   std::unordered_set<std::string> GetInterfaceSet() const;
   std::string GetInterfaceHost(const std::string& inter) const;
 
-  // Client class definition for BBA packet handling
+  bool is_connected = false;
+
+private:
   class Client
   {
   public:
@@ -97,10 +95,6 @@ public:
     bool IsHost() const { return pid == 1; }
   };
 
-
-  bool is_connected = false;
-
-private:
   enum class TargetMode
   {
     Only,
@@ -150,12 +144,6 @@ private:
   void UpdatePadMapping();
   void UpdateGBAConfig();
   void UpdateWiimoteMapping();
-  
-  // Input aggregation functions
-  void AggregatePadInputs(PadIndex pad_index, unsigned int num_copies = 1);
-  GCPadStatus CombinePadInputs(const std::vector<GCPadStatus>& inputs);
-  void AggregateWiimoteInputs(PadIndex pad_index, unsigned int num_copies = 1);
-  WiimoteEmu::SerializedWiimoteState CombineWiimoteInputs(const std::vector<WiimoteEmu::SerializedWiimoteState>& inputs);
   std::vector<std::pair<std::string, std::string>> GetInterfaceListInternal() const;
   void ChunkedDataThreadFunc();
   void ChunkedDataSend(sf::Packet&& packet, PlayerId pid, const TargetMode target_mode);
@@ -196,10 +184,6 @@ private:
   std::unordered_map<u32, std::vector<std::pair<PlayerId, u64>>> m_timebase_by_frame;
   bool m_desync_detected = false;
 
-  // Store inputs from each player for each pad when multiple players are assigned
-  std::array<std::map<PlayerId, GCPadStatus>, 4> m_pad_inputs_by_player{};
-  std::array<std::map<PlayerId, WiimoteEmu::SerializedWiimoteState>, 4> m_wiimote_inputs_by_player{};
-
   struct
   {
     std::recursive_mutex game;
@@ -226,8 +210,5 @@ private:
   Common::TraversalClient* m_traversal_client = nullptr;
   NetPlayUI* m_dialog = nullptr;
   NetPlayIndex m_index;
-
-  // Chat blocklist
-  bool ContainsBlockedWord(const std::string& msg) const;
 };
 }  // namespace NetPlay

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "jni/AndroidCommon/IDCache.h"
-#include "jni/Netplay.h"
 
 #include <jni.h>
 
@@ -1016,9 +1015,6 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
       env->GetStaticMethodID(audio_utils_class, "getFramesPerBuffer", "()I");
   env->DeleteLocalRef(audio_utils_class);
 
-  // Initialize multiplayer JNI
-  InitializeMultiplayerJNI(vm);
-
   return JNI_VERSION;
 }
 
@@ -1058,8 +1054,5 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved)
   env->DeleteGlobalRef(s_input_detector_class);
   env->DeleteGlobalRef(s_permission_handler_class);
   env->DeleteGlobalRef(s_audio_utils_class);
-
-  // Cleanup multiplayer JNI
-  CleanupMultiplayerJNI();
 }
 }
