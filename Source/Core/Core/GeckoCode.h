@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -65,9 +64,6 @@ constexpr u32 INSTALLER_END_ADDRESS_MP5 = 0x801C8F28;
 constexpr u32 INSTALLER_BASE_ADDRESS_MP4 = 0x80132208;
 constexpr u32 INSTALLER_END_ADDRESS_MP4 = 0x80139720;
 
-constexpr u32 INSTALLER_BASE_ADDRESS_GM4 = 0x80112F3C;
-constexpr u32 INSTALLER_END_ADDRESS_GM4 = 0x80118CAC;
-
 constexpr u32 ENTRY_POINT = INSTALLER_BASE_ADDRESS + 0xA8;
 
 // If the GCT is max-length then this is the second word of the End code (0xF0000000 0x00000000)
@@ -85,14 +81,6 @@ constexpr u32 HLE_TRAMPOLINE_ADDRESS = INSTALLER_END_ADDRESS - 4;
 constexpr u32 MAGIC_GAMEID = 0xD01F1BAD;
 
 size_t CountEnabledCodes();
-
-struct CodeBytesUsage
-{
-  u32 used;
-  u32 total;
-};
-
-std::optional<CodeBytesUsage> GetCodeBytesUsage();
 void SetActiveCodes(std::span<const GeckoCode> gcodes, const std::string& game_id, u16 revision);
 void SetSyncedCodesAsActive();
 void UpdateSyncedCodes(std::span<const GeckoCode> gcodes);
