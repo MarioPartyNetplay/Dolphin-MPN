@@ -156,7 +156,7 @@ void NetPlayBrowser::Refresh()
   std::map<std::string, std::string> filters;
 
   if (m_check_hide_incompatible->isChecked())
-    filters["version"] = Common::GetScmDescStr();
+    filters["version"] = "MPN";
 
   if (!m_edit_name->text().isEmpty())
     filters["name"] = m_edit_name->text().toStdString();
@@ -244,7 +244,7 @@ void NetPlayBrowser::UpdateList()
     auto* player_count = new QTableWidgetItem(QStringLiteral("%1").arg(entry.player_count));
     auto* version = new QTableWidgetItem(QString::fromStdString(entry.version));
 
-    const bool enabled = Common::GetScmDescStr() == entry.version;
+    const bool enabled = true;
 
     for (const auto& item : {region, name, password, in_game, game_id, player_count, version})
       item->setFlags(enabled ? Qt::ItemIsEnabled | Qt::ItemIsSelectable : Qt::NoItemFlags);

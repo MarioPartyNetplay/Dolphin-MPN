@@ -62,6 +62,12 @@ static Installation s_code_handler_installed = Installation::Uninstalled;
 static std::vector<GeckoCode> s_active_codes;
 static std::vector<GeckoCode> s_synced_codes;
 static std::mutex s_active_codes_lock;
+static std::optional<CodeBytesUsage> s_code_bytes_usage;
+
+static void ClearCodeBytesUsage()
+{
+  s_code_bytes_usage.reset();
+}
 
 size_t CountEnabledCodes()
 {
@@ -90,6 +96,13 @@ void SetActiveCodes(std::span<const GeckoCode> gcodes, const std::string& game_i
   s_active_codes.shrink_to_fit();
 
   s_code_handler_installed = Installation::Uninstalled;
+  ClearCodeBytesUsage();
+}
+
+std::optional<CodeBytesUsage> GetCodeBytesUsage()
+{
+  std::lock_guard guard(s_active_codes_lock);
+  return s_code_bytes_usage;
 }
 
 void SetSyncedCodesAsActive()
@@ -122,6 +135,7 @@ std::vector<GeckoCode> SetAndReturnActiveCodes(std::span<const GeckoCode> gcodes
   s_active_codes.shrink_to_fit();
 
   s_code_handler_installed = Installation::Uninstalled;
+  ClearCodeBytesUsage();
 
   return s_active_codes;
 }
@@ -191,6 +205,8 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
     }
   }
 
+  const bool is_mpn_handler_and_game_id_gm4e01 =
+      IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "GM4E01");
   const bool is_mpn_handler_and_game_id_rm8e01 =
       IsGeckoCodeHandlerMPN() && (SConfig::GetInstance().GetGameID() == "RM8E01");
   const bool is_mpn_handler_and_game_id_gp7e01 =
@@ -207,9 +223,10 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
   const bool is_mpn_relocated =
       is_mpn_handler_and_game_id_rm8e01 || is_mpn_handler_and_game_id_gp7e01 ||
       is_mpn_handler_and_game_id_gp6e01 || is_mpn_handler_and_game_id_gp5e01 ||
-      is_mpn_handler_and_game_id_gmpe01;
+      is_mpn_handler_and_game_id_gmpe01 || is_mpn_handler_and_game_id_gm4e01;
 
   u32 codelist_base_address =
+      is_mpn_handler_and_game_id_gm4e01 ? INSTALLER_BASE_ADDRESS_GM4 :
       is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_BASE_ADDRESS_MP8 :
       is_mpn_handler_and_game_id_gp7e01 ? INSTALLER_BASE_ADDRESS_MP7 :
       is_mpn_handler_and_game_id_gp6e01 ? INSTALLER_BASE_ADDRESS_MP6 :
@@ -217,8 +234,9 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
       is_mpn_handler_and_game_id_gmpe01 ? INSTALLER_BASE_ADDRESS_MP4 :
                                           INSTALLER_BASE_ADDRESS + static_cast<u32>(data.size()) -
                                               CODE_SIZE;
-
-  u32 codelist_end_address = is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_END_ADDRESS_MP8 :
+  
+  u32 codelist_end_address = is_mpn_handler_and_game_id_gm4e01 ? INSTALLER_END_ADDRESS_GM4 :
+                             is_mpn_handler_and_game_id_rm8e01 ? INSTALLER_END_ADDRESS_MP8 :
                              is_mpn_handler_and_game_id_gp7e01 ? INSTALLER_END_ADDRESS_MP7 :
                              is_mpn_handler_and_game_id_gp6e01 ? INSTALLER_END_ADDRESS_MP6 :
                              is_mpn_handler_and_game_id_gp5e01 ? INSTALLER_END_ADDRESS_MP5 :
@@ -301,8 +319,11 @@ static Installation InstallCodeHandlerLocked(const Core::CPUThreadGuard& guard)
   WARN_LOG_FMT(ACTIONREPLAY, "GeckoCodes: Using {} of {} bytes", next_address - start_address,
                end_address - start_address);
 
+  s_code_bytes_usage =
+      CodeBytesUsage{.used = next_address - start_address, .total = end_address - start_address};
 
-  OSD::AddMessage(fmt::format("Gecko Codes: Using {} of {} bytes", next_address - start_address, end_address - start_address));
+  OSD::AddMessage(fmt::format("Gecko Codes: Using {} of {} bytes", s_code_bytes_usage->used,
+                              s_code_bytes_usage->total));
 
   // Stop code. Tells the handler that this is the end of the list.
   PowerPC::MMU::HostWrite<u32>(guard, 0xF0000000, next_address);
@@ -346,6 +367,7 @@ void Shutdown()
   std::lock_guard codes_lock(s_active_codes_lock);
   s_active_codes.clear();
   s_code_handler_installed = Installation::Uninstalled;
+  ClearCodeBytesUsage();
 }
 
 void RunCodeHandler(const Core::CPUThreadGuard& guard)

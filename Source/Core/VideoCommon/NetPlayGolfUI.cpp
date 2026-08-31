@@ -15,6 +15,16 @@ constexpr float DEFAULT_WINDOW_HEIGHT = 45.0f;
 
 std::unique_ptr<NetPlayGolfUI> g_netplay_golf_ui;
 
+NetPlayGolfUI* GetNetPlayGolfUI()
+{
+  return g_netplay_golf_ui.get();
+}
+
+void SetNetPlayGolfUI(std::unique_ptr<NetPlayGolfUI> ui)
+{
+  g_netplay_golf_ui = std::move(ui);
+}
+
 NetPlayGolfUI::NetPlayGolfUI(std::weak_ptr<NetPlay::NetPlayClient> netplay_client)
     : m_netplay_client{std::move(netplay_client)}
 {

@@ -34,3 +34,6 @@ private:
 };
 
 extern std::unique_ptr<NetPlayChatUI> g_netplay_chat_ui;
+
+NetPlayChatUI* GetNetPlayChatUI();
+void SetNetPlayChatUI(std::unique_ptr<NetPlayChatUI> ui);

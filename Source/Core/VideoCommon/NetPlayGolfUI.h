@@ -23,3 +23,6 @@ private:
 };
 
 extern std::unique_ptr<NetPlayGolfUI> g_netplay_golf_ui;
+
+NetPlayGolfUI* GetNetPlayGolfUI();
+void SetNetPlayGolfUI(std::unique_ptr<NetPlayGolfUI> ui);

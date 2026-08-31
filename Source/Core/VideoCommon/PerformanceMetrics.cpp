@@ -11,6 +11,7 @@
 #include "Common/HookableEvent.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Core.h"
+#include "Core/GeckoCode.h"
 #include "VideoCommon/VideoConfig.h"
 #include "Core/MarioPartyNetplay/Gamestate.h"
 
@@ -397,6 +398,36 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       }
       ImGui::End();
     }
+  }
+
+  if (const auto code_bytes = Gecko::GetCodeBytesUsage())
+  {
+    float window_height = 30.f * backbuffer_scale * hud_scale;
+    float scaled_window_width = window_width * hud_scale;
+
+    ImGui::SetNextWindowPos(ImVec2(window_x, window_y), set_next_position_condition,
+                            ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(scaled_window_width, window_height));
+    ImGui::SetNextWindowBgAlpha(bg_alpha);
+
+    if (stack_vertically)
+      window_y += window_height + window_padding;
+    else
+      window_x -= scaled_window_width + window_padding;
+
+    if (ImGui::Begin("GeckoCodeStats", nullptr, imgui_flags))
+    {
+      if (stack_vertically)
+        window_y += ImGui::GetWindowHeight() + window_padding;
+      else
+        window_x -= ImGui::GetWindowWidth() + window_padding;
+      clamp_window_position();
+      ImGui::SetWindowFontScale(hud_scale);
+      ImGui::TextColored(ImVec4(r, g, b, 1.0f), "Codes: %u / %u bytes", code_bytes->used,
+                         code_bytes->total);
+      ImGui::SetWindowFontScale(1.0f);
+    }
+    ImGui::End();
   }
 
   if (g_ActiveConfig.bShowVPS || g_ActiveConfig.bShowVTimes)
