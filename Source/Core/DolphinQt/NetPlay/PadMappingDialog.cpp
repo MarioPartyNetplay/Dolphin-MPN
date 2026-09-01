@@ -99,9 +99,21 @@ int PadMappingDialog::exec()
       combo->clear();
       combo->addItems(players);
 
-      const auto index = gc ? m_pad_mapping[i] : m_wii_mapping[i];
+      const auto pid = gc ? m_pad_mapping[i] : m_wii_mapping[i];
+      int combo_index = 0;
+      if (pid != 0)
+      {
+        for (size_t p = 0; p < m_players.size(); ++p)
+        {
+          if (m_players[p]->pid == pid)
+          {
+            combo_index = static_cast<int>(p) + 1;
+            break;
+          }
+        }
+      }
 
-      combo->setCurrentIndex(index);
+      combo->setCurrentIndex(combo_index);
     }
   }
 

@@ -132,7 +132,8 @@ void NetPlayIndex::NotificationLoop()
             "&in_game={in_game}",
             fmt::arg("base", Config::Get(Config::NETPLAY_INDEX_URL)), fmt::arg("secret", m_secret),
             fmt::arg("player_count", m_player_count),
-            fmt::arg("game", request.EscapeComponent(m_game)), fmt::arg("in_game", m_in_game)),
+            fmt::arg("game", request.EscapeComponent(m_game)),
+            fmt::arg("in_game", static_cast<int>(m_in_game))),
         {{"X-Is-Dolphin", "1"}}, Common::HttpRequest::AllowedReturnCodes::All);
 
     if (!response)

@@ -1,6 +1,7 @@
 // Copyright 2026 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <string>
@@ -55,11 +56,13 @@ static jintArray PadMappingArrayToJIntArray(JNIEnv* env, const NetPlay::PadMappi
 static bool JIntArrayToPadMappingArray(JNIEnv* env, jintArray jmapping,
                                        NetPlay::PadMappingArray* mapping)
 {
-  if (env->GetArrayLength(jmapping) != static_cast<jsize>(mapping->size()))
+  const jsize length = env->GetArrayLength(jmapping);
+  if (length <= 0)
     return false;
 
-  std::array<jint, std::tuple_size_v<std::decay_t<decltype(*mapping)>>> values;
-  env->GetIntArrayRegion(jmapping, 0, static_cast<jsize>(values.size()), values.data());
+  std::array<jint, std::tuple_size_v<std::decay_t<decltype(*mapping)>>> values{};
+  const jsize copy_count = std::min(length, static_cast<jsize>(values.size()));
+  env->GetIntArrayRegion(jmapping, 0, copy_count, values.data());
   for (size_t i = 0; i < mapping->size(); i++)
     (*mapping)[i] = static_cast<NetPlay::PlayerId>(values[i]);
   return true;
@@ -255,22 +258,22 @@ JNIEXPORT jintArray JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetplaySession_nativeGetPadMapping(JNIEnv* env,
                                                                                    jobject obj)
 {
-  auto* server = GetServerPointer(env, obj);
-  if (!server)
-    return env->NewIntArray(0);
-
-  return PadMappingArrayToJIntArray(env, server->GetPadMapping());
+  if (auto* server = GetServerPointer(env, obj))
+    return PadMappingArrayToJIntArray(env, server->GetPadMapping());
+  if (auto* client = GetClientPointer(env, obj))
+    return PadMappingArrayToJIntArray(env, client->GetPadMapping());
+  return env->NewIntArray(0);
 }
 
 JNIEXPORT jintArray JNICALL
 Java_org_dolphinemu_dolphinemu_features_netplay_NetplaySession_nativeGetWiimoteMapping(JNIEnv* env,
                                                                                        jobject obj)
 {
-  auto* server = GetServerPointer(env, obj);
-  if (!server)
-    return env->NewIntArray(0);
-
-  return PadMappingArrayToJIntArray(env, server->GetWiimoteMapping());
+  if (auto* server = GetServerPointer(env, obj))
+    return PadMappingArrayToJIntArray(env, server->GetWiimoteMapping());
+  if (auto* client = GetClientPointer(env, obj))
+    return PadMappingArrayToJIntArray(env, client->GetWiimoteMapping());
+  return env->NewIntArray(0);
 }
 
 JNIEXPORT void JNICALL
