@@ -2133,7 +2133,9 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   {
     pad_status = Pad::GetGBAStatus(local_pad);
   }
-  else if (Config::Get(Config::GetInfoForSIDevice(local_pad)) ==
+  // Device type is configured on the in-game SI slot (see NetPlayConfigLoader),
+  // while local_pad indexes the player's local hardware/profiles (always 0..n).
+  else if (Config::Get(Config::GetInfoForSIDevice(ingame_pad)) ==
            SerialInterface::SIDEVICE_WIIU_ADAPTER)
   {
     pad_status = GCAdapter::Input(local_pad);
