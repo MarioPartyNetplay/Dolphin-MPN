@@ -11,7 +11,9 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QDesktopServices>
+#include <QMessageBox>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <QFile>
 #include <QSysInfo>
 #include <QProcess>
@@ -43,20 +45,26 @@ UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced)
 
     // Create and set up the text edit
     textEdit = new QTextEdit(this);
-    #if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     textEdit->setText(jsonObject.value(QStringLiteral("body")).toString());
-    #elif defined(_WIN32)
-    textEdit->setText(jsonObject.value(QStringLiteral("body")).toString());
-    #else
-    textEdit->setText(QStringLiteral("Auto Updater is not supported on your platform."));
-    #endif
+#else
+    textEdit->setText(
+        QStringLiteral(
+            "Automatic updates are not supported on Linux.\n\n"
+            "Download the latest release from GitHub and replace your install manually.\n\n") +
+        jsonObject.value(QStringLiteral("body")).toString());
+#endif
     textEdit->setReadOnly(true);
     mainLayout->addWidget(textEdit);
 
     // Create and set up the button box
     buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     QPushButton* updateButton = buttonBox->button(QDialogButtonBox::Ok);
+#if defined(__APPLE__) || defined(_WIN32)
     updateButton->setText(QStringLiteral("Update"));
+#else
+    updateButton->setText(QStringLiteral("Open Download Page"));
+#endif
     mainLayout->addWidget(buttonBox);
 
     // Connect signals
@@ -75,6 +83,12 @@ UpdateDialog::~UpdateDialog()
 
 void UpdateDialog::accept()
 {
+#if !defined(_WIN32) && !defined(__APPLE__)
+    const QString release_url = jsonObject.value(QStringLiteral("html_url")).toString();
+    if (!release_url.isEmpty())
+      QDesktopServices::openUrl(QUrl(release_url));
+    QDialog::accept();
+#else
     QJsonArray jsonArray = jsonObject[QStringLiteral("assets")].toArray();
     QString filenameToDownload;
     QString urlToDownload;
@@ -86,34 +100,53 @@ void UpdateDialog::accept()
         QString filenameBlob = object.value(QStringLiteral("name")).toString();
         QString downloadUrl(object.value(QStringLiteral("browser_download_url")).toString());
 
-        #ifdef _WIN32
-        if (filenameBlob.contains(QStringLiteral("win32")) || 
-            filenameBlob.contains(QStringLiteral("windows")) || 
-            filenameBlob.contains(QStringLiteral("win64")))
+#ifdef _WIN32
+        if (filenameBlob.contains(QStringLiteral("win32"), Qt::CaseInsensitive) ||
+            filenameBlob.contains(QStringLiteral("windows"), Qt::CaseInsensitive) ||
+            filenameBlob.contains(QStringLiteral("win64"), Qt::CaseInsensitive))
         {
             filenameToDownload = filenameBlob;
             urlToDownload = downloadUrl;
             break;
         }
-        #endif
-        #ifdef __APPLE__
-        if (filenameBlob.contains(QStringLiteral("darwin")) || 
-            filenameBlob.contains(QStringLiteral("macOS")))
+#endif
+#ifdef __APPLE__
+        if (filenameBlob.contains(QStringLiteral("darwin"), Qt::CaseInsensitive) ||
+            filenameBlob.contains(QStringLiteral("macOS"), Qt::CaseInsensitive) ||
+            filenameBlob.contains(QStringLiteral("osx"), Qt::CaseInsensitive))
         {
             filenameToDownload = filenameBlob;
             urlToDownload = downloadUrl;
             break;
         }
-        #endif
+#endif
+    }
+
+    if (filenameToDownload.isEmpty() || urlToDownload.isEmpty())
+    {
+      QMessageBox::warning(
+          this, QStringLiteral("Update"),
+          QStringLiteral("No downloadable package for this platform was found in the release."));
+      return;
     }
 
     this->url = urlToDownload;
     this->filename = filenameToDownload;
     QDialog::accept();
 
-    // Use InstallUpdateDialog for both download and extraction
-    QString installationDirectory = QCoreApplication::applicationDirPath();
-    QString temporaryDirectory = QDir::tempPath();
-    InstallUpdateDialog installDialog(this, installationDirectory, temporaryDirectory, filenameToDownload, urlToDownload);
+    // Dedicated temp dir — never point scripts at QDir::tempPath() itself (they delete it).
+    QTemporaryDir temp_dir;
+    temp_dir.setAutoRemove(false);
+    if (!temp_dir.isValid())
+    {
+      QMessageBox::critical(this, QStringLiteral("Error"),
+                            QStringLiteral("Failed to create a temporary update directory."));
+      return;
+    }
+
+    const QString installationDirectory = QCoreApplication::applicationDirPath();
+    InstallUpdateDialog installDialog(this, installationDirectory, temp_dir.path(),
+                                      filenameToDownload, urlToDownload);
     installDialog.exec();
+#endif
 }

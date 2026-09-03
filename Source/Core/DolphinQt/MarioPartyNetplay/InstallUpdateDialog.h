@@ -9,9 +9,7 @@
 #include <QProgressBar>
 #include <functional>
 
-// Forward declarations
 QT_BEGIN_NAMESPACE
-class QString;
 class QLabel;
 class QProgressBar;
 QT_END_NAMESPACE
@@ -42,6 +40,8 @@ private:
     void download();
     void startZipExtraction(const QString& full_file_path, const QString& extract_directory);
     void finishInstallAfterExtract(const QString& extract_directory);
+    void startThreadedInstallCopy(const QString& source_directory, const QString& dest_directory);
+    void finishInstallAfterCopy(const QStringList& pending_relative_paths);
     bool unzipFile(const std::string& zipFilePath, const std::string& destDir, 
                    std::function<void(int current, int total)> progressCallback = nullptr);
 };
