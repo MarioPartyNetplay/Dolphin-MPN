@@ -45,7 +45,7 @@ DESTDIR=./AppDir ninja install
 # Debug: Show what was installed
 echo "Checking installed files..."
 find ./AppDir -type f -name "dolphin-mpn*" 2>/dev/null | head -20
-find ./AppDir -type d -name "sys" 2>/dev/null
+find ./AppDir -type d -iname "sys" 2>/dev/null
 find ./AppDir -name "*.desktop" 2>/dev/null
 
 mkdir -p ./AppDir/usr/Source/Core
@@ -54,30 +54,50 @@ rm -rf ./AppDir/usr/Source/Core/DolphinQt/CMakeFiles
 rm -rf ./AppDir/usr/Source/Core/DolphinQt/dolphin-mpn_autogen
 rm -f ./AppDir/usr/Source/Core/DolphinQt/cmake_install.cmake
 
-# Remove optional binaries if they exist
-[ -f ./AppDir/usr/bin/dolphin-mpn-nogui ] && rm ./AppDir/usr/bin/dolphin-mpn-nogui
-[ -f ./AppDir/usr/bin/dolphin-tool ] && rm ./AppDir/usr/bin/dolphin-tool
+# Remove optional binaries if they exist. The default install prefix is /usr/local.
+for bin_dir in ./AppDir/usr/bin ./AppDir/usr/local/bin; do
+    [ -f "$bin_dir/dolphin-mpn-nogui" ] && rm "$bin_dir/dolphin-mpn-nogui"
+    [ -f "$bin_dir/dolphin-tool" ] && rm "$bin_dir/dolphin-tool"
+done
 
-# Move sys directory if it exists
-if [ -d ./AppDir/usr/share/dolphin-mpn/sys ]; then
-    mv ./AppDir/usr/share/dolphin-mpn/sys ./AppDir/usr/bin/Sys
-elif [ -d ./AppDir/usr/share/sys ]; then
-    mv ./AppDir/usr/share/sys ./AppDir/usr/bin/Sys
-else
-    echo "WARNING: sys directory not found in expected locations"
-    # Try to find it
-    SYS_DIR=$(find ./AppDir -type d -name "sys" 2>/dev/null | head -1)
-    if [ -n "$SYS_DIR" ]; then
-        echo "Found sys directory at: $SYS_DIR"
-        mv "$SYS_DIR" ./AppDir/usr/bin/Sys
-    else
-        echo "ERROR: Could not find sys directory"
-        exit 1
+# Move Sys next to the executable. CMake installs Data/Sys as datadir/Sys,
+# which is usr/local/share/dolphin-mpn/Sys when CMAKE_INSTALL_PREFIX is /usr/local.
+SYS_CANDIDATES=(
+    ./AppDir/usr/share/dolphin-mpn/Sys
+    ./AppDir/usr/share/dolphin-mpn/sys
+    ./AppDir/usr/local/share/dolphin-mpn/Sys
+    ./AppDir/usr/local/share/dolphin-mpn/sys
+    ./AppDir/usr/share/Sys
+    ./AppDir/usr/share/sys
+    ./AppDir/usr/local/share/Sys
+    ./AppDir/usr/local/share/sys
+)
+
+SYS_DIR=""
+for candidate in "${SYS_CANDIDATES[@]}"; do
+    if [ -d "$candidate" ]; then
+        SYS_DIR="$candidate"
+        break
     fi
+done
+
+if [ -z "$SYS_DIR" ]; then
+    echo "WARNING: Sys directory not found in expected locations"
+    SYS_DIR=$(find ./AppDir -type d -iname "sys" 2>/dev/null | head -1)
+fi
+
+if [ -n "$SYS_DIR" ]; then
+    echo "Found Sys directory at: $SYS_DIR"
+    mkdir -p ./AppDir/usr/bin
+    mv "$SYS_DIR" ./AppDir/usr/bin/Sys
+else
+    echo "ERROR: Could not find Sys directory"
+    exit 1
 fi
 
 # Clean up share directory
 rm -rf ./AppDir/usr/share/dolphin-mpn
+rm -rf ./AppDir/usr/local/share/dolphin-mpn
 
 # Ensure desktop file exists and fix it
 DESKTOP_FILE="./AppDir/usr/share/applications/dolphin-mpn.desktop"
