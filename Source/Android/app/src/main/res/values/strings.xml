@@ -633,6 +633,7 @@ It can efficiently compress both junk data and encrypted Wii data.
     <string name="emulation_screenshot">Take Screenshot</string>
     <string name="emulation_savestate">Save State</string>
     <string name="emulation_loadstate">Load State</string>
+    <string name="emulation_reset">Reset Emulation</string>
     <string name="emulation_exit">Exit Emulation</string>
     <string name="emulation_state_slot">Slot %1$d\n\n%2$s</string>
     <string name="emulation_state_slot_empty">Slot %1$d\n\nEmpty</string>
@@ -967,6 +968,7 @@ It can efficiently compress both junk data and encrypted Wii data.
     <string name="skylander_id">ID</string>
     <string name="skylander_variant">Variant</string>
     <string name="invalid_skylander">Invalid Skylander Selection</string>
+    <string name="skylander_load_failed">Failed to load Skylander figure</string>
 
     <string name="emulate_infinity_base">Infinity Base</string>
     <string name="infinity_manager">Infinity Manager</string>
@@ -1044,6 +1046,11 @@ It can efficiently compress both junk data and encrypted Wii data.
     <string name="netplay_players_name">Name</string>
     <string name="netplay_players_ping">Ping</string>
     <string name="netplay_players_mapping">Mapping</string>
+    <string name="netplay_controllers_gamecube">GameCube</string>
+    <string name="netplay_controllers_wii_remotes">Wii Remotes</string>
+    <string name="netplay_controllers_port">Port %1$d</string>
+    <string name="netplay_controllers_remote">Remote %1$d</string>
+    <string name="netplay_controllers_none">None</string>
     <string name="netplay_network_mode_label">Input mode</string>
     <string name="netplay_network_mode_fair_input_delay">Fair Input Delay</string>
     <string name="netplay_network_mode_host_input_authority">Host Input Authority</string>

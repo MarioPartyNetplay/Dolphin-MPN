@@ -25,6 +25,7 @@
 #include "Common/FileUtil.h"
 #include "Common/Hash.h"
 #include "Common/IOFile.h"
+#include "Common/LocaleUtil.h"
 #include "Common/MsgHandler.h"
 #include "Common/NandPaths.h"
 #include "Common/StringUtil.h"
@@ -158,7 +159,7 @@ std::string MovieManager::GetRTCDisplay() const
   const tm gm_time = fmt::gmtime(current_time);
 
   // Use current locale for formatting time, as fmt is locale-agnostic by default.
-  return fmt::format(std::locale{""}, "Date/Time: {:%c}", gm_time);
+  return fmt::format(Common::GetEnvironmentLocale(), "Date/Time: {:%c}", gm_time);
 }
 
 // NOTE: GPU Thread
@@ -1309,17 +1310,6 @@ void MovieManager::SaveRecording(const std::string& filename)
   header.filetype[3] = 0x1A;
   strncpy(header.gameID.data(), SConfig::GetInstance().GetGameID().c_str(), 6);
   header.bWii = m_system.IsWii();
-  header.controllers = 0;
-  header.GBAControllers = 0;
-  for (int i = 0; i < 4; ++i)
-  {
-    if (IsUsingGBA(i))
-      header.GBAControllers |= 1 << i;
-    if (IsUsingPad(i))
-      header.controllers |= 1 << i;
-    if (IsUsingWiimote(i) && m_system.IsWii())
-      header.controllers |= 1 << (i + 4);
-  }
 
   header.bFromSaveState = m_recording_from_save_state;
   header.frameCount = m_total_frames;
@@ -1336,7 +1326,6 @@ void MovieManager::SaveRecording(const std::string& filename)
   strncpy(header.discChange.data(), m_disc_change_filename.c_str(), header.discChange.size());
   strncpy(header.author.data(), m_author.c_str(), header.author.size());
   header.md5 = m_md5;
-  header.bongos = m_bongos;
   header.revision = m_revision;
   header.DSPiromHash = m_dsp_irom_hash;
   header.DSPcoefHash = m_dsp_coef_hash;

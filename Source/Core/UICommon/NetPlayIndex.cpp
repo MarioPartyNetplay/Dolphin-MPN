@@ -129,7 +129,7 @@ void NetPlayIndex::NotificationLoop()
     auto response = request.Get(
         fmt::format(
             "{base}/v0/session/active?secret={secret}&player_count={player_count}&game={game}"
-            "&in_game={in_game}",
+            "&in_game={in_game:d}",
             fmt::arg("base", Config::Get(Config::NETPLAY_INDEX_URL)), fmt::arg("secret", m_secret),
             fmt::arg("player_count", m_player_count),
             fmt::arg("game", request.EscapeComponent(m_game)),

@@ -71,13 +71,15 @@ const std::string& GetNetplayDolphinVer()
 {
 #define LABEL "MPN"
 #ifdef _WIN32
-  static const std::string netplay_dolphin_ver = LABEL " Win";
+  static const std::string netplay_dolphin_ver = SCM_DESC_STR " Windows";
 #elif __APPLE__
-  static const std::string netplay_dolphin_ver = LABEL " Mac";
+  static const std::string netplay_dolphin_ver = SCM_DESC_STR " macOS";
 #elif ANDROID
-  static const std::string netplay_dolphin_ver = LABEL " Android";
+  static const std::string netplay_dolphin_ver = SCM_DESC_STR " Android";
+#elif __linux__
+  static const std::string netplay_dolphin_ver = SCM_DESC_STR " Linux";
 #else
-  static const std::string netplay_dolphin_ver = LABEL " Lin";
+  static const std::string netplay_dolphin_ver = SCM_DESC_STR;
 #endif
   return netplay_dolphin_ver;
 }

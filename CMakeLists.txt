@@ -103,7 +103,7 @@ if(APPROVED_VENDORED_DEPENDENCIES)
   message(WARNING "APPROVED_VENDORED_DEPENDENCIES is deprecated.  Please migrate to setting USE_SYSTEM_LIBS to ON and setting USE_SYSTEM_<dependency> to either AUTO or OFF to allow bundled libs.")
 endif()
 option(USE_UPNP "Enables UPnP port mapping support" ON)
-option(ENABLE_NOGUI "Enable NoGUI frontend" ON)
+option(ENABLE_NOGUI "Enable NoGUI frontend" OFF)
 option(ENABLE_QT "Enable Qt (Default)" ON)
 option(ENABLE_LTO "Enables Link Time Optimization" OFF)
 option(ENABLE_GENERIC "Enables generic build that should run on any little-endian host" OFF)
@@ -256,6 +256,12 @@ else()
   message(FATAL_ERROR "You're building on an unsupported platform: "
       "'${CMAKE_SYSTEM_PROCESSOR}' with ${CMAKE_SIZEOF_VOID_P}-byte pointers."
       " Enable generic build if you really want a JIT-less binary.")
+endif()
+
+if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+  set(DOLPHIN_HOST ARM64)
+elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x64|x86_64|amd64|AMD64")
+  set(DOLPHIN_HOST x64)
 endif()
 
 if(CMAKE_GENERATOR MATCHES "Ninja")
