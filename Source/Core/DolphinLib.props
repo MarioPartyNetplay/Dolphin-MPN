@@ -137,6 +137,7 @@
     <ClInclude Include="Common\Lazy.h" />
     <ClInclude Include="Common\LdrWatcher.h" />
     <ClInclude Include="Common\LinearDiskCache.h" />
+    <ClInclude Include="Common\LocaleUtil.h" />
     <ClInclude Include="Common\Logging\ConsoleListener.h" />
     <ClInclude Include="Common\Logging\Log.h" />
     <ClInclude Include="Common\Logging\LogManager.h" />
@@ -880,6 +881,7 @@
     <ClCompile Include="Common\JitRegister.cpp" />
     <ClCompile Include="Common\JsonUtil.cpp" />
     <ClCompile Include="Common\LdrWatcher.cpp" />
+    <ClCompile Include="Common\LocaleUtil.cpp" />
     <ClCompile Include="Common\Logging\ConsoleListenerWin.cpp" />
     <ClCompile Include="Common\Logging\LogManager.cpp" />
     <ClCompile Include="Common\Matrix.cpp" />
