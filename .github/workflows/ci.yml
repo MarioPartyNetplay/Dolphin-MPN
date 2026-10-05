@@ -53,7 +53,9 @@ jobs:
           export ANDROID_HOME ANDROID_SDK_ROOT="$ANDROID_HOME"
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" --install "platforms;android-37" "build-tools;36.0.0" "cmake;3.31.6"
+          # API 37 is published as platforms;android-37.0 and installs to platforms/android-37.0.
+          "$SDKMANAGER" --install "platforms;android-37.0" "build-tools;36.0.0" "cmake;3.31.6"
+          ln -sfn "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
           # NDK r30 beta 2, pinned by Source/Android/app/build.gradle.kts
           "$SDKMANAGER" --channel=1 --install "ndk;30.0.15729638"
 
