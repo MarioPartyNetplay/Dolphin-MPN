@@ -7,7 +7,12 @@ plugins {
 
 @Suppress("UnstableApiUsage")
 android {
-    compileSdk = 37
+    compileSdk {
+        // SDK Manager publishes this platform as platforms;android-37.0.
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
     ndkVersion = "30.0.15729638"
 
     buildFeatures {

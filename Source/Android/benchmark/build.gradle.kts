@@ -7,7 +7,11 @@ plugins {
 
 android {
     namespace = "org.dolphinemu.baselineprofile"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
