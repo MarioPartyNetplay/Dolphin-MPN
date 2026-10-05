@@ -3,6 +3,78 @@ on:
   push: null
   pull_request: null
 jobs:
+  build_android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/share/boost /opt/ghc \
+            /usr/local/lib/android/sdk/system-images \
+            /usr/local/lib/android/sdk/ndk || true
+          df -h
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}-
+            ${{ runner.os }}-gradle-
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          if [ -x /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager ]; then
+            ANDROID_HOME=/usr/local/lib/android/sdk
+          else
+            ANDROID_HOME="$HOME/android-sdk"
+            mkdir -p "$ANDROID_HOME/cmdline-tools"
+            curl -fsSL -o /tmp/commandlinetools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            unzip -q /tmp/commandlinetools.zip -d /tmp/commandlinetools
+            mv /tmp/commandlinetools/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+          fi
+
+          export ANDROID_HOME ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platforms;android-37" "build-tools;36.0.0" "cmake;3.31.6"
+          # NDK r30 beta 2, pinned by Source/Android/app/build.gradle.kts
+          "$SDKMANAGER" --channel=1 --install "ndk;30.0.15729638"
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: Source/Android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace -Pandroidx.baselineprofile.skipbaselineprofilegeneration
+          find . -name "*.apk" -path "*/release/*" -print -quit | xargs -I {} cp {} DolphinMPN-android.apk
+          mkdir -p OUT
+          mv DolphinMPN-android.apk OUT/
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DolphinMPN-android
+          path: Source/Android/OUT/
+
   build_archlinux:
     name: Arch Linux x86_64
     runs-on: ubuntu-latest
