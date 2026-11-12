@@ -690,6 +690,7 @@ dolphin_find_optional_system_library_pkgconfig(xxhash libxxhash>=0.8.2 xxhash::x
 dolphin_find_optional_system_library(BZip2 Externals/bzip2)
 
 dolphin_find_optional_system_library(LibLZMA Externals/liblzma)
+
 # Imported target added in CMake 3.14
 dolphin_make_imported_target_if_missing(LibLZMA::LibLZMA LIBLZMA)
 
@@ -714,6 +715,12 @@ dolphin_add_bundled_library(SPNG AUTO Externals/libspng)
 # There is no system FreeSurround library.
 message(STATUS "Using static FreeSurround from Externals")
 add_subdirectory(Externals/FreeSurround)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "/etc/arch-release")
+  if(TARGET spng_static)
+    target_link_libraries(spng_static PRIVATE z)
+  endif()
+endif()
 
 if (APPLE OR WIN32)
   message(STATUS "Using ed25519 from Externals")
