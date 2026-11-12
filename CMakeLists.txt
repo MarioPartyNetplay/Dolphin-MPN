@@ -716,7 +716,6 @@ dolphin_add_bundled_library(SPNG AUTO Externals/libspng)
 message(STATUS "Using static FreeSurround from Externals")
 add_subdirectory(Externals/FreeSurround)
 
-# Arch Linux: explicitly propagate system Zlib dependency for bundled SPNG.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "/etc/arch-release")
   if(TARGET spng_static)
     target_link_libraries(spng_static PRIVATE z)
